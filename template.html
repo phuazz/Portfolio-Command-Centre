@@ -1,0 +1,3058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="Single-page portfolio dashboard with trend signals, crisis overlay, and systematic risk management.">
+<meta name="theme-color" content="#1a1a18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta property="og:title" content="Portfolio Command Centre">
+<meta property="og:description" content="Multi-asset portfolio dashboard with 3-factor vote signals, crisis overlay, and strategy backtesting.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<title>Portfolio Command Centre — Illustrative</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════
+   DESIGN SYSTEM — Editorial White / Refined
+   ═══════════════════════════════════════════ */
+:root {
+  --bg: #fafaf8;
+  --bg2: #ffffff;
+  --bg3: #f5f5f0;
+  --bg4: #eeeee8;
+  --bg-hover: #f0f0ea;
+  --bd: #e2e0d8;
+  --bd2: #d5d3ca;
+  --bd-strong: #c0beb5;
+  --t1: #1a1a18;
+  --t2: #5c5c56;
+  --t3: #8a8a82;
+  --t4: #b0b0a8;
+  --g: #1a8754;
+  --g2: #22a366;
+  --g-bg: rgba(26,135,84,0.07);
+  --g-bg2: rgba(26,135,84,0.14);
+  --r: #c0392b;
+  --r2: #e74c3c;
+  --r-bg: rgba(192,57,43,0.07);
+  --r-bg2: rgba(192,57,43,0.14);
+  --b: #2563eb;
+  --b2: #3b82f6;
+  --b-bg: rgba(37,99,235,0.06);
+  --b-bg2: rgba(37,99,235,0.12);
+  --a: #b45309;
+  --a-bg: rgba(180,83,9,0.07);
+  --p: #7c3aed;
+  --p-bg: rgba(124,58,237,0.06);
+  --c: #0891b2;
+  --c-bg: rgba(8,145,178,0.06);
+  --pk: #be185d;
+  --pk-bg: rgba(190,24,93,0.06);
+
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: 'DM Sans', -apple-system, sans-serif;
+  --mono: 'DM Mono', 'SF Mono', monospace;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.06), 0 4px 6px rgba(0,0,0,0.04);
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html { font-size:15px; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%; }
+body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-height:1.5; }
+
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--bd2); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--bd-strong); }
+
+/* ─── LAYOUT ──────────────────────────── */
+.shell { max-width:1520px; margin:0 auto; padding:20px 32px 60px; }
+
+/* ─── MASTHEAD ────────────────────────── */
+.masthead { padding:28px 0 22px; border-bottom:2px solid var(--t1); margin-bottom:24px; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; }
+.masthead-left h1 { font-family:var(--serif); font-size:32px; font-weight:400; letter-spacing:-0.5px; line-height:1.1; }
+.masthead-left h1 em { font-style:italic; color:var(--t3); }
+.masthead-sub { font-size:13px; color:var(--t3); margin-top:6px; letter-spacing:0.3px; }
+.masthead-right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.pill { padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; letter-spacing:0.2px; }
+.pill-acct { background:var(--t1); color:var(--bg2); }
+.pill-date { background:var(--bg3); color:var(--t2); border:1px solid var(--bd); }
+.pill-live { background:var(--g-bg); color:var(--g); border:1px solid rgba(26,135,84,0.2); }
+.pill-loading { background:var(--a-bg); color:var(--a); border:1px solid rgba(180,83,9,0.2); animation:pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+/* ─── KPI STRIP ───────────────────────── */
+.kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:var(--radius-lg); overflow:hidden; margin-bottom:28px; }
+.kpi { background:var(--bg2); padding:18px 20px; position:relative; }
+.kpi:first-child { border-radius:var(--radius-lg) 0 0 var(--radius-lg); }
+.kpi:last-child { border-radius:0 var(--radius-lg) var(--radius-lg) 0; }
+.kpi-label { font-size:11px; color:var(--t3); text-transform:uppercase; letter-spacing:1px; font-weight:600; margin-bottom:6px; }
+.kpi-val { font-size:24px; font-weight:700; letter-spacing:-0.5px; font-family:var(--sans); }
+.kpi-sub { font-size:12px; color:var(--t3); margin-top:3px; font-weight:400; }
+.kpi-val.pos { color:var(--g); }
+.kpi-val.neg { color:var(--r); }
+.kpi-change { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:700; margin-top:5px; }
+.kpi-change.up { background:var(--g-bg); color:var(--g); }
+.kpi-change.dn { background:var(--r-bg); color:var(--r); }
+
+/* ─── TABS ────────────────────────────── */
+.tab-bar { display:flex; gap:0; border-bottom:1px solid var(--bd); margin-bottom:24px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.tab-bar::-webkit-scrollbar { display:none; }
+.tab { padding:12px 22px; font-size:14px; font-weight:600; color:var(--t3); cursor:pointer; border:none; background:none; position:relative; transition:color 0.15s; letter-spacing:0.3px; white-space:nowrap; min-height:44px; }
+.tab:hover { color:var(--t1); }
+.tab.active { color:var(--t1); }
+.tab.active::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:2px; background:var(--t1); }
+
+/* ─── CARDS ───────────────────────────── */
+.card { background:var(--bg2); border:1px solid var(--bd); border-radius:var(--radius-lg); box-shadow:var(--shadow); overflow:hidden; }
+.card-head { padding:14px 18px; border-bottom:1px solid var(--bd); display:flex; justify-content:space-between; align-items:center; }
+.card-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--t2); display:flex; align-items:center; gap:8px; }
+.card-title .indicator { width:8px; height:8px; border-radius:50%; }
+.card-body { padding:16px 18px; }
+
+/* ─── GRIDS ───────────────────────────── */
+.g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+.g-main { display:grid; grid-template-columns:2.4fr 1fr; gap:16px; }
+.mb { margin-bottom:24px; }
+
+/* ─── TABLE ───────────────────────────── */
+.tbl { width:100%; border-collapse:collapse; font-size:13px; }
+.tbl thead th { padding:10px 12px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:var(--t3); font-weight:700; border-bottom:2px solid var(--bd); background:var(--bg3); position:sticky; top:0; z-index:3; }
+.tbl tbody tr { border-bottom:1px solid var(--bd); transition:background 0.1s; }
+.tbl tbody tr:hover { background:var(--bg-hover); }
+.tbl tbody td { padding:10px 12px; vertical-align:middle; }
+.tbl .r { text-align:right; }
+.tbl .c { text-align:center; }
+
+/* ─── TAGS ────────────────────────────── */
+.tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; letter-spacing:0.4px; }
+.tag-hk { background:#fef2f2; color:#b91c1c; }
+.tag-jp { background:#fdf2f8; color:#be185d; }
+.tag-us { background:#eff6ff; color:#1d4ed8; }
+.tag-gb { background:#f5f3ff; color:#6d28d9; }
+.tag-sg { background:#ecfdf5; color:#047857; }
+
+/* ─── P&L ─────────────────────────────── */
+.pl { font-weight:600; }
+.pl.pos { color:var(--g); }
+.pl.neg { color:var(--r); }
+
+/* ─── BARS ────────────────────────────── */
+.bar-track { height:5px; border-radius:3px; background:var(--bg4); overflow:hidden; }
+.bar-fill { height:100%; border-radius:3px; transition:width 0.5s ease; }
+
+/* ─── ALLOCATION ──────────────────────── */
+.alloc-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--bd); }
+.alloc-row:last-child { border-bottom:none; }
+.alloc-label { width:120px; font-size:12px; font-weight:600; color:var(--t2); }
+.alloc-bar { flex:1; height:24px; border-radius:5px; background:var(--bg4); overflow:hidden; }
+.alloc-fill { height:100%; border-radius:5px; transition:width 0.6s ease; display:flex; align-items:center; justify-content:flex-end; padding-right:8px; font-size:11px; font-weight:700; }
+.alloc-val { width:80px; text-align:right; font-size:13px; font-weight:600; }
+
+/* ─── SORT HEADERS ────────────────────── */
+.sort-th { cursor:pointer; user-select:none; }
+.sort-th:hover { color:var(--b); }
+
+/* ─── FILTERS ─────────────────────────── */
+.filters { display:flex; gap:6px; flex-wrap:wrap; }
+.fbtn { padding:6px 14px; border-radius:20px; font-size:12px; font-weight:500; cursor:pointer; border:1px solid var(--bd); background:var(--bg2); color:var(--t3); transition:all 0.15s; min-height:36px; }
+.fbtn.active { background:var(--t1); color:var(--bg2); border-color:var(--t1); }
+.fbtn:hover:not(.active) { border-color:var(--t2); color:var(--t2); }
+
+/* ─── TREND SIGNALS ───────────────────── */
+.signal { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:4px; font-size:11px; font-weight:700; }
+.signal-bull { background:var(--g-bg2); color:var(--g); }
+.signal-bear { background:var(--r-bg2); color:var(--r); }
+.signal-neutral { background:var(--bg4); color:var(--t3); }
+.signal-strong { background:var(--g); color:#fff; }
+
+/* ─── HEATMAP ─────────────────────────── */
+.hm { border-radius:6px; padding:10px 8px; text-align:center; transition:transform 0.15s; }
+.hm:hover { transform:scale(1.03); }
+
+/* ─── SUMMARY ROW ─────────────────────── */
+.tbl tr.sum { background:var(--bg3); font-weight:700; border-top:2px solid var(--bd2); }
+.tbl tr.sum td { padding:12px; }
+
+/* ─── EXCHANGE HEADER ROW ─────────────── */
+.tbl tr.exch-row td { background:var(--bg3); font-weight:700; font-size:12px; letter-spacing:0.5px; padding:7px 12px !important; }
+
+/* ─── LOADING ─────────────────────────── */
+.loading-overlay { position:fixed; inset:0; background:rgba(250,250,248,0.85); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(2px); }
+.loading-box { text-align:center; }
+.loading-spinner { width:40px; height:40px; border:3px solid var(--bd); border-top-color:var(--t1); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 16px; }
+@keyframes spin { to { transform:rotate(360deg) } }
+.loading-text { font-size:14px; color:var(--t2); }
+.loading-sub { font-size:12px; color:var(--t4); margin-top:4px; }
+
+/* ─── EXPANDABLE CHART PANEL ──────────── */
+.chart-row td { padding:0 !important; border-bottom:2px solid var(--bd2); }
+.chart-panel { background:var(--bg3); padding:16px 20px; border-top:1px solid var(--bd); }
+.chart-panel-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.chart-panel-title { font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
+.chart-panel-close { cursor:pointer; font-size:16px; color:var(--t3); padding:2px 6px; border-radius:4px; }
+.chart-panel-close:hover { background:var(--bd); color:var(--t1); }
+.chart-panel-legend { display:flex; gap:14px; font-size:11px; color:var(--t3); margin-top:6px; flex-wrap:wrap; }
+.chart-panel-legend span { display:flex; align-items:center; gap:3px; }
+.leg-dot { width:8px; height:3px; border-radius:2px; display:inline-block; }
+.tbl tbody tr.clickable { cursor:pointer; }
+.tbl tbody tr.clickable:hover { background:var(--bg-hover); }
+.tbl tbody tr.row-selected { background:var(--b-bg) !important; }
+
+/* ─── RESPONSIVE — TABLET ─────────────── */
+@media(max-width:1200px) {
+  .kpi-strip { grid-template-columns:repeat(3,1fr); }
+  .g-main,.g2,.g3 { grid-template-columns:1fr; }
+}
+
+/* ─── RESPONSIVE — MOBILE ─────────────── */
+@media(max-width:768px) {
+  html { font-size:14px; }
+  .shell { padding:12px 14px 40px; }
+  .masthead { flex-direction:column; align-items:flex-start; gap:10px; padding:20px 0 16px; }
+  .masthead-left h1 { font-size:24px; }
+  .masthead-sub { font-size:12px; }
+  .masthead-right { width:100%; justify-content:flex-start; }
+  .kpi-strip { grid-template-columns:repeat(2,1fr); }
+  .kpi { padding:14px 12px; }
+  .kpi-val { font-size:20px; }
+  .kpi-label { font-size:10px; }
+  .kpi-sub { font-size:11px; }
+  .tab { padding:10px 14px; font-size:13px; }
+  .card-body { padding:12px 14px; }
+  .card-head { padding:12px 14px; }
+  .card-title { font-size:12px; }
+  .tbl { font-size:12px; }
+  .tbl thead th { font-size:10px; padding:8px 8px; }
+  .tbl tbody td { padding:8px 8px; }
+  .alloc-label { width:90px; font-size:11px; }
+  .alloc-val { width:70px; font-size:12px; }
+  .filters { gap:4px; }
+  .fbtn { padding:5px 10px; font-size:11px; min-height:32px; }
+  .g2,.g3,.g-main { gap:12px; }
+  .mb { margin-bottom:16px; }
+  /* Table horizontal scroll on mobile */
+  .tbl-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+}
+
+/* ─── RESPONSIVE — SMALL PHONE ────────── */
+@media(max-width:480px) {
+  .shell { padding:10px 10px 36px; }
+  .kpi-strip { grid-template-columns:1fr 1fr; }
+  .kpi-val { font-size:18px; }
+  .tab { padding:10px 10px; font-size:12px; }
+  .masthead-left h1 { font-size:20px; }
+}
+
+/* ─── iOS SAFE AREAS ──────────────────── */
+@supports(padding: max(0px)) {
+  .shell { padding-left:max(14px, env(safe-area-inset-left)); padding-right:max(14px, env(safe-area-inset-right)); padding-bottom:max(40px, env(safe-area-inset-bottom)); }
+}
+
+/* ─── TOUCH TARGETS ───────────────────── */
+@media(pointer:coarse) {
+  .tab { min-height:48px; padding:14px 18px; }
+  .fbtn { min-height:40px; }
+  .tbl tbody td { padding:12px 10px; }
+  .sort-th { min-height:44px; }
+}
+
+/* ─── ANIMATIONS ──────────────────────── */
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+.fu { animation:fadeUp 0.4s ease forwards; }
+.fu1 { animation-delay:0.05s; opacity:0; }
+.fu2 { animation-delay:0.1s; opacity:0; }
+.fu3 { animation-delay:0.15s; opacity:0; }
+
+/* ─── CHART PLOTLY OVERRIDES ──────────── */
+.js-plotly-plot .plotly .modebar { right:8px !important; top:4px !important; }
+
+/* ─── TREND SCORE BAR ─────────────────── */
+
+
+/* ─── AVAILABLE LTV BADGE ─────────────── */
+.ltv-avail { font-size:11px; font-weight:600; padding:2px 6px; border-radius:3px; }
+.ltv-high { background:#fef9c3; color:#854d0e; }
+.ltv-med { background:#e0f2fe; color:#075985; }
+.ltv-none { color:var(--t4); }
+</style>
+</head>
+<body>
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="loading-box">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Portfolio Command Centre</div>
+    <div class="loading-sub">Rendering snapshot data...</div>
+  </div>
+</div>
+
+<div class="shell">
+  <div class="masthead fu">
+    <div class="masthead-left">
+      <h1>Portfolio Command Centre <em>— Illustrative</em></h1>
+      <div class="masthead-sub">Illustrative multi-asset portfolio &nbsp;·&nbsp; All figures in SGD unless stated</div>
+    </div>
+    <div class="masthead-right">
+      <span class="pill pill-date" id="dateDisp"></span>
+      <span class="pill pill-acct">Brokerage + CDP</span>
+      <span class="pill pill-loading" id="statusPill">◌ LOADING</span>
+      <span class="pill pill-date" style="cursor:pointer;font-size:9px;opacity:0.7" onclick="localStorage.removeItem('pcc_cache_v5');location.reload()" title="Clear cache and re-fetch all max history">↻ Full Refresh</span>
+    </div>
+  </div>
+
+  <!-- Inline progress bar — visible during background fetch -->
+  <div id="fetchProgress" style="display:none;margin-bottom:16px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)">
+    <div style="padding:12px 18px;display:flex;align-items:center;gap:14px">
+      <div class="loading-spinner" style="width:18px;height:18px;border-width:2px;margin:0;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--t1)" id="fetchLabel">Fetching live prices...</span>
+          <span style="font-size:11px;font-weight:600;color:var(--b);font-family:var(--mono)" id="fetchCount">0 / 0</span>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--bg4);overflow:hidden">
+          <div id="fetchBar" style="height:100%;border-radius:3px;background:var(--b);transition:width 0.3s ease;width:0%"></div>
+        </div>
+        <div style="font-size:10px;color:var(--t3);margin-top:4px" id="fetchDetail">Preparing fetch queue...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpi-strip fu fu1" id="kpiStrip"></div>
+  <div id="crisisKPI" style="margin-top:-8px;margin-bottom:12px"></div>
+
+  <div class="tab-bar" id="tabBar">
+    <button class="tab active" data-tab="positions">Positions</button>
+    <button class="tab" data-tab="signals">Trend Signals</button>
+    <button class="tab" data-tab="allocation">Allocation</button>
+    <button class="tab" data-tab="performance">Performance</button>
+    <button class="tab" data-tab="risk">Risk Analysis</button>
+  </div>
+
+  <div id="tabContent">
+    <div id="pane-positions" class="tab-pane"></div>
+    <div id="pane-signals" class="tab-pane" style="display:none"></div>
+    <div id="pane-allocation" class="tab-pane" style="display:none"></div>
+    <div id="pane-performance" class="tab-pane" style="display:none"></div>
+    <div id="pane-risk" class="tab-pane" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+// ═══ SIGNAL HELPERS (vote-based) ═══
+const sigCls = sig => sig==='STRONG BUY'?'signal-strong':sig==='BUY'?'signal-bull':sig==='HOLD'?'signal-neutral':'signal-bear';
+const sigCol = sig => sig==='STRONG BUY'?'var(--g)':sig==='BUY'?'#22a366':sig==='HOLD'?'var(--t2)':'var(--r)';
+const voteCol = v => v>=3?'var(--g)':v>=2?'#22a366':v>=1?'#b45309':'var(--r)';
+const voteLabel = v => v>=3?'3/3':v>=2?'2/3':v>=1?'1/3':'0/3';
+
+// ═══════════════════════════════════════════════════════════════
+//  STATIC PORTFOLIO DATA — Parsed from SC screenshots (14 Feb 2026)
+// ═══════════════════════════════════════════════════════════════
+const POSITIONS = [
+  { ticker:'3010.HK', yf:'3010.HK', name:'iShares AXJ ETF', exchange:'HKG', ccy:'HKD', avgPrice:61.00, qty:2000, invested:122000, fee:0, availLTV:70, theme:'Asia ex-Japan Equity', type:'ETF' },
+  { ticker:'3173.HK', yf:'3173.HK', name:'PP CN New Economy ETF', exchange:'HKG', ccy:'HKD', avgPrice:7.50, qty:10000, invested:75000, fee:0, availLTV:0, theme:'China New Economy', type:'ETF' },
+  { ticker:'9660.HK', yf:'9660.HK', name:'Horizon Robotics', exchange:'HKG', ccy:'HKD', avgPrice:7.40, qty:5000, invested:37000, fee:0, availLTV:0, theme:'China AI/Robotics', type:'Stock' },
+  { ticker:'9961.HK', yf:'9961.HK', name:'Trip.com', exchange:'HKG', ccy:'HKD', avgPrice:320.00, qty:200, invested:64000, fee:0, availLTV:60, theme:'China Travel', type:'Stock' },
+  { ticker:'9988.HK', yf:'9988.HK', name:'Alibaba', exchange:'HKG', ccy:'HKD', avgPrice:108.00, qty:500, invested:54000, fee:0, availLTV:60, theme:'China Tech', type:'Stock' },
+
+  { ticker:'1615.JP', yf:'1615.T', name:'TOPIX Banks ETF', exchange:'TSE', ccy:'JPY', avgPrice:384.00, qty:3000, invested:1152000, fee:0, availLTV:70, theme:'Japan Financials', type:'ETF' },
+
+  { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.00, qty:200, invested:15400, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
+  { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:66.00, qty:100, invested:6600, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
+  { ticker:'GREK.US', yf:'GREK', name:'Global X MSCI Greece', exchange:'ARCA', ccy:'USD', avgPrice:64.00, qty:100, invested:6400, fee:0, availLTV:70, theme:'Greece Equity', type:'ETF' },
+  { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:69.00, qty:100, invested:6900, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
+  { ticker:'TAN.US', yf:'TAN', name:'Invesco Solar ETF', exchange:'ARCA', ccy:'USD', avgPrice:49.00, qty:200, invested:9800, fee:0, availLTV:70, theme:'Clean Energy', type:'ETF' },
+  { ticker:'XLE.US', yf:'XLE', name:'Energy Select SPDR', exchange:'ARCA', ccy:'USD', avgPrice:47.00, qty:200, invested:9400, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
+
+  { ticker:'BIDU.US', yf:'BIDU', name:'Baidu', exchange:'NMS', ccy:'USD', avgPrice:134.00, qty:50, invested:6700, fee:0, availLTV:60, theme:'China AI/Search', type:'Stock' },
+  { ticker:'MAR.US', yf:'MAR', name:'Marriott International', exchange:'NMS', ccy:'USD', avgPrice:295.00, qty:30, invested:8850, fee:0, availLTV:70, theme:'US Hotels', type:'Stock' },
+  { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:250.00, qty:30, invested:7500, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
+  { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.00, qty:20, invested:6860, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
+
+  { ticker:'GE.US', yf:'GE', name:'GE Aerospace', exchange:'NYS', ccy:'USD', avgPrice:210.00, qty:50, invested:10500, fee:0, availLTV:70, theme:'US Aerospace', type:'Stock' },
+
+  { ticker:'GDX.GB', yf:'GDX', name:'VanEck Gold Miners UCITS', exchange:'LSE', ccy:'USD', avgPrice:59.00, qty:200, invested:11800, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
+  { ticker:'XCSI.GB', yf:'XCSI.L', name:'Xtrackers CSI 500', exchange:'LSE', ccy:'USD', avgPrice:30.00, qty:200, invested:6000, fee:0, availLTV:0, theme:'China Mid-Cap', type:'ETF' },
+  { ticker:'XMED.GB', yf:'XMED.L', name:'Xtrackers MSCI Europe', exchange:'LSE', ccy:'USD', avgPrice:98.00, qty:100, invested:9800, fee:0, availLTV:70, theme:'European Equity', type:'ETF' },
+
+  // ═══ Central Depository ═══
+  // SGD-denominated equities & ETFs
+  { ticker:'GAB', yf:'GAB.SI', name:'AMOVA STI SGDA', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:4.630 },
+  { ticker:'V7AB', yf:'V7AB.SI', name:'Astrea 7A', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG PE Bond', type:'Bond', account:'CDP', mktPriceSnap:1.025 },
+  { ticker:'D05', yf:'D05.SI', name:'DBS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:57.060 },
+  { ticker:'J69U', yf:'J69U.SI', name:'Frasers CPT Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.260 },
+  { ticker:'BN4', yf:'BN4.SI', name:'Keppel', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:3000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:12.610 },
+  { ticker:'AJBU', yf:'AJBU.SI', name:'Keppel DC REIT', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:20000, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.250 },
+  { ticker:'YYY', yf:'YYY.SI', name:'LGI-OSPL China L', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'China Equity', type:'Stock', account:'CDP', mktPriceSnap:1.867 },
+  { ticker:'CJLU', yf:'CJLU.SI', name:'Netlink NBN Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:15000, invested:null, fee:0, availLTV:0, theme:'SG Infrastructure', type:'Stock', account:'CDP', mktPriceSnap:0.985 },
+  { ticker:'O39', yf:'O39.SI', name:'OCBC Bank', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:21.110 },
+  { ticker:'P52', yf:'P52.SI', name:'PanUnited', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:30000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:1.160 },
+  { ticker:'S58', yf:'S58.SI', name:'SATS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG Aviation', type:'Stock', account:'CDP', mktPriceSnap:3.880 },
+  { ticker:'5E2', yf:'5E2.SI', name:'Seatrium', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:2.100 },
+  { ticker:'C6L', yf:'C6L.SI', name:'SIA', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG Aviation', type:'Stock', account:'CDP', mktPriceSnap:6.960 },
+  { ticker:'ES3', yf:'ES3.SI', name:'STI ETF', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:50000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:4.945 },
+  { ticker:'U11', yf:'U11.SI', name:'UOB', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:38.470 },
+  // USD-denominated
+  { ticker:'ICU', yf:'ICU.SI', name:'AXJ Climate ETF', exchange:'SGX', ccy:'USD', avgPrice:null, qty:10000, invested:null, fee:0, availLTV:0, theme:'Asia Climate/ESG', type:'ETF', account:'CDP', mktPriceSnap:1.473 },
+  { ticker:'D07', yf:'D07.SI', name:'SS SPDR DJIA USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:20, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:494.330 },
+  { ticker:'S27', yf:'S27.SI', name:'SS SPDR S&P500 USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:20, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:682.630 },
+  // Savings Bonds
+  { ticker:'SBAUG22', yf:null, name:'SB Aug 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBDEC22', yf:null, name:'SB Dec 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'BS26102F', yf:null, name:'Bond 26102F', exchange:'SGX', ccy:'SGD', avgPrice:100.00, qty:500, invested:50000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:100.00 },
+  { ticker:'SBJUL18', yf:null, name:'SB Jul 2018', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUL22', yf:null, name:'SB Jul 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUL24', yf:null, name:'SB Jul 2024', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUL25', yf:null, name:'SB Jul 2025', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUN22', yf:null, name:'SB Jun 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:15000, invested:15000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBNOV22', yf:null, name:'SB Nov 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBNOV23', yf:null, name:'SB Nov 2023', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBSEP22', yf:null, name:'SB Sep 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:15000, invested:15000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+];
+
+// Snapshot prices from screenshots (fallback if live fetch fails)
+const SNAPSHOT = {
+  '3010.HK':81.28, '3173.HK':10.37, '9660.HK':7.5, '9961.HK':427.6, '9988.HK':136.4,
+  '1615.T':632.2,
+  'ARGT':93.81, 'COPX':88.34, 'GREK':73.21, 'REMX':103.94, 'TAN':54.63, 'XLE':53.955,
+  'BIDU':126.315, 'MAR':376.47, 'MSFT':424.99, 'TSLA':394.88,
+  'GE':311.11,
+  'GDX':101.49, 'XCSI.L':55.075, 'XMED.L':134.72,
+  // SGX CDP
+  'GAB.SI':4.688, 'V7AB.SI':1.025, 'D05.SI':57.25, 'J69U.SI':2.29, 'BN4.SI':11.93,
+  'AJBU.SI':2.35, 'YYY.SI':1.883, 'CJLU.SI':1.01, 'O39.SI':22.72, 'P52.SI':1.64,
+  'S58.SI':3.55, '5E2.SI':2.42, 'C6L.SI':6.55, 'ES3.SI':5.023, 'U11.SI':37.4,
+  'ICU.SI':1.483, 'D07.SI':487.55, 'S27.SI':703.24
+};
+
+// FX (derived from screenshot SGD grand totals)
+const FX = { HKD:0.1624, JPY:0.008240, USD:1.2672, SGD:1 };
+
+// ═══════════════════════════════════════════════════════════════
+//  PRELOADED HISTORY — Injected by build script for instant load
+//  Format: { "MSFT": { price, prevClose, history: [{d,c,o,h,l},...] }, ... }
+//  When populated, dashboard renders fully without any network fetch.
+//  Run: node build.js  — to fetch latest data and bake into HTML.
+// ═══════════════════════════════════════════════════════════════
+/* __INJECT_DATA__ */
+
+// ═══════════════════════════════════════════════════════════════
+//  LIVE DATA FETCHER — Cached + Incremental Updates
+//  Strategy: cache full 3Y history in localStorage.
+//  On refresh, only fetch last 7 days per symbol (fast).
+//  Full re-fetch only on first load or manual cache clear.
+// ═══════════════════════════════════════════════════════════════
+const CACHE_KEY = 'pcc_cache_v5';
+const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours before incremental stale
+
+const PROXIES = [
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://cors-anywhere.herokuapp.com/${url}`,
+];
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch(e) { return {}; }
+}
+
+function saveCache(cache) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); }
+  catch(e) { /* storage full — clear old entries */ try { localStorage.removeItem(CACHE_KEY); } catch(e2){} }
+}
+
+async function fetchWithRetry(url, timeoutMs=10000) {
+  for (let pi = 0; pi < PROXIES.length; pi++) {
+    try {
+      const proxyUrl = PROXIES[pi](url);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const resp = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      return JSON.parse(text);
+    } catch(e) { /* try next proxy */ }
+  }
+  return null;
+}
+
+function parseYahooResponse(json) {
+  const result = json?.chart?.result?.[0];
+  if (!result) return null;
+  const meta = result.meta;
+  const quotes = result.indicators?.quote?.[0];
+  const timestamps = result.timestamp || [];
+  const closes = quotes?.close || [], highs = quotes?.high || [], lows = quotes?.low || [], opens = quotes?.open || [];
+  const validCloses = closes.filter(c => c != null && !isNaN(c));
+  if (validCloses.length < 2) return null;
+  const currentPrice = meta.regularMarketPrice || validCloses[validCloses.length - 1];
+  const prevClose = meta.chartPreviousClose || validCloses[validCloses.length - 2];
+  const history = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    if (closes[i] != null && !isNaN(closes[i])) {
+      history.push({ d: timestamps[i], c: closes[i], o: opens[i]||closes[i], h: highs[i]||closes[i], l: lows[i]||closes[i] });
+    }
+  }
+  return { price: currentPrice, prevClose, history };
+}
+
+function historyToFull(compact) {
+  // Convert compact cache format to full format used by rest of app
+  return compact.map(h => ({
+    date: new Date(h.d * 1000), close: h.c, open: h.o, high: h.h, low: h.l
+  }));
+}
+
+function mergeHistory(cached, fresh) {
+  // Merge fresh bars into cached history, dedup by timestamp
+  const map = new Map();
+  (cached || []).forEach(h => map.set(h.d, h));
+  (fresh || []).forEach(h => map.set(h.d, h)); // fresh overwrites
+  const merged = [...map.values()].sort((a,b) => a.d - b.d);
+  // Keep last ~2600 bars (10 years of trading days + buffer)
+  return merged.slice(-2600);
+}
+
+function detectSplit(cached, fresh) {
+  // Simple split detection: if the last overlapping bar's close differs by >15%, likely a split
+  if (!cached || cached.length < 5 || !fresh || fresh.length < 2) return false;
+  const lastCachedTs = cached[cached.length - 1].d;
+  // Find overlap
+  for (const f of fresh) {
+    const match = cached.find(c => c.d === f.d);
+    if (match && Math.abs(f.c / match.c - 1) > 0.15) return true;
+  }
+  return false;
+}
+
+async function fetchLivePrice(yfSymbol, range='10y') {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yfSymbol}?range=${range}&interval=1d`;
+    const json = await fetchWithRetry(url);
+    if (!json) return null;
+    return parseYahooResponse(json);
+  } catch(e) { return null; }
+}
+
+// DEV_MODE: set to true to skip data fetching and use cached data only (for faster iteration)
+const DEV_MODE = false;
+
+async function fetchAllPrices() {
+  const progEl = document.getElementById('fetchProgress');
+  const barEl = document.getElementById('fetchBar');
+  const labelEl = document.getElementById('fetchLabel');
+  const countEl = document.getElementById('fetchCount');
+  const detailEl = document.getElementById('fetchDetail');
+
+  function updateProgress(done, total, sym, mode) {
+    const pct = total > 0 ? (done / total * 100) : 0;
+    if (barEl) barEl.style.width = pct + '%';
+    if (countEl) countEl.textContent = `${done} / ${total}`;
+    if (detailEl) detailEl.textContent = sym ? `${mode === 'full' ? '📥 Full history' : mode === 'incremental' ? '🔄 Updating' : '💱 FX rate'}: ${sym}` : 'Preparing...';
+  }
+
+  // Show progress bar
+  if (progEl) progEl.style.display = 'block';
+
+  // DEV MODE: use cached data only, skip all network requests
+  if (DEV_MODE) {
+    const cache = loadCache();
+    if (Object.keys(cache).length > 5) {
+      if (labelEl) labelEl.textContent = 'DEV MODE — using cached data';
+      const results = {};
+      POSITIONS.forEach(p => {
+        if (p.yf && cache[p.yf]) {
+          const e = cache[p.yf];
+          results[p.yf] = {
+            price: e.price, prevClose: e.prevClose,
+            dayChange: e.price - (e.prevClose || e.price),
+            dayChangePct: e.prevClose ? ((e.price - e.prevClose) / e.prevClose) * 100 : 0,
+            history: historyToFull(e.history || [])
+          };
+        }
+      });
+      // Also get FX from cache
+      ['HKDSGD=X','JPYSGD=X','USDSGD=X'].forEach(sym => {
+        if (cache[sym]) {
+          const e = cache[sym];
+          results[sym] = { price: e.price, prevClose: e.prevClose,
+            dayChange: e.price - (e.prevClose || e.price),
+            dayChangePct: 0, history: [] };
+        }
+      });
+      // Update FX rates
+      if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
+      if (results['JPYSGD=X']) FX.JPY = results['JPYSGD=X'].price;
+      if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
+      return results;
+    }
+    if (labelEl) labelEl.textContent = 'DEV MODE — no cache found, fetching...';
+  }
+
+  const results = {};
+  const symbols = [...new Set(POSITIONS.map(p => p.yf).filter(Boolean))];
+  const fxSymbols = ['HKDSGD=X','JPYSGD=X','USDSGD=X'];
+
+  // Load cache
+  const cache = loadCache();
+  const now = Date.now();
+  let fullFetchCount = 0, incrementalCount = 0, cacheHitCount = 0;
+
+  // Determine fetch strategy per symbol
+  const fetchPlan = symbols.map(sym => {
+    const entry = cache[sym];
+    if (!entry || !entry.history || entry.history.length < 10) {
+      return { sym, mode: 'full' }; // No cache — full 3Y fetch
+    }
+    const age = now - (entry.ts || 0);
+    if (age < CACHE_MAX_AGE_MS) {
+      return { sym, mode: 'cached' }; // Fresh enough — use cache
+    }
+    return { sym, mode: 'incremental' }; // Stale — fetch last 7d and merge
+  });
+
+  const fullFetches = fetchPlan.filter(f => f.mode === 'full');
+  const incrementals = fetchPlan.filter(f => f.mode === 'incremental');
+  const cached = fetchPlan.filter(f => f.mode === 'cached');
+
+  // Status
+  const totalFetches = fullFetches.length + incrementals.length + fxSymbols.length;
+  if (labelEl) labelEl.textContent = `Fetching live prices — ${cached.length} cached, ${totalFetches} to fetch`;
+  if (detailEl) detailEl.textContent = `${incrementals.length} incremental updates · ${fullFetches.length} full history · ${fxSymbols.length} FX rates`;
+  updateProgress(0, totalFetches, null, null);
+
+  // Immediately populate from cache
+  for (const c of cached) {
+    const entry = cache[c.sym];
+    results[c.sym] = {
+      price: entry.price, prevClose: entry.prevClose,
+      dayChange: entry.price - entry.prevClose,
+      dayChangePct: ((entry.price - entry.prevClose) / entry.prevClose) * 100,
+      history: historyToFull(entry.history)
+    };
+    cacheHitCount++;
+  }
+
+  // Build queue: incrementals first (fast 7d), then full 3Y, then FX
+  const queue = [
+    ...incrementals.map(f => ({ sym: f.sym, range: '7d', mode: 'incremental' })),
+    ...fullFetches.map(f => ({ sym: f.sym, range: '10y', mode: 'full' })),
+    ...fxSymbols.map(sym => ({ sym, range: '5d', mode: 'fx' })),
+  ];
+
+  let done = 0, failed = 0;
+  const concurrency = 5;
+  const workQueue = [...queue];
+
+  const workers = [];
+  for (let w = 0; w < concurrency; w++) {
+    workers.push((async () => {
+      while (workQueue.length > 0) {
+        const item = workQueue.shift();
+        if (!item) break;
+        done++;
+        updateProgress(done, totalFetches, item.sym, item.mode);
+
+        const data = await fetchLivePrice(item.sym, item.range);
+        if (!data) {
+          failed++;
+          // FALLBACK: if fetch fails but we have stale cache, use it (signals > nothing)
+          if (item.mode !== 'fx' && cache[item.sym] && cache[item.sym].history && cache[item.sym].history.length > 10) {
+            const entry = cache[item.sym];
+            results[item.sym] = {
+              price: entry.price, prevClose: entry.prevClose,
+              dayChange: entry.price - (entry.prevClose || entry.price),
+              dayChangePct: entry.prevClose ? ((entry.price - entry.prevClose) / entry.prevClose) * 100 : 0,
+              history: historyToFull(entry.history)
+            };
+          }
+          continue;
+        }
+
+        if (item.mode === 'fx') {
+          results[item.sym] = data;
+        } else if (item.mode === 'incremental') {
+          const entry = cache[item.sym];
+          // Check for stock split
+          if (detectSplit(entry.history, data.history)) {
+            // Split detected — need full re-fetch
+            workQueue.push({ sym: item.sym, range: '10y', mode: 'full' });
+            incrementalCount--;
+            continue;
+          }
+          const merged = mergeHistory(entry.history, data.history);
+          cache[item.sym] = { price: data.price, prevClose: data.prevClose, history: merged, ts: now };
+          results[item.sym] = {
+            price: data.price, prevClose: data.prevClose,
+            dayChange: data.price - data.prevClose,
+            dayChangePct: ((data.price - data.prevClose) / data.prevClose) * 100,
+            history: historyToFull(merged)
+          };
+          incrementalCount++;
+        } else {
+          // Full fetch
+          cache[item.sym] = { price: data.price, prevClose: data.prevClose, history: data.history, ts: now };
+          results[item.sym] = {
+            price: data.price, prevClose: data.prevClose,
+            dayChange: data.price - data.prevClose,
+            dayChangePct: ((data.price - data.prevClose) / data.prevClose) * 100,
+            history: historyToFull(data.history)
+          };
+          fullFetchCount++;
+        }
+        await new Promise(r => setTimeout(r, 100));
+      }
+    })());
+  }
+  await Promise.all(workers);
+
+  // Save updated cache
+  saveCache(cache);
+
+  // Update FX
+  if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
+  if (results['JPYSGD=X']) FX.JPY = results['JPYSGD=X'].price;
+  if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
+
+  // Hide progress bar with completion message
+  if (progEl) {
+    if (labelEl) labelEl.textContent = `✓ Complete — ${cacheHitCount + incrementalCount + fullFetchCount} tickers loaded`;
+    if (barEl) barEl.style.width = '100%';
+    if (barEl) barEl.style.background = 'var(--g)';
+    if (detailEl) {
+      const staleCount = failed > 0 ? Object.keys(results).filter(k => !k.includes('=')).length - cacheHitCount - incrementalCount - fullFetchCount : 0;
+      detailEl.textContent = `${cacheHitCount} cached · ${incrementalCount} incremental · ${fullFetchCount} full${failed > 0 ? ' · '+failed+' failed' : ''}${staleCount > 0 ? ' ('+staleCount+' stale fallback)' : ''}`;
+    }
+    // Remove spinner
+    const spinner = progEl.querySelector('.loading-spinner');
+    if (spinner) spinner.style.display = 'none';
+    // Fade out after 2s
+    setTimeout(() => { progEl.style.transition = 'opacity 0.5s'; progEl.style.opacity = '0'; setTimeout(() => progEl.style.display = 'none', 500); }, 2000);
+  }
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TREND SIGNAL ENGINE — Monthly Vote (Exit 2/3, Enter 2/3)
+//  Factors: Trend(25) + AbsMom(15) + Donchian(15) + >200SMA(12) +
+//           Supertrend(10) + Consistency(8) + SMA Cross(11) + ADX(4) = 100
+//  ADX measures trend STRENGTH not direction — pure Wilder, pairs with Supertrend.
+// ═══════════════════════════════════════════════════════════════
+function calcSMA(closes, period) {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  return slice.reduce((s,v)=>s+v,0) / period;
+}
+
+function calcADX(history, period=14) {
+  // Wilder's ADX: measures trend STRENGTH regardless of direction
+  // ADX > 25 = trending, > 40 = strong trend, < 20 = no trend
+  if (history.length < period * 2 + 1) return null;
+  const n = history.length;
+  // Step 1: compute +DM, -DM, TR for each bar
+  const pdm = [], ndm = [], tr = [];
+  for (let i = 1; i < n; i++) {
+    const upMove = history[i].high - history[i-1].high;
+    const dnMove = history[i-1].low - history[i].low;
+    pdm.push(upMove > dnMove && upMove > 0 ? upMove : 0);
+    ndm.push(dnMove > upMove && dnMove > 0 ? dnMove : 0);
+    tr.push(Math.max(history[i].high - history[i].low, Math.abs(history[i].high - history[i-1].close), Math.abs(history[i].low - history[i-1].close)));
+  }
+  // Step 2: Wilder smoothing of +DM, -DM, TR
+  let sPDM = 0, sNDM = 0, sTR = 0;
+  for (let i = 0; i < period; i++) { sPDM += pdm[i]; sNDM += ndm[i]; sTR += tr[i]; }
+  const dx = [];
+  for (let i = period; i < pdm.length; i++) {
+    if (i > period) { sPDM = sPDM - sPDM/period + pdm[i]; sNDM = sNDM - sNDM/period + ndm[i]; sTR = sTR - sTR/period + tr[i]; }
+    const pdi = sTR > 0 ? (sPDM / sTR) * 100 : 0;
+    const ndi = sTR > 0 ? (sNDM / sTR) * 100 : 0;
+    const sumDI = pdi + ndi;
+    dx.push(sumDI > 0 ? Math.abs(pdi - ndi) / sumDI * 100 : 0);
+  }
+  if (dx.length < period) return null;
+  // Step 3: Smooth DX into ADX
+  let adx = 0;
+  for (let i = 0; i < period; i++) adx += dx[i];
+  adx /= period;
+  for (let i = period; i < dx.length; i++) adx = (adx * (period-1) + dx[i]) / period;
+  return adx;
+}
+
+function calcATR(history, period=14) {
+  // Wilder-smoothed ATR — consistent with Supertrend methodology
+  if (history.length < period + 2) return null;
+  let atr = 0;
+  for (let i = 1; i <= period; i++) {
+    const h = history[i].high, l = history[i].low, pc = history[i-1].close;
+    atr += Math.max(h-l, Math.abs(h-pc), Math.abs(l-pc));
+  }
+  atr /= period;
+  for (let i = period + 1; i < history.length; i++) {
+    const h = history[i].high, l = history[i].low, pc = history[i-1].close;
+    const tr = Math.max(h-l, Math.abs(h-pc), Math.abs(l-pc));
+    atr = (atr * (period - 1) + tr) / period; // Wilder smoothing
+  }
+  return atr;
+}
+
+function calcSupertrend(history, period=10, mult=3) {
+  if (history.length < period + 2) return { trend: 0 };
+  // Wilder ATR seed
+  let atr = 0;
+  for (let i = 1; i <= period; i++) {
+    const h=history[i].high, l=history[i].low, pc=history[i-1].close;
+    atr += Math.max(h-l, Math.abs(h-pc), Math.abs(l-pc));
+  }
+  atr /= period;
+  // Seed bands from bar `period`
+  const seedHL2 = (history[period].high + history[period].low) / 2;
+  let upperBand = seedHL2 + mult * atr;
+  let lowerBand = seedHL2 - mult * atr;
+  let trend = history[period].close > seedHL2 ? 1 : -1;
+  for (let i = period + 1; i < history.length; i++) {
+    const h=history[i].high, l=history[i].low, c=history[i].close, pc=history[i-1].close;
+    const tr = Math.max(h-l, Math.abs(h-pc), Math.abs(l-pc));
+    atr = (atr * (period-1) + tr) / period; // Wilder smooth
+    const hl2 = (h + l) / 2;
+    const newUpper = hl2 + mult * atr;
+    const newLower = hl2 - mult * atr;
+    upperBand = (newUpper < upperBand || pc > upperBand) ? newUpper : upperBand;
+    lowerBand = (newLower > lowerBand || pc < lowerBand) ? newLower : lowerBand;
+    if (c > upperBand) trend = 1;
+    else if (c < lowerBand) trend = -1;
+  }
+  return { trend, atr };
+}
+
+function calcTrendSignals(history) {
+  if (!history || history.length < 15) return { score:0, signal:'—', reasons:['Insufficient data'], details:{}, source:'none' };
+
+  const closes = history.map(h => h.close);
+  const n = closes.length;
+  const current = closes[n - 1];
+
+  // SMAs — needed for vote signals + chart
+  const sma20 = n >= 20 ? calcSMA(closes, 20) : null;
+  const sma50 = n >= 50 ? calcSMA(closes, 50) : null;
+  const sma200 = n >= 120 ? calcSMA(closes, Math.min(200, n)) : null;
+
+  // ADX (for chart display)
+  const adx = calcADX(history);
+
+  // Momentum — for display
+  const mom1m = n >= 21 ? (current / closes[n - 21] - 1) * 100 : null;
+  const mom3m = n >= 63 ? (current / closes[n - 63] - 1) * 100 : null;
+  const mom6m = n >= 126 ? (current / closes[n - 126] - 1) * 100 : null;
+
+  // ATR
+  const atr = calcATR(history);
+  const atrPct = atr ? (atr / current * 100) : 0;
+
+  // Supertrend (for chart)
+  const st = history.length >= 15 ? calcSupertrend(history) : { trend: 0 };
+
+  // Donchian channel high (for chart)
+  const dPeriod = Math.min(55, Math.max(20, n));
+  const donchianHigh = Math.max(...history.slice(-dPeriod).map(h=>h.high));
+
+  // Blended trend (for chart shading only)
+  const fast = n >= 21 ? (current / calcSMA(closes, 21) - 1) : 0;
+  const med = n >= 50 ? (current / calcSMA(closes, 50) - 1) : fast;
+  const slow = sma200 ? (current / sma200 - 1) : med;
+  const blended = fast * 0.2 + med * 0.4 + slow * 0.4;
+
+  // ══════════════════════════════════════════════════════════════════
+  // MONTHLY 2/3 VOTE EXIT ENGINE (backtested — "Exit 2/3, Enter 2/3")
+  //
+  // Three independent signals, evaluated at month-end only:
+  //   Vote A: Close > SMA200 (price level vs long-term trend)
+  //   Vote B: SMA50 > SMA200 (golden cross — trend structure)
+  //   Vote C: 12-month calendar momentum > 0 (absolute return)
+  //
+  // Exit rule:  votes < 2 → exit (lost majority)
+  // Entry rule: votes >= 2 → re-enter (regain majority — symmetric to avoid oscillation)
+  //
+  // Overbought trim: extension ≥ 8×ATR above trailing stop (one-time)
+  // Chandelier stop: HH55-3×ATR, internal only (for ATR extension calc)
+  // ══════════════════════════════════════════════════════════════════
+  const EX_ATR_PERIOD = 14;
+  const EX_M = 55;           // Chandelier HH lookback
+  const EX_K = 3.0;          // ATR multiplier
+  const EX_EXT_MULT = 8.0;   // overbought extension threshold
+  const EX_WARMUP = 252;     // 1 year warmup for 12M momentum
+
+  let atsStop = 0;
+  let atsBreached = false;
+  let atsFinalDir = 1;       // 1=holding, -1=exited
+  let exitType = null;        // 'trend' | null
+  let trimSignal = false;
+  let exitPoints = [];        // indices where exit triggered
+  let reEntryPoints = [];     // indices where re-entry triggered
+  let voteA = false, voteB = false, voteC = false; // current votes
+  let votes = 0;
+  let lastEvalDate = '';      // last month-end evaluated
+  let mom12m = null;           // 12M calendar momentum (set inside warmup block or fallback)
+
+  if (n >= EX_WARMUP) {
+    // Pre-compute daily ATR array (Wilder smoothing)
+    const atrArr = new Float64Array(n);
+    let seedSum = 0;
+    for (let i = 1; i <= EX_ATR_PERIOD; i++) {
+      seedSum += Math.max(history[i].high - history[i].low,
+        Math.abs(history[i].high - history[i-1].close),
+        Math.abs(history[i].low  - history[i-1].close));
+    }
+    atrArr[EX_ATR_PERIOD] = seedSum / EX_ATR_PERIOD;
+    for (let i = EX_ATR_PERIOD + 1; i < n; i++) {
+      const tr = Math.max(history[i].high - history[i].low,
+        Math.abs(history[i].high - history[i-1].close),
+        Math.abs(history[i].low  - history[i-1].close));
+      atrArr[i] = (atrArr[i-1] * (EX_ATR_PERIOD - 1) + tr) / EX_ATR_PERIOD;
+    }
+
+    // Pre-compute SMA200 array
+    const sma200Arr = new Float64Array(n);
+    { let rs = 0; for (let i = 0; i < n; i++) { rs += closes[i]; if (i >= 200) rs -= closes[i-200]; sma200Arr[i] = i >= 199 ? rs / 200 : 0; } }
+
+    // Pre-compute SMA50 array
+    const sma50Arr = new Float64Array(n);
+    { let rs = 0; for (let i = 0; i < n; i++) { rs += closes[i]; if (i >= 50) rs -= closes[i-50]; sma50Arr[i] = i >= 49 ? rs / 50 : 0; } }
+
+    // Month-end detection helper
+    const isMonthEnd = (t) => {
+      if (t >= n - 1) return true;
+      const d1 = history[t].date, d2 = history[t + 1].date;
+      return d1.getMonth() !== d2.getMonth();
+    };
+
+    // Calendar 12-month momentum at bar t
+    const mom12at = (t) => {
+      const targetDate = new Date(history[t].date);
+      targetDate.setMonth(targetDate.getMonth() - 12);
+      // Find closest bar to targetDate by scanning back
+      for (let j = Math.max(0, t - 280); j < t - 220; j++) {
+        if (j >= 0 && history[j].date >= targetDate) {
+          return (closes[t] / closes[j]) - 1;
+        }
+      }
+      // Fallback: use fixed ~252 bars
+      if (t >= 252) return (closes[t] / closes[t - 252]) - 1;
+      return null;
+    };
+
+    // Walk forward
+    let stop = closes[EX_WARMUP - 1] - EX_K * atrArr[EX_WARMUP - 1];
+    let inPosition = true; // assume holding at start
+    let trimmed = false;
+
+    for (let t = EX_WARMUP; t < n; t++) {
+      // Chandelier stop (ratchet up, for ATR extension calc)
+      const atr_prev = atrArr[t - 1];
+      let hh_prev = 0;
+      for (let j = Math.max(0, t - EX_M); j < t; j++) {
+        if (history[j].high > hh_prev) hh_prev = history[j].high;
+      }
+      const cand = hh_prev - EX_K * atr_prev;
+      if (inPosition) stop = Math.max(stop, cand);
+
+      // Overbought one-time trim check
+      if (inPosition && !trimmed && atr_prev > 0) {
+        const extension = (closes[t] - stop) / atr_prev;
+        if (extension >= EX_EXT_MULT) {
+          trimmed = true;
+          if (t === n - 1) trimSignal = true;
+        }
+      }
+
+      // Monthly vote evaluation
+      if (isMonthEnd(t)) {
+        const s200 = sma200Arr[t], s50 = sma50Arr[t];
+        const m12 = mom12at(t);
+
+        voteA = s200 > 0 && closes[t] > s200;
+        voteB = s50 > 0 && s200 > 0 && s50 > s200;
+        voteC = m12 != null && m12 > 0;
+        votes = (voteA ? 1 : 0) + (voteB ? 1 : 0) + (voteC ? 1 : 0);
+
+        const yr = history[t].date.getFullYear();
+        const mo = String(history[t].date.getMonth()+1).padStart(2,'0');
+        lastEvalDate = `${yr}-${mo}`;
+
+        // Symmetric: exit on <2, re-enter on >=2 (prevents oscillation at votes=1)
+        if (inPosition && votes < 2) {
+          inPosition = false;
+          exitPoints.push(t);
+          if (t === n - 1) exitType = 'trend';
+        } else if (!inPosition && votes >= 2) {
+          inPosition = true;
+          stop = closes[t] - EX_K * atrArr[t];
+          trimmed = false;
+          reEntryPoints.push(t);
+        }
+      }
+    }
+
+    atsStop = stop;
+    atsFinalDir = inPosition ? 1 : -1;
+    atsBreached = !inPosition;
+
+    // 12M calendar momentum for display — same method as vote engine (inside scope of mom12at)
+    const m12raw = mom12at(n - 1);
+    if (m12raw != null) mom12m = m12raw * 100;
+  }
+
+  // Reference: 55-day highest high for display
+  const hh55 = n >= EX_M ? Math.max(...history.slice(-EX_M).map(h => h.high)) : closes[n-1];
+
+  // Fallback for pre-warmup: use simple 252-bar momentum
+  if (mom12m == null && n >= 252) {
+    mom12m = (current / closes[n - 252] - 1) * 100;
+  }
+
+  // Build reasons from vote signals
+  const reasons = [];
+  if (n >= EX_WARMUP) {
+    reasons.push(voteA ? 'C > SMA200' : 'C < SMA200');
+    reasons.push(voteB ? 'Golden Cross' : 'Death Cross');
+    reasons.push(voteC ? '12M Mom ▲' : '12M Mom ▼');
+    if (trimSignal) reasons.push('Overbought trim');
+  } else {
+    reasons.push('Warming up');
+  }
+
+  // Signal determination — aligned with 2/3 exit engine
+  // 3/3 → STRONG BUY (all signals bullish)
+  // 2/3 → BUY (majority bullish, position held)
+  // 1/3 → SELL (lost majority — exit triggered under 2/3 rule)
+  // 0/3 → SELL (all bearish, exit triggered)
+  // Pre-warmup (<252 bars): insufficient data for vote engine → HOLD (no opinion)
+  const signal = (n >= EX_WARMUP)
+    ? (votes >= 3 ? 'STRONG BUY' : votes >= 2 ? 'BUY' : 'SELL')
+    : 'HOLD'; // pre-warmup: insufficient history, no vote possible
+
+  return {
+    score: votes, signal, reasons,
+    details: { sma20, sma50, sma200, adx, mom1m, mom3m, mom6m, mom12m, atr, atrPct, current, blended, supertrend: st.trend, donchianHigh, atsStop, atsBreached, atsFinalDir, hh55, exitType, trimSignal, voteA, voteB, voteC, votes, lastEvalDate, exitPoints, reEntryPoints },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TRADE PLAN CALCULATOR — shared by chart overlay + table
+//  Handles: trail breached, min stop floor, sensible R:R
+// ═══════════════════════════════════════════════════════════════
+function calcTradePlan(px, atr, atsStop, atsBreached, atsFinalDir, hh55, signal) {
+  if (!atr || atr <= 0 || signal === 'SELL') return null;
+
+  // ATR stop: ratcheting with direction flip
+  // breached = currently in short mode (dir === -1)
+  const activeStop = atsStop > 0 ? atsStop : px - 3 * atr;
+  const trailBreached = atsBreached;
+  const inShortMode = atsFinalDir === -1;
+
+  // Distance metrics (guard against negative when breached)
+  const riskAmt = Math.max(px - activeStop, 0);
+  const stopPct = riskAmt > 0 ? (riskAmt / px) * 100 : 0;
+  const drawdownFromHH = hh55 > 0 ? (1 - px / hh55) * 100 : 0;
+
+  // TP targets from current price
+  const tp1 = px + 3 * atr;
+  const tp2 = px + 6 * atr;
+
+  // Risk/reward
+  const rewardAmt = tp2 - px;
+  const rr = riskAmt > 0 ? Math.min(rewardAmt / riskAmt, 10) : 0;
+
+  // ATR extension above stop
+  const atrExt = atr > 0 ? riskAmt / atr : 0;
+
+  // Action recommendation
+  let action, actionCls;
+  if (trailBreached) {
+    action = 'ATR stop breached — exit or tighten';
+    actionCls = 'color:var(--r)';
+  } else if (signal === 'HOLD') {
+    action = 'Monitor — hold above stop';
+    actionCls = 'color:var(--t3)';
+  } else if (signal === 'STRONG BUY') {
+    action = 'Hold / add on dip to stop';
+    actionCls = 'color:var(--g)';
+  } else if (signal === 'BUY') {
+    action = 'Hold — trailing stop active';
+    actionCls = 'color:var(--g)';
+  } else {
+    action = 'Monitor';
+    actionCls = 'color:var(--t3)';
+  }
+
+  return { activeStop, trailBreached, tp1, tp2, riskAmt, rewardAmt, stopPct, rr, atrExt, hwm: hh55, drawdownFromHWM: drawdownFromHH, action, actionCls };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FORMATTING
+// ═══════════════════════════════════════════════════════════════
+const fmt = (n,d=0) => n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtSGD = n => 'S$'+fmt(n,0);
+const fmtPct = n => (n>=0?'+':'')+fmt(n,2)+'%';
+const fmtPL = (n,pre='S$') => (n>=0?'+':'-')+pre+fmt(Math.abs(n),0);
+
+const exchColors = {HKG:'#b91c1c',TSE:'#be185d',ARCA:'#1d4ed8',NMS:'#2563eb',NYS:'#4f46e5',LSE:'#6d28d9',SGX:'#047857'};
+const exchTags = {HKG:'tag-hk',TSE:'tag-jp',ARCA:'tag-us',NMS:'tag-us',NYS:'tag-us',LSE:'tag-gb',SGX:'tag-sg'};
+const regionMap = {HKG:'Asia Pacific',TSE:'Asia Pacific',ARCA:'United States',NMS:'United States',NYS:'United States',LSE:'Europe',SGX:'Singapore'};
+const regionColors = {'Asia Pacific':'#b91c1c','United States':'#1d4ed8','Europe':'#6d28d9','Singapore':'#047857'};
+const themeCats = {
+  'Singapore':['SG Broad Market','SG Banks','SG REITs','SG Industrials','SG Aviation','SG Infrastructure','SG PE Bond','SG Govt Bond','China Equity','Asia Climate/ESG','US Broad Market'],
+  'China & Asia':['China New Economy','China AI/Robotics','China Travel','China Tech','China AI/Search','China Mid-Cap','Asia ex-Japan Equity'],
+  'US & Developed':['US Tech','US EV/Tech','US Aerospace','US Hotels','US Energy','European Equity','Greece Equity','Japan Financials'],
+  'Commodities & Resources':['Gold Miners','Copper/Commodities','Rare Earth Minerals','Clean Energy'],
+  'Frontier & EM':['Argentina Equity']
+};
+const themeCatColors = {'Singapore':'#047857','China & Asia':'#b91c1c','US & Developed':'#1d4ed8','Commodities & Resources':'#b45309','Frontier & EM':'#059669'};
+
+// ═══════════════════════════════════════════════════════════════
+//  APPLICATION STATE
+// ═══════════════════════════════════════════════════════════════
+let state = {
+  positions: [],
+  liveData: {},
+  dataSource: 'snapshot', // 'snapshot' or 'live'
+  tab: 'positions',
+  sort: { col:'weight', dir:'desc' },
+  filter: 'ALL',
+  totalValueSGD: 0,
+  totalInvestedSGD: 0,
+  totalPnLSGD: 0,
+  totalPnLPct: 0,
+};
+
+function enrichAll() {
+  state.positions = POSITIONS.map(p => {
+    const live = state.liveData[p.yf];
+    let mktPrice, dayChange, dayChangePct, history, trendSignals;
+
+    // Get price and history from live data or snapshot
+    mktPrice = (live && live.price) ? live.price : (p.mktPriceSnap || SNAPSHOT[p.yf] || SNAPSHOT[p.ticker] || (p.invested ? p.invested / p.qty : 0));
+    dayChange = live ? (live.dayChange || 0) : 0;
+    dayChangePct = live ? (live.dayChangePct || 0) : 0;
+    history = (live && live.history && live.history.length >= 5) ? live.history : null;
+
+    // Compute trend signals
+    if (p.type === 'Bond') {
+      trendSignals = { score: 0, signal: '—', reasons: ['Bond'], details: {}, source: 'none' };
+    } else if (history && history.length >= 15) {
+      try {
+        trendSignals = calcTrendSignals(history);
+        trendSignals.source = 'live';
+      } catch(e) {
+        console.error('Signal calc error for', p.ticker, e);
+        trendSignals = { score: 0, signal: '—', reasons: ['Calc error: ' + (e.message||'').slice(0,40)], details: {}, source: 'error' };
+      }
+    } else {
+      // No usable history — provide "awaiting data" signal
+      trendSignals = { score: 0, signal: '—', reasons: ['Awaiting live data'], details: {}, source: 'none' };
+    }
+
+    const mktValue = mktPrice * p.qty;
+    const fxRate = FX[p.ccy] || 1;
+    const mktValueSGD = mktValue * fxRate;
+    const hasCost = p.invested != null && p.invested > 0;
+    const investedSGD = hasCost ? p.invested * fxRate : mktValueSGD;
+    const pnl = hasCost ? mktValue - p.invested : 0;
+    const pnlSGD = pnl * fxRate;
+    const pnlPct = hasCost && p.invested > 0 ? (pnl / p.invested) * 100 : 0;
+
+    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, history, trendSignals, hasCost };
+  });
+
+  state.totalValueSGD = state.positions.reduce((s,p) => s + p.mktValueSGD, 0);
+  state.totalInvestedSGD = state.positions.filter(p=>p.hasCost).reduce((s,p) => s + p.investedSGD, 0);
+  state.totalPnLSGD = state.positions.filter(p=>p.hasCost).reduce((s,p) => s + p.pnlSGD, 0);
+  state.totalPnLPct = state.totalInvestedSGD > 0 ? (state.totalPnLSGD / state.totalInvestedSGD) * 100 : 0;
+
+  state.positions.forEach(p => { p.weight = (p.mktValueSGD / state.totalValueSGD) * 100; });
+}
+
+// (removed calcSyntheticSignal — all signals now flow through calcTrendSignals)
+
+// ═══════════════════════════════════════════════════════════════
+//  STOCK CHART — Click-to-expand with SMA, Supertrend overlays
+// ═══════════════════════════════════════════════════════════════
+function renderStockChart(containerId, position) {
+  const h = position.history;
+  if (!h || h.length < 15) {
+    document.getElementById(containerId).innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3)">Insufficient price data for chart.</div>';
+    return;
+  }
+  const dates = h.map(d => d.date instanceof Date ? d.date.toISOString().slice(0,10) : d.date);
+  const closes = h.map(d=>d.close), highs = h.map(d=>d.high), lows = h.map(d=>d.low);
+  const opens = h.map(d=>d.open||d.close);
+  const n = closes.length;
+
+  // SMA (O(n) rolling)
+  const smaFn = (period) => {
+    if (n < period) return new Array(n).fill(null);
+    const out = new Array(n).fill(null); let s=0;
+    for(let i=0;i<period;i++) s+=closes[i]; out[period-1]=s/period;
+    for(let i=period;i<n;i++){s+=closes[i]-closes[i-period];out[i]=s/period;}
+    return out;
+  };
+  const sma50=smaFn(50), sma200=n>=200?smaFn(200):new Array(n).fill(null);
+
+  // 1Y view window
+  const ago=new Date();ago.setFullYear(ago.getFullYear()-1);
+  const xStart=ago.toISOString().slice(0,10);
+  // Add ~15 days padding after last data point so it's not clipped at edge
+  const lastDate=new Date(dates[n-1]); lastDate.setDate(lastDate.getDate()+15);
+  const xEnd=lastDate.toISOString().slice(0,10);
+  const vi=Math.max(0,dates.findIndex(d=>d>=xStart));
+
+  // Y-range from visible data
+  const det=position.trendSignals.details||{};
+  const va=[];
+  for(let i=vi;i<n;i++){va.push(highs[i],lows[i]);if(sma50[i])va.push(sma50[i]);if(sma200[i])va.push(sma200[i]);}
+  if(position.hasCost&&position.avgPrice)va.push(position.avgPrice);
+  let yMin=Math.min(...va), yMax=Math.max(...va);
+
+  // Trade plan (for ATR extension only)
+  const atr=det.atr||0;
+  const px=closes[n-1];
+  const isSell=position.trendSignals.signal==='SELL';
+  const plan=(!isSell&&atr>0)?calcTradePlan(px,atr,det.atsStop,det.atsBreached,det.atsFinalDir,det.hh55,position.trendSignals.signal):null;
+  const yPad=(yMax-yMin)*0.05;
+
+  // 200-SMA zone shading
+  const shapes=[];
+  let zs=null,za=null;
+  for(let i=0;i<n;i++){
+    const ab=sma200[i]!=null?closes[i]>sma200[i]:null;
+    if(ab!==null&&ab!==za){
+      if(zs!==null)shapes.push({type:'rect',xref:'x',yref:'paper',x0:dates[zs],x1:dates[i],y0:0,y1:1,fillcolor:za?'rgba(34,197,94,0.04)':'rgba(220,38,38,0.04)',line:{width:0},layer:'below'});
+      zs=i;za=ab;
+    }
+  }
+  if(zs!==null)shapes.push({type:'rect',xref:'x',yref:'paper',x0:dates[zs],x1:dates[n-1],y0:0,y1:1,fillcolor:za?'rgba(34,197,94,0.04)':'rgba(220,38,38,0.04)',line:{width:0},layer:'below'});
+
+  // No TP/SL shape lines — exit engine uses SMA composite + trim, not TP targets
+  const dp=px<10?3:2;
+
+  const sc=position.trendSignals.score;
+  const sig=position.trendSignals.signal;
+  const sigColor=sigCol(sig);
+
+  // TRACES — single y-axis, no subplots
+  const traces=[];
+  // Candlestick
+  traces.push({x:dates,open:opens,high:highs,low:lows,close:closes,type:'candlestick',name:'OHLC',
+    increasing:{line:{color:'#16a34a',width:1},fillcolor:'#22c55e'},
+    decreasing:{line:{color:'#dc2626',width:1},fillcolor:'#ef4444'},
+    whiskerwidth:0.4});
+  // SMA 50
+  traces.push({x:dates,y:sma50,type:'scatter',mode:'lines',name:'50-MA',
+    line:{color:'#f59e0b',width:2.5},connectgaps:false,hovertemplate:'50-MA: %{y:.2f}<extra></extra>'});
+  // SMA 200 — pink/magenta dashed, the key trend exit reference
+  traces.push({x:dates,y:sma200,type:'scatter',mode:'lines',name:'200-MA',
+    line:{color:'#e879a0',width:2.5,dash:'dashdot'},connectgaps:false,hovertemplate:'200-MA: %{y:.2f}<extra></extra>'});
+  // Historical exit points (monthly vote < 2/3)
+  const exitPts = det.exitPoints || [];
+  if (exitPts.length > 0) {
+    const exX=[], exY=[], exText=[];
+    for (const idx of exitPts) {
+      if (idx >= vi && idx < n) {
+        exX.push(dates[idx]);
+        exY.push(highs[idx] + (yMax-yMin)*0.03);
+        exText.push('EXIT');
+      }
+    }
+    if (exX.length > 0) {
+      traces.push({x:exX,y:exY,type:'scatter',mode:'markers+text',name:'Exit (vote<2/3)',
+        marker:{symbol:'triangle-down',size:12,color:'#dc2626',line:{width:1,color:'#991b1b'}},
+        text:exText,textposition:'top center',textfont:{size:8,color:'#dc2626',family:'DM Sans'},
+        hovertemplate:'Monthly vote < 2/3 — EXIT<extra></extra>'});
+    }
+  }
+  // Re-entry points (monthly vote >= 1/3)
+  const reEntryPts = det.reEntryPoints || [];
+  if (reEntryPts.length > 0) {
+    const reX=[], reY=[];
+    for (const idx of reEntryPts) {
+      if (idx >= vi && idx < n) {
+        reX.push(dates[idx]);
+        reY.push(lows[idx] - (yMax-yMin)*0.03);
+      }
+    }
+    if (reX.length > 0) {
+      traces.push({x:reX,y:reY,type:'scatter',mode:'markers',name:'Re-entry (vote≥1/3)',
+        marker:{symbol:'triangle-up',size:11,color:'#16a34a',line:{width:1,color:'#047857'}},
+        hovertemplate:'Monthly vote ≥ 1/3 — RE-ENTER<extra></extra>'});
+    }
+  }
+  // Avg cost
+  if(position.hasCost&&position.avgPrice)traces.push({x:[dates[0],dates[n-1]],y:[position.avgPrice,position.avgPrice],type:'scatter',mode:'lines',name:'Cost',line:{color:'#a855f7',width:1.5,dash:'longdash'},hoverinfo:'skip'});
+
+  // Annotations — all labels pushed to right margin, outside chart area
+  const annotations=[];
+  // Signal badge — anchored just inside right edge
+  annotations.push({x:1.0,y:closes[n-1],xref:'paper',yref:'y',text:'<b>'+sig+'</b> '+sc,showarrow:false,font:{size:10,color:'#fff',family:'DM Sans'},bgcolor:sigColor,borderpad:3,xanchor:'left',xshift:4});
+  // Cost label — left side of chart
+  if(position.hasCost&&position.avgPrice)annotations.push({x:dates[Math.max(0,vi+5)],y:position.avgPrice,text:'Cost '+position.avgPrice.toFixed(dp),showarrow:false,font:{size:9,color:'#a855f7',family:'DM Mono'},yshift:8});
+  // Right margin: vote status
+  if(isSell){
+    annotations.push({x:1.0,y:px,xref:'paper',yref:'y',text:'EXIT',showarrow:false,font:{size:10,color:'#fff',family:'DM Sans'},bgcolor:'#dc2626',borderpad:3,xanchor:'left',xshift:4});
+  } else if (det.votes != null && det.votes < 3) {
+    const vLabel = det.votes + '/3';
+    const vColor = det.votes >= 2 ? '#047857' : '#dc2626';
+    annotations.push({x:1.0,y:sma200[n-1]||px,xref:'paper',yref:'y',text:vLabel,showarrow:false,font:{size:9,color:vColor,family:'DM Mono',weight:700},xanchor:'left',xshift:4});
+  }
+
+  const layout={
+    margin:{t:6,b:32,l:8,r:100},
+    paper_bgcolor:'transparent',plot_bgcolor:'#fafaf8',
+    font:{family:'DM Sans',size:10,color:'#5c5c56'},
+    xaxis:{gridcolor:'#eeeee8',linecolor:'#d5d3ca',linewidth:1,showgrid:false,
+      tickformat:"%b '%y",dtick:'M2',tickfont:{size:9},range:[xStart,xEnd],
+      hoverformat:"%d %b '%y",
+      rangeslider:{visible:false}},
+    yaxis:{gridcolor:'#f0f0ea',linecolor:'#d5d3ca',linewidth:1,showgrid:true,gridwidth:1,
+      side:'right',tickfont:{size:9,family:'DM Mono'},range:[yMin-yPad,yMax+yPad],fixedrange:false},
+    shapes:shapes,annotations:annotations,
+    showlegend:true,legend:{x:0,y:1.02,orientation:'h',font:{size:9},bgcolor:'transparent'},
+    hovermode:'x unified',hoverlabel:{bgcolor:'#fff',bordercolor:'#d5d3ca',font:{size:10,family:'DM Sans'}},
+    dragmode:'zoom',
+  };
+  Plotly.newPlot(containerId,traces,layout,{displayModeBar:false,responsive:true,scrollZoom:true});
+}
+// Global chart state
+let expandedTicker = null;
+
+window.toggleChart = function(ticker) {
+  if (expandedTicker === ticker) {
+    // Collapse
+    const row = document.getElementById('chart-row-' + ticker.replace(/\./g,'_'));
+    if (row) row.remove();
+    document.querySelectorAll('.row-selected').forEach(r=>r.classList.remove('row-selected'));
+    expandedTicker = null;
+  } else {
+    // Collapse any existing
+    if (expandedTicker) {
+      const old = document.getElementById('chart-row-' + expandedTicker.replace(/\./g,'_'));
+      if (old) old.remove();
+      document.querySelectorAll('.row-selected').forEach(r=>r.classList.remove('row-selected'));
+    }
+    // Expand new
+    const pos = state.positions.find(p=>p.ticker===ticker);
+    if (!pos) return;
+    const clickedRow = document.getElementById('pos-row-' + ticker.replace(/\./g,'_'));
+    if (!clickedRow) return;
+    clickedRow.classList.add('row-selected');
+
+    const chartId = 'chart-' + ticker.replace(/\./g,'_');
+    const trId = 'chart-row-' + ticker.replace(/\./g,'_');
+    const d = pos.trendSignals.details;
+    const sc = pos.trendSignals.score;
+    const reasons = pos.trendSignals.reasons || [];
+    const sig2 = pos.trendSignals.signal;
+
+    const newRow = document.createElement('tr');
+    newRow.id = trId;
+    newRow.className = 'chart-row';
+    newRow.innerHTML = `<td colspan="9">
+      <div class="chart-panel">
+        <div class="chart-panel-head">
+          <div class="chart-panel-title">
+            <span>${pos.ticker}</span>
+            <span class="${sigCls(sig2)} signal">${sig2}</span>
+            <span style="font-size:11px;font-weight:600;color:${voteCol(d.votes||0)}">${voteLabel(d.votes||0)} votes</span>
+            <span style="font-size:11px;font-weight:400;color:var(--t3)">${pos.name} · ${pos.ccy}</span>
+          </div>
+          <span class="chart-panel-close" onclick="toggleChart('${ticker}')">✕</span>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+          ${reasons.map(r=>{
+            const isBull = r.includes('>') || r.includes('Golden') || r.includes('▲');
+            return `<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${isBull?'var(--g-bg)':'var(--r-bg)'};color:${isBull?'var(--g)':'var(--r)'}">${r}</span>`;
+          }).join('')}
+          ${d.adx!=null?`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2)">ADX: ${typeof d.adx==='number'?d.adx.toFixed(0):d.adx}</span>`:''}
+          ${d.atrPct?`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2)">ATR: ${d.atrPct.toFixed(1)}%</span>`:''}
+          ${d.supertrend?`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${d.supertrend===1?'var(--g-bg)':'var(--r-bg)'};color:${d.supertrend===1?'var(--g)':'var(--r)'}">ST: ${d.supertrend===1?'▲ Bull':'▼ Bear'}</span>`:''}
+        </div>
+        ${d.atr > 0 && pos.trendSignals.signal !== 'SELL' ? (() => {
+          const px = pos.mktPrice, atr = d.atr, dp = px < 10 ? 3 : 2;
+          const plan = calcTradePlan(px, atr, d.atsStop, d.atsBreached, d.atsFinalDir, d.hh55, pos.trendSignals.signal);
+          if (!plan) return '';
+          return `<div style="display:flex;gap:0;margin-bottom:8px;border-radius:6px;overflow:hidden;border:1px solid var(--bd);font-size:10px;font-family:var(--mono)">
+            <div style="flex:1;padding:6px 10px;background:rgba(37,99,235,0.04);border-right:1px solid var(--bd)">
+              <div style="color:var(--t4);font-size:9px;font-family:var(--sans);margin-bottom:2px">MONTHLY VOTE</div>
+              <div style="color:${(d.votes||0) >= 2 ? 'var(--g)' : 'var(--r)'};font-weight:700;font-size:13px">${d.votes||0}/3</div>
+              <div style="color:var(--t3);font-size:9px">${(d.votes||0) >= 2 ? 'HOLD — majority bullish' : 'EXIT — lost majority'}${d.lastEvalDate ? ' · ' + d.lastEvalDate : ''}</div>
+            </div>
+            <div style="flex:1;padding:6px 10px;background:rgba(245,158,11,0.04);border-right:1px solid var(--bd)">
+              <div style="color:var(--t4);font-size:9px;font-family:var(--sans);margin-bottom:2px">3 SIGNALS</div>
+              <div style="font-size:11px;line-height:1.7">
+                <span style="color:${d.voteA?'var(--g)':'var(--r)'}">●</span> C${d.voteA?'>':'<'}SMA200<br>
+                <span style="color:${d.voteB?'var(--g)':'var(--r)'}">●</span> ${d.voteB?'Golden':'Death'} Cross<br>
+                <span style="color:${d.voteC?'var(--g)':'var(--r)'}">●</span> 12M Mom ${d.mom12m!=null?(d.mom12m>=0?'+':'')+d.mom12m.toFixed(1)+'%':'N/A'}
+              </div>
+            </div>
+            <div style="flex:1;padding:6px 10px;background:rgba(124,58,237,0.04)">
+              <div style="color:var(--t4);font-size:9px;font-family:var(--sans);margin-bottom:2px">ATR EXTENSION</div>
+              <div style="color:${plan.atrExt >= 8 ? '#7c3aed' : plan.atrExt >= 4 ? 'var(--a)' : 'var(--t2)'};font-weight:700;font-size:13px">${plan.atrExt.toFixed(1)}× ATR</div>
+              <div style="color:var(--t3);font-size:9px">${plan.atrExt >= 8 ? 'TRIM signal' : plan.atrExt >= 4 ? 'Extended' : 'Normal'}</div>
+            </div>
+          </div>`;
+        })() : (d.atr > 0 && pos.trendSignals.signal === 'SELL' ? '<div style="margin-bottom:8px;padding:8px 12px;border-radius:6px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);font-size:12px;color:var(--r);font-weight:600">⚠ SELL signal — trend broken. Consider exit at market.</div>' : '')}
+        <div id="${chartId}" style="height:420px;border-radius:8px;overflow:hidden;border:1px solid var(--bd);background:#fafaf8"></div>
+        <div class="chart-panel-legend">
+          <span><span class="leg-dot" style="background:#22c55e;width:4px;height:8px"></span><span class="leg-dot" style="background:#ef4444;width:4px;height:8px"></span>OHLC</span>
+          <span><span class="leg-dot" style="background:#f59e0b;height:3px"></span>50-MA</span>
+          <span><span class="leg-dot" style="background:#e879a0;height:3px"></span>200-MA</span>
+          <span><span class="leg-dot" style="background:#dc2626;height:8px;width:8px;clip-path:polygon(50% 0%,0% 100%,100% 100%)"></span>Exit (vote&lt;2/3)</span>
+          <span><span class="leg-dot" style="background:#16a34a;height:8px;width:8px;clip-path:polygon(50% 100%,0% 0%,100% 0%)"></span>Re-entry (vote≥1/3)</span>
+          ${pos.hasCost?'<span><span class="leg-dot" style="background:#a855f7;height:2px"></span>Cost</span>':''}
+        </div>
+      </div>
+    </td>`;
+    clickedRow.after(newRow);
+    expandedTicker = ticker;
+
+    setTimeout(() => renderStockChart(chartId, pos), 50);
+  }
+};
+
+window.toggleSignalChart = function(ticker) {
+  const tableId = 'tradePlanTable';
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const safe = ticker.replace(/\./g,'_');
+  const existingChartRow = document.getElementById('sig-chart-row-' + safe);
+
+  if (signalExpandedTicker === ticker && existingChartRow) {
+    existingChartRow.remove();
+    signalExpandedTicker = null;
+    const srcRow = document.getElementById('tp-row-' + safe);
+    if (srcRow) srcRow.style.background = '';
+    return;
+  }
+  // Collapse any existing
+  if (signalExpandedTicker) {
+    const oldSafe = signalExpandedTicker.replace(/\./g,'_');
+    const old = document.getElementById('sig-chart-row-' + oldSafe);
+    if (old) old.remove();
+    const oldSrc = document.getElementById('tp-row-' + oldSafe);
+    if (oldSrc) oldSrc.style.background = '';
+  }
+
+  const pos = state.positions.find(p=>p.ticker===ticker);
+  if (!pos || !pos.history) return;
+  const clickedRow = document.getElementById('tp-row-' + safe);
+  if (clickedRow) clickedRow.style.background = 'var(--bg3)';
+
+  const chartId = 'sig-chart-' + safe;
+  const newRow = document.createElement('tr');
+  newRow.id = 'sig-chart-row-' + safe;
+  newRow.className = 'chart-row';
+  newRow.innerHTML = `<td colspan="12">
+    <div style="padding:12px 16px;background:var(--bg2);border-radius:0 0 8px 8px">
+      <div id="${chartId}" style="height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--bd);background:#fafaf8"></div>
+    </div>
+  </td>`;
+  clickedRow.after(newRow);
+  signalExpandedTicker = ticker;
+  setTimeout(() => renderStockChart(chartId, pos), 50);
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDERERS
+// ═══════════════════════════════════════════════════════════════
+function renderDate() {
+  document.getElementById('dateDisp').textContent = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+
+// Compute portfolio-level period P&L from position histories
+function calcPortfolioPeriodPnL(ps, tradingDaysBack) {
+  // For each position with history, find close N trading days ago and compute SGD P&L change
+  let totalNow = 0, totalThen = 0, count = 0;
+  for (const p of ps) {
+    if (!p.history || p.history.length < tradingDaysBack + 1) continue;
+    const n = p.history.length;
+    const closeNow = p.history[n - 1].close;
+    const closeThen = p.history[Math.max(0, n - 1 - tradingDaysBack)].close;
+    const valueSGDNow = closeNow * p.qty * (p.fxRate || 1);
+    const valueSGDThen = closeThen * p.qty * (p.fxRate || 1);
+    totalNow += valueSGDNow;
+    totalThen += valueSGDThen;
+    count++;
+  }
+  if (count === 0 || totalThen === 0) return { pnl: 0, pct: 0, count: 0 };
+  return { pnl: totalNow - totalThen, pct: ((totalNow - totalThen) / totalThen) * 100, count };
+}
+
+function renderKPIs() {
+  const ps = state.positions;
+  const cdpPs = ps.filter(p=>p.account==='CDP');
+  const scPs = ps.filter(p=>p.account!=='CDP');
+  const cdpValue = cdpPs.reduce((s,p)=>s+p.mktValueSGD,0);
+  const scValue = scPs.reduce((s,p)=>s+p.mktValueSGD,0);
+  const votePs = ps.filter(p=>p.trendSignals && p.trendSignals.details && p.trendSignals.details.votes != null && p.type!=='Bond');
+  const voteFull = votePs.filter(p=>p.trendSignals.details.votes>=2).length;
+  const voteOut = votePs.filter(p=>p.trendSignals.details.votes<2).length;
+
+  // Period P&L: 1D ≈ 1 bar, 1W ≈ 5 bars, 1M ≈ 21 bars
+  const d1 = calcPortfolioPeriodPnL(ps, 1);
+  const w1 = calcPortfolioPeriodPnL(ps, 5);
+  const m1 = calcPortfolioPeriodPnL(ps, 21);
+
+  const pnlKpi = (label, data) => ({
+    label, value: fmtPL(data.pnl), sub: fmtPct(data.pct), cls: data.pnl >= 0 ? 'pos' : 'neg'
+  });
+
+  const kpis = [
+    { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), sub:`Brokerage ${fmtSGD(scValue)} · CDP ${fmtSGD(cdpValue)}` },
+    pnlKpi('1-Day P&L', d1),
+    pnlKpi('1-Week P&L', w1),
+    pnlKpi('1-Month P&L', m1),
+    { label:'Monthly Vote', value:`${voteFull}/${votePs.length} OK`, sub:`${voteFull} hold · ${voteOut} exit (<2/3)`, cls:voteOut>0?'neg':'pos' },
+    { label:'Positions', value:`${ps.length}`, sub:`${scPs.length} Brokerage · ${cdpPs.length} CDP` },
+  ];
+
+  document.getElementById('kpiStrip').innerHTML = kpis.map(k=>`
+    <div class="kpi">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-val ${k.cls||''}">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>
+  `).join('');
+}
+
+// ─── TAB: POSITIONS ──────────────────────
+function renderPositions(el) {
+  const isBond = p => p.type === 'Bond';
+  const allFiltered = state.filter === 'ALL' ? [...state.positions] :
+    state.positions.filter(p => regionMap[p.exchange]===state.filter);
+
+  // Split equities/ETFs/REITs from bonds
+  const equities = allFiltered.filter(p => !isBond(p));
+  const bonds = allFiltered.filter(p => isBond(p));
+
+  // Sort equities
+  const sortCol = state.sort.col;
+  const sortFn = (a,b) => {
+    let va = sortCol === 'trendScore' ? (a.trendSignals.details?.votes||0) : a[sortCol];
+    let vb = sortCol === 'trendScore' ? (b.trendSignals.details?.votes||0) : b[sortCol];
+    if(typeof va==='string'){va=va.toLowerCase();vb=vb.toLowerCase();}
+    if(va==null) va = -Infinity; if(vb==null) vb = -Infinity;
+    return state.sort.dir==='asc'?(va>vb?1:-1):(va<vb?1:-1);
+  };
+  equities.sort(sortFn);
+
+  const arrow = col => state.sort.col===col? `<span style="font-size:9px;margin-left:2px">${state.sort.dir==='asc'?'▲':'▼'}</span>` : '';
+  const fbtns = ['ALL','Singapore','Asia Pacific','United States','Europe'].map(f=>`<button class="fbtn ${state.filter===f?'active':''}" onclick="setFilter('${f}')">${f}</button>`).join('');
+
+  // ── Vote summary panel ──
+  const tradeable = state.positions.filter(p=>!isBond(p) && p.trendSignals && p.trendSignals.details);
+  const votePs = tradeable.filter(p => p.trendSignals.details.votes != null);
+  const v3 = votePs.filter(p=>p.trendSignals.details.votes>=3).length;
+  const v2 = votePs.filter(p=>p.trendSignals.details.votes===2).length;
+  const v1 = votePs.filter(p=>p.trendSignals.details.votes===1).length;
+  const v0 = votePs.filter(p=>p.trendSignals.details.votes===0).length;
+
+  const signalPanel = `
+    <div class="g3 mb" style="gap:12px">
+      <div class="card" style="border-left:3px solid var(--g)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Bullish (≥2/3 votes)</div>
+          <div style="font-size:20px;font-weight:700;color:var(--g)">${v3+v2} <span style="font-size:12px;font-weight:400;color:var(--t3)">positions</span></div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px">${v3>0?'<strong>3/3:</strong> '+votePs.filter(p=>p.trendSignals.details.votes>=3).map(p=>p.ticker).join(', '):''} ${v2>0?'<strong>2/3:</strong> '+votePs.filter(p=>p.trendSignals.details.votes===2).map(p=>p.ticker).join(', '):''}</div>
+        </div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--r)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Exit (<2/3 votes)</div>
+          <div style="font-size:20px;font-weight:700;color:${v0>0?'var(--r)':'#b45309'}">${v1+v0} <span style="font-size:12px;font-weight:400;color:var(--t3)">positions</span></div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px">${v1>0?'<strong>1/3:</strong> '+votePs.filter(p=>p.trendSignals.details.votes===1).map(p=>p.ticker).join(', ')+'  ':''} ${v0>0?'<strong>0/3:</strong> '+votePs.filter(p=>p.trendSignals.details.votes===0).map(p=>p.ticker).join(', '):''}</div>
+        </div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--b)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Portfolio Vote Health</div>
+          <div style="font-size:20px;font-weight:700;color:var(--b)">${v3+v2}/${votePs.length} <span style="font-size:12px;font-weight:400;color:var(--t3)">hold</span></div>
+          <div style="margin-top:6px;display:flex;gap:3px;height:6px;border-radius:3px;overflow:hidden">
+            ${v3>0?`<div style="flex:${v3};background:var(--g)"></div>`:''}
+            ${v2>0?`<div style="flex:${v2};background:#22a366"></div>`:''}
+            ${v1>0?`<div style="flex:${v1};background:#b45309"></div>`:''}
+            ${v0>0?`<div style="flex:${v0};background:var(--r)"></div>`:''}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ── Equity/ETF/REIT rows ──
+  const eqRows = equities.map(p => {
+    const plC = p.pnlPct>=0?'pos':'neg';
+    const dayC = p.dayChangePct>=0?'pos':'neg';
+    const barW = Math.min(p.weight/15*100,100);
+    const sc = p.trendSignals.score;
+    const sig2 = p.trendSignals.signal;
+    const sigLabel = sig2;
+    const ltvCls = p.availLTV>=60?'ltv-high':p.availLTV>0?'ltv-med':'ltv-none';
+    const acct = p.account==='CDP'?'CDP':'SC';
+    const d = p.trendSignals.details || {};
+    const v = d.votes != null ? d.votes : null;
+
+    // Compact P&L / signal column: show P&L if available, otherwise show vote
+    const actionCol = p.hasCost
+      ? `<span class="pl ${plC}" style="font-family:var(--mono);font-size:12px;font-weight:700">${fmtPct(p.pnlPct)}</span>`
+      : (v != null ? `<span style="font-family:var(--mono);font-size:12px;font-weight:700;color:${voteCol(v)}">${voteLabel(v)}</span>` : '<span style="color:var(--t4);font-size:10px">—</span>');
+
+    const safeId = p.ticker.replace(/\./g,'_');
+    const hasChart = p.history && p.history.length >= 15;
+
+    return `<tr id="pos-row-${safeId}" class="${hasChart?'clickable':''}" ${hasChart?`onclick="toggleChart('${p.ticker}')"`:''}  title="${hasChart?'Click for chart + signal analysis':'No chart data available'}">
+      <td><span class="tag ${exchTags[p.exchange]}">${p.exchange}</span><span style="font-size:8px;color:var(--t4);display:block">${acct}</span></td>
+      <td><strong>${p.ticker}</strong>${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px">📈</span>':''}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
+      <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
+      <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${p.dayChangePct!==0?`<br><span class="pl ${dayC}" style="font-size:9px">${fmtPct(p.dayChangePct)}</span>`:''}</td>
+      <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>
+      <td class="r">${actionCol}</td>
+      <td class="r" style="font-size:11px">${fmt(p.weight,1)}%<div class="bar-track" style="margin-top:3px;width:50px;display:inline-block"><div class="bar-fill" style="width:${barW}%;background:${exchColors[p.exchange]}"></div></div></td>
+      <td class="c"><span class="${sigCls(sig2)} signal">${sigLabel}</span>${v!=null?`<div style="margin-top:2px;font-size:9px;font-weight:600;color:${voteCol(v)}">${voteLabel(v)}</div>`:''}</td>
+      <td class="c"><span class="ltv-avail ${ltvCls}">${p.availLTV>0?p.availLTV+'%':'—'}</span></td>
+    </tr>`;
+  }).join('');
+
+  const totEq = equities.reduce((s,p)=>s+p.mktValueSGD,0);
+  const totBond = bonds.reduce((s,p)=>s+p.mktValueSGD,0);
+  const totAll = totEq + totBond;
+
+  // ── Bond rows (compact) ──
+  const bondSection = bonds.length > 0 ? `
+    <div class="card mb" style="margin-top:16px">
+      <div class="card-head">
+        <div class="card-title"><span class="indicator" style="background:var(--c)"></span>Bonds & Savings Bonds</div>
+        <div style="font-size:11px;color:var(--t2);font-weight:600">${fmtSGD(totBond)} · ${fmt(totBond/totAll*100,1)}% of portfolio</div>
+      </div>
+      <table class="tbl">
+        <thead><tr>
+          <th>Ticker</th><th>Name</th><th class="r">Qty / Face</th><th class="r">Value (SGD)</th><th class="r">Weight</th><th>Account</th>
+        </tr></thead>
+        <tbody>
+          ${bonds.map(p=>`<tr>
+            <td><strong>${p.ticker}</strong></td>
+            <td style="font-size:11px;color:var(--t2)">${p.name}</td>
+            <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
+            <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>
+            <td class="r" style="font-size:11px">${fmt(p.weight,1)}%</td>
+            <td><span style="font-size:10px;color:var(--t3)">CDP</span></td>
+          </tr>`).join('')}
+          <tr class="sum">
+            <td colspan="3">Total (${bonds.length} bonds)</td>
+            <td class="r" style="font-family:var(--mono);font-size:12px">${fmtSGD(totBond)}</td>
+            <td class="r" style="font-size:11px">${fmt(totBond/totAll*100,1)}%</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  el.innerHTML = `
+    ${signalPanel}
+    <div class="mb">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:0.8px">Equities, ETFs & REITs</div>
+        <div class="filters">${fbtns}</div>
+      </div>
+      <div class="card">
+        <div style="padding:8px 16px;background:var(--b-bg);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--b)">
+          <span style="font-size:14px">📈</span>
+          <span><strong>Tap any row</strong> to expand interactive price chart with SMA200, trend signals &amp; vote breakdown</span>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th>Exch</th>
+              <th class="sort-th" onclick="setSort('ticker')">Ticker${arrow('ticker')}</th>
+              <th class="r sort-th" onclick="setSort('qty')">Qty${arrow('qty')}</th>
+              <th class="r">Mkt Price</th>
+              <th class="r sort-th" onclick="setSort('mktValueSGD')">Value (SGD)${arrow('mktValueSGD')}</th>
+              <th class="r sort-th" onclick="setSort('pnlPct')">P&L / Score${arrow('pnlPct')}</th>
+              <th class="r sort-th" onclick="setSort('weight')">Weight${arrow('weight')}</th>
+              <th class="c sort-th" onclick="setSort('trendScore')">Signal${arrow('trendScore')}</th>
+              <th class="c">Avail LTV</th>
+            </tr></thead>
+            <tbody>
+              ${eqRows}
+              <tr class="sum">
+                <td colspan="4">Total (${equities.length} positions)</td>
+                <td class="r" style="font-family:var(--mono);font-size:12px">${fmtSGD(totEq)}</td>
+                <td></td>
+                <td class="r" style="font-size:11px">${fmt(totEq/totAll*100,1)}%</td>
+                <td></td><td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ${bondSection}
+    <div style="margin-top:8px;font-size:10px;color:var(--t4);display:flex;justify-content:space-between">
+      <span>Data: ${state.dataSource==='live'?'Yahoo Finance (live)':'Snapshot (14 Feb 2026)'} · FX: USD/SGD ${fmt(FX.USD,4)} · HKD/SGD ${fmt(FX.HKD,4)} · JPY/SGD ${fmt(FX.JPY,6)}</span>
+      <span>Brokerage = P&L shown · CDP = Trend score shown (no cost basis) · Bonds excluded from trend analysis</span>
+    </div>
+  `;
+}
+
+// ─── TAB: ALLOCATION ─────────────────────
+function renderAllocation(el) {
+  const ps = state.positions;
+  const byReg = {};
+  ps.forEach(p=>{const r=regionMap[p.exchange];if(!byReg[r])byReg[r]=[];byReg[r].push(p)});
+
+  const regionData = Object.entries(byReg).map(([r,arr])=>({label:r,value:arr.reduce((s,p)=>s+p.mktValueSGD,0),color:regionColors[r],pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100})).sort((a,b)=>b.value-a.value);
+
+  const themeData = Object.entries(themeCats).map(([cat,themes])=>{
+    const arr=ps.filter(p=>themes.includes(p.theme));
+    return {label:cat,value:arr.reduce((s,p)=>s+p.mktValueSGD,0),color:themeCatColors[cat],pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100,count:arr.length};
+  }).sort((a,b)=>b.value-a.value);
+
+  const byCcy={};
+  ps.forEach(p=>{if(!byCcy[p.ccy])byCcy[p.ccy]=[];byCcy[p.ccy].push(p)});
+  const ccyData = Object.entries(byCcy).map(([c,arr])=>({label:c,value:arr.reduce((s,p)=>s+p.mktValueSGD,0),pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100})).sort((a,b)=>b.value-a.value);
+  const ccyCol={HKD:'#b91c1c',JPY:'#be185d',USD:'#1d4ed8',SGD:'#047857'};
+
+  const sorted=[...ps].sort((a,b)=>b.mktValueSGD-a.mktValueSGD);
+
+  el.innerHTML = `
+    <div class="g2 mb">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:${regionColors['Asia Pacific']}"></span>Geographic Allocation</div></div>
+        <div class="card-body">${regionData.map(r=>`
+          <div class="alloc-row">
+            <div class="alloc-label">${r.label}</div>
+            <div class="alloc-bar"><div class="alloc-fill" style="width:${r.pct}%;background:${r.color};color:#fff">${r.pct>15?fmt(r.pct,1)+'%':''}</div></div>
+            <div class="alloc-val">${fmtSGD(r.value)}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Thematic Allocation</div></div>
+        <div class="card-body">${themeData.map(t=>`
+          <div class="alloc-row">
+            <div class="alloc-label">${t.label} <span style="font-size:9px;color:var(--t4)">(${t.count})</span></div>
+            <div class="alloc-bar"><div class="alloc-fill" style="width:${t.pct}%;background:${t.color};color:#fff">${t.pct>12?fmt(t.pct,1)+'%':''}</div></div>
+            <div class="alloc-val">${fmtSGD(t.value)}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="g3 mb">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--c)"></span>Currency Exposure</div></div>
+        <div class="card-body">${ccyData.map(c=>`
+          <div class="alloc-row">
+            <div class="alloc-label">${c.label}</div>
+            <div class="alloc-bar"><div class="alloc-fill" style="width:${c.pct}%;background:${ccyCol[c.label]||'#6b7280'};color:#fff">${c.pct>15?fmt(c.pct,1)+'%':''}</div></div>
+            <div class="alloc-val">${fmtSGD(c.value)}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--p)"></span>By Product Type</div></div>
+        <div class="card-body">
+          ${(() => {
+            const byType2 = {};
+            ps.forEach(p=>{const t=p.type||'Other';if(!byType2[t])byType2[t]=[];byType2[t].push(p)});
+            const typeColors = {ETF:'#2563eb',Stock:'#b91c1c',REIT:'#7c3aed',Bond:'#047857',Other:'#6b7280'};
+            return Object.entries(byType2).sort((a,b)=>b[1].reduce((s,p)=>s+p.mktValueSGD,0)-a[1].reduce((s,p)=>s+p.mktValueSGD,0)).map(([t,arr])=>{
+              const w=arr.reduce((s,p)=>s+p.weight,0);
+              return `<div class="alloc-row"><div class="alloc-label">${t} (${arr.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${w}%;background:${typeColors[t]||'#6b7280'};color:#fff">${w>8?fmt(w,1)+'%':''}</div></div><div class="alloc-val">${fmtSGD(arr.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>`;
+            }).join('');
+          })()}
+        </div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t1)"></span>By Account</div></div>
+        <div class="card-body">
+          ${(() => {
+            const scPs2=ps.filter(p=>p.account!=='CDP');
+            const cdpPs2=ps.filter(p=>p.account==='CDP');
+            const scW=scPs2.reduce((s,p)=>s+p.weight,0);
+            const cdpW=cdpPs2.reduce((s,p)=>s+p.weight,0);
+            return `
+              <div class="alloc-row"><div class="alloc-label">Brokerage (${scPs2.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${scW}%;background:#1d4ed8;color:#fff">${fmt(scW,1)}%</div></div><div class="alloc-val">${fmtSGD(scPs2.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>
+              <div class="alloc-row"><div class="alloc-label">CDP (${cdpPs2.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${cdpW}%;background:#047857;color:#fff">${fmt(cdpW,1)}%</div></div><div class="alloc-val">${fmtSGD(cdpPs2.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>
+            `;
+          })()}
+        </div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t1)"></span>Top 10 Concentration</div></div>
+        <div class="card-body">
+          ${sorted.slice(0,10).map((p,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--t4);width:14px">${i+1}</span>
+            <span style="font-size:11px;font-weight:600;width:65px">${p.ticker}</span>
+            <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${p.weight*3}%;background:${exchColors[p.exchange]}"></div></div>
+            <span style="font-family:var(--mono);font-size:11px;width:45px;text-align:right">${fmt(p.weight,1)}%</span>
+          </div>`).join('')}
+          <div style="margin-top:8px;font-size:10px;color:var(--t3)">
+            Top 5: <strong style="color:var(--t1)">${fmt(sorted.slice(0,5).reduce((s,p)=>s+p.weight,0),1)}%</strong> · HHI: <strong style="color:var(--t1)">${fmt(ps.reduce((s,p)=>s+Math.pow(p.weight,2),0),0)}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mb" id="allocChartWrap">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>Portfolio Composition — Treemap</div></div>
+        <div id="treemapChart" style="height:320px"></div>
+      </div>
+    </div>
+  `;
+
+  // Render treemap
+  setTimeout(()=>{
+    const labels = ps.map(p=>p.ticker);
+    const parents = ps.map(p=>regionMap[p.exchange]);
+    const values = ps.map(p=>p.mktValueSGD);
+    const colors = ps.map(p=>p.pnlPct>=0?`rgba(26,135,84,${Math.min(0.2+p.pnlPct/150,0.9)})`:`rgba(192,57,43,${Math.min(0.2+Math.abs(p.pnlPct)/100,0.9)})`);
+    const text = ps.map(p=>`${p.ticker}<br>${fmtPct(p.pnlPct)}<br>${fmt(p.weight,1)}%`);
+
+    const regions = [...new Set(parents)];
+    const allLabels = [...regions, ...labels];
+    const allParents = [...regions.map(()=>''), ...parents];
+    const allValues = [...regions.map(r=>0), ...values];
+    const allText = [...regions.map(r=>r), ...text];
+    const allColors = [...regions.map(r=>regionColors[r]||'#999'), ...colors];
+
+    Plotly.newPlot('treemapChart', [{
+      type:'treemap', labels:allLabels, parents:allParents, values:allValues,
+      text:allText, textinfo:'text', hovertemplate:'%{label}<br>%{text}<extra></extra>',
+      marker:{colors:allColors, line:{width:1,color:'#fff'}},
+      pathbar:{visible:false}
+    }], {
+      margin:{t:10,b:10,l:10,r:10}, paper_bgcolor:'transparent', plot_bgcolor:'transparent',
+      font:{family:'DM Sans',size:11,color:'#1a1a18'}
+    }, {displayModeBar:false,responsive:true});
+  },100);
+}
+
+// ─── TAB: PERFORMANCE ────────────────────
+function renderPerformance(el) {
+  const ps = state.positions;
+  const withCost = ps.filter(p=>p.hasCost && p.pnlPct !== 0);
+  const sorted=[...withCost].sort((a,b)=>b.pnlPct-a.pnlPct);
+  const pnlSorted=[...withCost].sort((a,b)=>b.pnlSGD-a.pnlSGD);
+  const maxPnl = withCost.length > 0 ? Math.max(...withCost.map(p=>Math.abs(p.pnlSGD))) : 1;
+
+  const byTheme={};
+  ps.forEach(p=>{if(!byTheme[p.theme])byTheme[p.theme]=[];byTheme[p.theme].push(p)});
+
+  el.innerHTML = `
+    <div class="g2 mb">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>Return Heatmap</div></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+            ${sorted.map(p=>{
+              const int = Math.min(Math.abs(p.pnlPct)/100,1);
+              const bg = p.pnlPct>=0?`rgba(26,135,84,${0.06+int*0.45})`:`rgba(192,57,43,${0.06+int*0.4})`;
+              const tc = int>0.4?(p.pnlPct>=0?'#fff':'#fff'):(p.pnlPct>=0?'var(--g)':'var(--r)');
+              return `<div class="hm" style="background:${bg}">
+                <div style="font-size:10px;font-weight:600;color:${tc}">${p.ticker}</div>
+                <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${tc}">${fmtPct(p.pnlPct)}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>P&L Contribution (SGD)</div></div>
+        <div class="card-body" style="max-height:400px;overflow-y:auto">
+          ${pnlSorted.map(p=>{
+            const bW=(Math.abs(p.pnlSGD)/maxPnl)*100;
+            const c=p.pnlSGD>=0?'var(--g)':'var(--r)';
+            return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd)">
+              <span style="font-size:10px;font-weight:600;width:65px;color:var(--t2)">${p.ticker}</span>
+              <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${bW}%;background:${c}"></div></div>
+              <span class="pl ${p.pnlSGD>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;width:65px;text-align:right">${fmtPL(p.pnlSGD)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="mb">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Performance by Theme</div></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">
+            ${Object.entries(byTheme).sort((a,b)=>{
+              const pa=a[1].reduce((s,p)=>s+p.pnlSGD,0), pb=b[1].reduce((s,p)=>s+p.pnlSGD,0);
+              return pb-pa;
+            }).map(([theme,arr])=>{
+              const tPnl=arr.reduce((s,p)=>s+p.pnlSGD,0);
+              const tInv=arr.reduce((s,p)=>s+p.investedSGD,0);
+              const tPct=tInv>0?(tPnl/tInv*100):0;
+              const cls=tPnl>=0?'pos':'neg';
+              return `<div style="background:var(--bg3);border-radius:8px;padding:14px;border:1px solid var(--bd)">
+                <div style="font-size:10px;color:var(--t3);margin-bottom:5px">${theme}</div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <span class="pl ${cls}" style="font-family:var(--mono);font-size:15px;font-weight:700">${fmtPL(tPnl)}</span>
+                  <span class="pl ${cls}" style="font-family:var(--mono);font-size:11px">${fmtPct(tPct)}</span>
+                </div>
+                <div style="font-size:10px;color:var(--t4);margin-top:5px">${arr.map(p=>p.ticker).join(', ')}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mb" id="perfChartWrap">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>P&L Distribution</div></div>
+        <div id="pnlDistChart" style="height:280px"></div>
+      </div>
+    </div>
+  `;
+
+  // P&L bar chart
+  setTimeout(()=>{
+    const s=[...withCost].sort((a,b)=>b.pnlPct-a.pnlPct);
+    Plotly.newPlot('pnlDistChart',[{
+      type:'bar', x:s.map(p=>p.ticker), y:s.map(p=>p.pnlPct),
+      marker:{color:s.map(p=>p.pnlPct>=0?'rgba(26,135,84,0.7)':'rgba(192,57,43,0.7)'),line:{width:0}},
+      text:s.map(p=>fmtPct(p.pnlPct)), textposition:'outside', textfont:{size:10,family:'DM Mono'}
+    }],{
+      margin:{t:20,b:50,l:50,r:20}, paper_bgcolor:'transparent', plot_bgcolor:'transparent',
+      font:{family:'DM Sans',size:11,color:'#5c5c56'},
+      xaxis:{tickangle:-45}, yaxis:{title:'Return %',gridcolor:'#e2e0d8',zerolinecolor:'#c0beb5'}
+    },{displayModeBar:false,responsive:true});
+  },100);
+}
+
+
+// Toggle chart in action alerts
+window.toggleActionChart = function(ticker, event) {
+  // Prevent clicking inside the chart from re-toggling
+  if (event) {
+    const tgt = event.target;
+    if (tgt.closest && tgt.closest('.action-chart-wrap')) return;
+  }
+  const safe = ticker.replace(/\./g,'_');
+  const placeholder = document.getElementById('action-chart-'+safe);
+  const arrow = document.getElementById('action-arrow-'+safe);
+  if (!placeholder) { console.error('No placeholder for', ticker); return; }
+
+  // If chart already rendered, toggle off
+  if (placeholder.style.display !== 'none' && placeholder.innerHTML.trim()) {
+    placeholder.innerHTML = '';
+    placeholder.style.display = 'none';
+    if (arrow) arrow.style.transform = '';
+    return;
+  }
+
+  // Show placeholder FIRST so it has dimensions
+  placeholder.style.display = 'block';
+  placeholder.style.padding = '4px 16px 16px 16px';
+  const plotId = 'action-plot-'+safe;
+  placeholder.innerHTML = '<div class="action-chart-wrap" onclick="event.stopPropagation()"><div id="'+plotId+'" style="height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--bd);background:#fafaf8"></div></div>';
+  if (arrow) arrow.style.transform = 'rotate(90deg)';
+
+  const pos = state.positions.find(p=>p.ticker===ticker);
+  if (!pos || !pos.history) {
+    document.getElementById(plotId).innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3)">No price data available for '+ticker+'</div>';
+    return;
+  }
+  // Use setTimeout to ensure DOM is painted before Plotly measures
+  setTimeout(() => {
+    try {
+      renderStockChart(plotId, pos);
+    } catch(e) {
+      console.error('Chart render error for', ticker, e);
+      document.getElementById(plotId).innerHTML = '<div style="padding:40px;text-align:center;color:var(--r)">Chart error: '+e.message+'</div>';
+    }
+  }, 100);
+};
+
+// ─── TAB: TREND SIGNALS ──────────────────
+let signalExpandedTicker = null;
+
+function renderSignals(el) {
+  const ps = [...state.positions].sort((a,b)=>(b.trendSignals.details?.votes||0)-(a.trendSignals.details?.votes||0));
+  const livePs = ps.filter(p => p.type !== 'Bond' && p.trendSignals.source === 'live' && (p.trendSignals.details||{}).atr > 0);
+
+  // === CLASSIFY POSITIONS INTO ACTION BUCKETS ===
+  const actionItems = [];
+  livePs.forEach(p => {
+    const ts = p.trendSignals, d = ts.details || {}, px = p.mktPrice;
+    const atr = d.atr || 0;
+    if (!atr) return;
+    const dp = px<10?3:2;
+
+    if (ts.signal === 'SELL') {
+      const d2 = ts.details || {};
+      actionItems.push({p, priority: 0, type: 'EXIT', color: 'var(--r)', bg: 'var(--r-bg2)',
+        headline: 'Monthly vote EXIT — 0/3 signals',
+        detail: `${d2.voteA?'✓':'✗'} C>SMA200, ${d2.voteB?'✓':'✗'} Golden Cross, ${d2.voteC?'✓':'✗'} 12M Mom`});
+      return;
+    }
+
+    // EXIT: 1/3 vote positions — already exited under symmetric 2/3 rule
+    if (ts.signal === 'SELL' && d.votes === 1) {
+      actionItems.push({p, priority: 1, type: 'EXIT', color: 'var(--r)', bg: 'var(--r-bg2)',
+        headline: `Monthly vote EXIT — 1/3 signals`,
+        detail: `${d.voteA?'✓':'✗'} C>SMA200, ${d.voteB?'✓':'✗'} Golden Cross, ${d.voteC?'✓':'✗'} 12M Mom · Re-entry at next month-end when votes ≥ 2`});
+    }
+
+    const plan = calcTradePlan(px, atr, d.atsStop, d.atsBreached, d.atsFinalDir, d.hh55, ts.signal);
+    if (!plan) return;
+
+    // ATR extension: how many ATRs above the active stop?
+    const atrAboveStop = atr > 0 ? (px - plan.activeStop) / atr : 0;
+
+    // (B) Monthly vote exit: votes < 2/3 at month-end
+    if (d.exitType === 'trend') {
+      actionItems.push({p, plan, priority: 1, type: 'TREND EXIT', color: '#b45309', bg: 'var(--a-bg)',
+        headline: `Monthly vote EXIT — ${d.votes||0}/3 signals bearish`,
+        detail: `Evaluated ${d.lastEvalDate || 'last month-end'}: ${d.voteA?'✓':'✗'} C>SMA200, ${d.voteB?'✓':'✗'} Golden Cross, ${d.voteC?'✓':'✗'} 12M Mom · Votes < 2 → exit`});
+    }
+
+    // (C) Overbought trim (one-time ≥8×ATR) or general extension warning (≥4×ATR)
+    if (d.trimSignal && !plan.trailBreached) {
+      actionItems.push({p, plan, priority: 2, atrExt: atrAboveStop, type: 'TRIM', color: '#7c3aed', bg: 'var(--p-bg)',
+        headline: `Overbought trim — ${fmt(atrAboveStop,1)}× ATR extension`,
+        detail: `Price ${fmt(px,dp)} is ≥8 ATRs above stop ${fmt(plan.activeStop,dp)} · Consider trimming 33% of position`});
+    } else if (atrAboveStop >= 4 && !plan.trailBreached && d.exitType !== 'trend') {
+      actionItems.push({p, plan, priority: 2, atrExt: atrAboveStop, type: 'EXTENDED', color: 'var(--p)', bg: 'var(--p-bg)',
+        headline: `${fmt(atrAboveStop,1)}× ATR above stop — consider trim`,
+        detail: `Price ${fmt(px,dp)} is ${fmt(atrAboveStop,1)} ATRs above trailing stop ${fmt(plan.activeStop,dp)}`});
+    }
+
+    // Store plan and extension for the full table
+    p._plan = plan;
+    p._atrExt = atrAboveStop;
+  });
+
+  // Collect positions with no action alerts (NIL)
+  const alertTickers = new Set(actionItems.map(a => a.p.ticker));
+  const nilPositions = livePs.filter(p => !alertTickers.has(p.ticker) && p.trendSignals && p.trendSignals.signal !== '—');
+
+  actionItems.sort((a,b) => a.priority - b.priority);
+
+  el.innerHTML = `
+    ${actionItems.length > 0 ? `
+    <div class="mb">
+      <div class="card" style="border-left:3px solid var(--r)">
+        <div class="card-head">
+          <div class="card-title"><span class="indicator" style="background:var(--r)"></span>Action Required — ${actionItems.length} Position${actionItems.length>1?'s':''}</div>
+          <div style="font-size:10px;color:var(--t3)">Exits (0/3 votes), cautions (1/3 — needs 2/3 to re-enter), trims (≥8× ATR), extensions (≥4× ATR)</div>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div style="padding:8px 16px;background:var(--b-bg);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--b)">
+            <span style="font-size:14px">📈</span>
+            <span><strong>Tap any row</strong> to expand interactive price chart with SMA200, trend signals &amp; vote breakdown</span>
+          </div>
+          ${actionItems.map((a,ai) => {
+            const ts = a.p.trendSignals;
+            const d = ts.details || {};
+            const sigC = sigCls(ts.signal);
+            const safe = a.p.ticker.replace(/\./g,'_');
+            const chartId = 'action-chart-'+safe;
+            const rowId = 'action-row-'+safe;
+
+            // Build reasoning based on alert type
+            let reasoning = '';
+            if (a.type === 'EXIT') {
+              const dp2 = a.p.mktPrice<10?3:2;
+              reasoning = `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,0.7);border-radius:6px;font-size:10px;line-height:1.6">
+                <div style="font-weight:600;margin-bottom:4px;color:var(--t1)">Why EXIT?</div>
+                <div style="color:var(--t2)">
+                  <strong>Monthly vote: ${d.votes||0}/3</strong> — majority lost at month-end<br>
+                  ${d.voteA ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} Close ${d.voteA?'above':'below'} SMA200<br>
+                  ${d.voteB ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} ${d.voteB?'Golden':'Death'} Cross (SMA50 vs SMA200)<br>
+                  ${d.voteC ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} 12-month momentum: ${d.mom12m!=null?(d.mom12m>=0?'+':'')+d.mom12m.toFixed(1)+'%':'N/A'}
+                </div>
+              </div>`;
+            } else if (a.type === 'TREND EXIT') {
+              const dp2 = a.p.mktPrice<10?3:2;
+              reasoning = `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,0.7);border-radius:6px;font-size:10px;line-height:1.6">
+                <div style="font-weight:600;margin-bottom:4px;color:var(--t1)">Why TREND EXIT?</div>
+                <div style="color:var(--t2)">
+                  <strong>Monthly vote: ${d.votes||0}/3 — exit triggered (need ≥2 to hold)</strong><br>
+                  ${d.voteA ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} Close vs SMA200: ${d.voteA ? 'Above' : 'Below'}<br>
+                  ${d.voteB ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} SMA Cross: ${d.voteB ? 'Golden' : 'Death'} cross<br>
+                  ${d.voteC ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} 12M Momentum: ${d.mom12m!=null?(d.mom12m>=0?'+':'')+d.mom12m.toFixed(1)+'%':'N/A'}<br>
+                  Evaluated at: ${d.lastEvalDate || 'month-end'}<br>
+                  <strong>Action:</strong> Majority of trend signals bearish. Consider full exit. Re-entry when votes ≥ 2/3 at month-end.
+                </div>
+              </div>`;
+            } else if (a.type === 'TRIM') {
+              const plan = a.plan;
+              reasoning = `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,0.7);border-radius:6px;font-size:10px;line-height:1.6">
+                <div style="font-weight:600;margin-bottom:4px;color:var(--t1)">Why TRIM?</div>
+                <div style="color:var(--t2)">
+                  Price is <strong>${a.atrExt.toFixed(1)}× ATR</strong> above the trailing stop — overbought extension.<br>
+                  Threshold: ≥8× ATR triggers a one-time 33% trim recommendation.<br>
+                  <strong>Action:</strong> Consider selling ~33% of position to lock in gains. One-time signal per trend cycle.
+                </div>
+              </div>`;
+            } else if (a.type === 'CAUTION') {
+              reasoning = `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,0.7);border-radius:6px;font-size:10px;line-height:1.6">
+                <div style="font-weight:600;margin-bottom:4px;color:#b45309">Why CAUTION?</div>
+                <div style="color:var(--t2)">
+                  <strong>Monthly vote: ${d.votes||0}/3 — below hold threshold (need ≥2)</strong><br>
+                  ${d.voteA ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} Close vs SMA200: ${d.voteA ? 'Above' : 'Below'}<br>
+                  ${d.voteB ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} SMA Cross: ${d.voteB ? 'Golden' : 'Death'} cross<br>
+                  ${d.voteC ? '<span style="color:var(--g)">✓</span>' : '<span style="color:var(--r)">✗</span>'} 12M Momentum: ${d.mom12m!=null?(d.mom12m>=0?'+':'')+d.mom12m.toFixed(1)+'%':'N/A'}<br>
+                  <strong>Status:</strong> Position exited under symmetric 2/3 rule. Re-entry when votes recover to ≥2/3 at next month-end.
+                </div>
+              </div>`;
+            } else if (a.type === 'EXTENDED') {
+              reasoning = `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,0.7);border-radius:6px;font-size:10px;line-height:1.6">
+                <div style="font-weight:600;margin-bottom:4px;color:var(--t1)">Why EXTENDED?</div>
+                <div style="color:var(--t2)">
+                  Price is <strong>${a.atrExt.toFixed(1)}× ATR</strong> above the trailing stop — significantly stretched.<br>
+                  A normal 1-ATR pullback only uses ${(100/a.atrExt).toFixed(0)}% of the cushion.<br>
+                  At ≥8× ATR the one-time TRIM signal fires (sell 33%).<br>
+                  <strong>Consider:</strong> Trim partial position to lock in gains.
+                </div>
+              </div>`;
+            }
+
+            return `<div id="${rowId}" style="border-bottom:1px solid var(--bd);background:${a.bg}">
+              <div style="display:flex;align-items:center;gap:16px;padding:14px 20px;cursor:pointer" onclick="toggleActionChart('${a.p.ticker}', event)">
+                <div style="min-width:100px"><strong style="font-size:13px">${a.p.ticker}</strong><br><span style="font-size:9px;color:var(--t3)">${a.p.name}</span><br><span class="${sigC} signal" style="font-size:9px">${ts.signal}</span></div>
+                <span style="padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;color:${a.color};background:white;border:1px solid ${a.color}">${a.type}</span>
+                <div style="flex:1">
+                  <div style="font-size:12px;font-weight:600;color:${a.color}">${a.headline}</div>
+                  <div style="font-size:10px;color:var(--t2);margin-top:2px">${a.detail}</div>
+                </div>
+                <div style="color:var(--t4);font-size:18px;transition:transform 0.2s" id="action-arrow-${safe}">▸</div>
+              </div>
+              ${reasoning}
+              <div id="${chartId}" style="display:none;padding:0 16px 16px 16px"></div>
+            </div>`;
+          }).join('')}
+          ${nilPositions.length > 0 ? `
+          <div style="border-top:2px solid var(--bd);padding:14px 20px;background:rgba(34,197,94,0.03)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <span style="font-size:14px;color:var(--g)">✓</span>
+              <strong style="font-size:11px;color:var(--g)">NIL — ${nilPositions.length} Position${nilPositions.length>1?'s':''} No Action Required</strong>
+            </div>
+            <table style="width:100%;font-size:10px;border-collapse:collapse">
+              <thead><tr style="border-bottom:1px solid var(--bd)">
+                <th style="text-align:left;padding:4px 8px;color:var(--t3);font-weight:600">Ticker</th>
+                <th style="text-align:center;padding:4px 8px;color:var(--t3);font-weight:600">Signal</th>
+                <th style="text-align:right;padding:4px 8px;color:var(--t3);font-weight:600">ATR Ext</th>
+                <th style="text-align:center;padding:4px 8px;color:var(--t3);font-weight:600">Vote</th>
+                <th style="text-align:left;padding:4px 8px;color:var(--t3);font-weight:600">Status</th>
+              </tr></thead>
+              <tbody>
+              ${nilPositions.sort((a,b)=>(b._atrExt||0)-(a._atrExt||0)).map(p => {
+                const sig3 = p.trendSignals.signal;
+                const ext = p._atrExt != null ? p._atrExt : 0;
+                const vt = (p.trendSignals.details||{}).votes;
+                const extLabel = ext >= 4 ? '<span style="color:var(--a);font-weight:600">'+ext.toFixed(1)+'×</span>' : '<span style="color:var(--t2)">'+ext.toFixed(1)+'×</span>';
+                const vlbl = vt >= 3 ? '<span style="color:var(--g)">3/3</span>' : vt >= 2 ? '<span style="color:#22a366">2/3</span>' : vt >= 1 ? '<span style="color:#b45309">1/3</span>' : '<span style="color:var(--r)">0/3</span>';
+                return `<tr style="border-bottom:1px solid rgba(0,0,0,0.04);cursor:pointer" onclick="toggleSignalChart('${p.ticker}')">
+                  <td style="padding:3px 8px"><strong>${p.ticker}</strong></td>
+                  <td style="padding:3px 8px;text-align:center"><span class="${sigCls(sig3)} signal" style="font-size:9px;padding:1px 5px">${sig3}</span></td>
+                  <td style="padding:3px 8px;text-align:right;font-family:var(--mono)">${extLabel}</td>
+                  <td style="padding:3px 8px;text-align:center;font-weight:600">${vlbl}</td>
+                  <td style="padding:3px 8px;color:var(--g)">Nil</td>
+                </tr>`;
+              }).join('')}
+              </tbody>
+            </table>
+          </div>` : ''}
+        </div>
+      </div>
+    </div>
+    ` : `
+    <div class="mb">
+      <div class="card" style="border-left:3px solid var(--g)">
+        <div class="card-body" style="padding:16px 20px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:20px">✓</span>
+          <div><strong style="color:var(--g)">No Action Required</strong><br><span style="font-size:11px;color:var(--t3)">All ${nilPositions.length} positions hold ≥2/3 monthly votes. No extreme ATR extensions.</span></div>
+        </div>
+      </div>
+    </div>
+    `}
+
+    <div class="mb">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="indicator" style="background:var(--b)"></span>Monthly Vote Dashboard — Exit 2/3, Enter 2/3</div>
+          <div style="font-size:10px;color:var(--t3)">Three independent signals evaluated at month-end · Click row for chart</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tbl" id="tradePlanTable">
+            <thead><tr>
+              <th>Ticker</th>
+              <th>Name</th>
+              <th class="c">Signal</th>
+              <th class="c">Vote</th>
+              <th class="c">C &gt; SMA200</th>
+              <th class="c">Golden Cross</th>
+              <th class="c">12M Mom</th>
+              <th class="r">Price</th>
+              <th class="r">ATR Ext</th>
+              <th>Last Eval</th>
+            </tr></thead>
+            <tbody>
+              ${livePs.sort((a,b)=>(b.trendSignals.details.votes||0)-(a.trendSignals.details.votes||0)).map(p => {
+                const ts = p.trendSignals, d = ts.details || {}, px = p.mktPrice;
+                const atr = d.atr || 0;
+                if (!atr) return '';
+                const dp = px<10?3:2;
+                const plan = p._plan || calcTradePlan(px, atr, d.atsStop, d.atsBreached, d.atsFinalDir, d.hh55, ts.signal);
+                const atrExt = p._atrExt || (plan && atr > 0 ? (px - plan.activeStop) / atr : 0);
+                const extColor = atrExt >= 4 ? 'var(--p)' : atrExt >= 3 ? 'var(--a)' : 'var(--t2)';
+                const isSell = ts.signal === 'SELL';
+                const v = d.votes != null ? d.votes : null;
+                const tick = '<span style="color:var(--g);font-weight:700">✓</span>';
+                const cross = '<span style="color:var(--r);font-weight:700">✗</span>';
+                const mom12Str = d.mom12m != null ? (d.mom12m >= 0 ? '+' : '') + d.mom12m.toFixed(1) + '%' : '—';
+
+                return `<tr style="cursor:pointer${isSell?';background:var(--r-bg)':''}" onclick="toggleSignalChart('${p.ticker}')">
+                  <td><strong>${p.ticker}</strong></td>
+                  <td style="font-size:10px;color:var(--t2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</td>
+                  <td class="c"><span class="${sigCls(ts.signal)} signal">${ts.signal}</span></td>
+                  <td class="c" style="font-size:13px;font-weight:700;color:${voteCol(v)}">${voteLabel(v)}</td>
+                  <td class="c">${d.voteA ? tick : cross} ${d.sma200 ? '<span style="font-size:9px;color:var(--t4)">' + fmt(d.current,dp) + ' vs ' + fmt(d.sma200,dp) + '</span>' : ''}</td>
+                  <td class="c">${d.voteB ? tick : cross} ${d.sma50 && d.sma200 ? '<span style="font-size:9px;color:var(--t4)">' + fmt(d.sma50,dp) + ' vs ' + fmt(d.sma200,dp) + '</span>' : ''}</td>
+                  <td class="c">${d.voteC ? tick : cross} <span style="font-size:9px;color:${d.mom12m>=0?'var(--g)':'var(--r)'}">${mom12Str}</span></td>
+                  <td class="r" style="font-family:var(--mono);font-size:12px;font-weight:600">${fmt(px,dp)}</td>
+                  <td class="r" style="font-family:var(--mono);font-size:12px;font-weight:600;color:${extColor}">${plan?fmt(atrExt,1)+'×':'—'}</td>
+                  <td style="font-size:9px;color:var(--t4)">${d.lastEvalDate||'—'}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:10px 16px;border-top:1px solid var(--bd);font-size:10px;color:var(--t3);line-height:1.7">
+          <strong>Vote A:</strong> Close &gt; SMA200 (price vs trend) ·
+          <strong>Vote B:</strong> SMA50 &gt; SMA200 (golden cross = trend structure) ·
+          <strong>Vote C:</strong> 12-month calendar momentum &gt; 0 (absolute return) ·
+          <strong>Exit:</strong> votes &lt; 2 · <strong>Enter:</strong> votes ≥ 2 ·
+          <strong>ATR Ext</strong> = ATRs above HH55−3×ATR (≥8 = trim, ≥4 = extended)
+        </div>
+      </div>
+    </div>
+    <div class="mb">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="indicator" style="background:var(--b)"></span>Strategy Backtest — Portfolio Level</div>
+          <div style="font-size:10px;color:var(--t3)"><span style="color:#7c3aed;font-weight:600">Combined</span> (vote selection + crisis hedge) · <span style="color:#047857">Crisis Overlay</span> (25% during stress) · <span style="color:#2563eb">Monthly Vote 2/3</span> (per-stock exit/entry) · <span style="color:#6b7280">Buy & Hold</span> · Log scale</div>
+        </div>
+        <div id="backtestChart" style="height:340px;padding:8px 16px"></div>
+        <div id="backtestStats" style="padding:12px 16px;border-top:1px solid var(--bd)"></div>
+      </div>
+    </div>
+    <div class="g2 mb">
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>Exit/Entry Methodology</div></div>
+        <div class="card-body" style="font-size:12px">
+          <div style="font-size:11px;color:var(--t3);margin-bottom:12px">Monthly "Exit 2/3, Enter 2/3" — symmetric filter, backtested across portfolio. Evaluated last trading day of each month only (~12 decisions/year).</div>
+          <table class="tbl">
+            <thead><tr><th>Signal</th><th>Type</th><th>Logic</th><th>Independence</th></tr></thead>
+            <tbody>
+              <tr><td style="font-weight:600">Vote A: C &gt; SMA200</td><td style="color:#2563eb;font-size:10px">LEVEL</td><td style="color:var(--t2)">Price above 200-day moving average</td><td style="color:var(--t3);font-size:10px">Absolute price position</td></tr>
+              <tr><td style="font-weight:600">Vote B: SMA50 &gt; SMA200</td><td style="color:#047857;font-size:10px">CROSS</td><td style="color:var(--t2)">Golden cross — structural trend</td><td style="color:var(--t3);font-size:10px">Relative MA alignment</td></tr>
+              <tr><td style="font-weight:600">Vote C: 12M Mom &gt; 0</td><td style="color:#7c3aed;font-size:10px">MOMENTUM</td><td style="color:var(--t2)">Calendar 12-month return positive</td><td style="color:var(--t3);font-size:10px">Absolute return</td></tr>
+              <tr class="sum"><td colspan="2" style="font-weight:600">Exit: votes &lt; 2 · Enter: votes ≥ 2</td><td colspan="2" style="color:var(--t2)">Conservative exit (need majority) · Symmetric re-entry (regain majority)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Signal Summary</div></div>
+        <div class="card-body">
+          ${['STRONG BUY','BUY','HOLD','SELL'].map(sig=>{
+            const arr = ps.filter(p=>p.trendSignals.signal===sig);
+            return `<div style="padding:10px 0;border-bottom:1px solid var(--bd)">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <span class="${sigCls(sig)} signal">${sig}</span>
+                <span style="font-family:var(--mono);font-size:12px;font-weight:600">${arr.length}</span>
+              </div>
+              <div style="font-size:10px;color:var(--t3)">${arr.length>0?arr.map(p=>{
+                const v = (p.trendSignals.details||{}).votes;
+                return p.ticker + (v!=null?' <span style="color:'+voteCol(v)+'">'+voteLabel(v)+'</span>':'');
+              }).join(', '):'None'}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => runBacktest(ps), 100);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BACKTEST: CRISIS RISK OVERLAY (Triple Filter)
+//  Buy-and-hold by default. Reduces to 25% during systemic stress.
+//  Entry: ALL of >60% <SMA200 + 3M ret<-10% + >50% bearish ST
+//  Exit: ANY of <40% <SMA200 or 1M ret>+5% or >50% bullish ST
+// ═══════════════════════════════════════════════════════════════
+function runBacktest(positions) {
+  const chartEl = document.getElementById('backtestChart');
+  const statsEl = document.getElementById('backtestStats');
+  if (!chartEl || !statsEl) return;
+
+  const TC = 0.0020;
+  const eligible = positions.filter(p => p.type !== 'Bond' && p.history && p.history.length >= 80);
+  if (eligible.length < 3) {
+    statsEl.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:12px">Need ≥3 equity positions with data</div>';
+    return;
+  }
+  const N = eligible.length;
+  const stockCloses = eligible.map(p => p.history.map(h => h.close));
+
+  const stockSMA200 = eligible.map((p, j) => {
+    const cls = stockCloses[j], L = cls.length;
+    const sma = new Float64Array(L);
+    let sum = 0;
+    for (let i = 0; i < L; i++) {
+      sum += cls[i];
+      if (i >= 200) sum -= cls[i-200];
+      if (i >= 199) sma[i] = sum / 200;
+    }
+    return sma;
+  });
+
+  const stockSTDir = eligible.map((p, j) => {
+    const hist = p.history, L = hist.length;
+    const dir = new Int8Array(L);
+    if (L < 15) return dir;
+    const P=10, M=3;
+    let atr=0;
+    for(let i=1;i<=P;i++) atr+=Math.max(hist[i].high-hist[i].low,Math.abs(hist[i].high-hist[i-1].close),Math.abs(hist[i].low-hist[i-1].close));
+    atr/=P;
+    let ub=(hist[P].high+hist[P].low)/2+M*atr, lb=(hist[P].high+hist[P].low)/2-M*atr;
+    let tr=hist[P].close>(hist[P].high+hist[P].low)/2?1:-1;
+    dir[P]=tr;
+    for(let i=P+1;i<L;i++){
+      const ttr=Math.max(hist[i].high-hist[i].low,Math.abs(hist[i].high-hist[i-1].close),Math.abs(hist[i].low-hist[i-1].close));
+      atr=(atr*(P-1)+ttr)/P;
+      const hl2=(hist[i].high+hist[i].low)/2;
+      const nUb=hl2+M*atr,nLb=hl2-M*atr;
+      ub=(nUb<ub||hist[i-1].close>ub)?nUb:ub;
+      lb=(nLb>lb||hist[i-1].close<lb)?nLb:lb;
+      if(hist[i].close>ub)tr=1;else if(hist[i].close<lb)tr=-1;
+      dir[i]=tr;
+    }
+    return dir;
+  });
+
+  // Pre-compute SMA50 for monthly vote strategy
+  const stockSMA50 = eligible.map((p, j) => {
+    const cls = stockCloses[j], L = cls.length;
+    const sma = new Float64Array(L);
+    let sum = 0;
+    for (let i = 0; i < L; i++) {
+      sum += cls[i]; if (i >= 50) sum -= cls[i-50]; if (i >= 49) sma[i] = sum / 50;
+    }
+    return sma;
+  });
+
+  // Per-stock monthly vote state (for the "Exit 2/3, Enter 2/3" strategy)
+  // Start ALL stocks as IN — we already hold them. First month-end evaluation
+  // will exit any that fail the vote. This matches real portfolio behavior.
+  const stockVoteIn = new Array(N).fill(true);
+  // Track votes per stock for display
+  let stockVoteTrades = 0;
+
+  const allDatesSet = new Set();
+  eligible.forEach(p => p.history.forEach(h => {
+    allDatesSet.add(h.date instanceof Date ? h.date.toISOString().slice(0,10) : String(h.date));
+  }));
+  const allDatesSorted = [...allDatesSet].sort();
+  const stockByDate = eligible.map(p => {
+    const map = new Map();
+    p.history.forEach((h,i) => {
+      map.set(h.date instanceof Date ? h.date.toISOString().slice(0,10) : String(h.date), i);
+    });
+    return map;
+  });
+
+  const WARMUP = 50;
+  const dates=[], bhReturns=[], overlayReturns=[], voteReturns=[], combReturns=[];
+  const regimeHistory=[];
+  let totalTrades=0, crisisEvents=0;
+  let regime='NORMAL';
+  const portRetWindow=[];
+
+  // Track live crisis indicators for KPI display
+  let lastBreadth=0, lastRet3m=0, lastStBear=0;
+  let prevDateStr = '';
+
+  for (const dateStr of allDatesSorted) {
+    let bhSum=0, activeN=0;
+    const stockData=[];
+
+    // Detect month-end (date month changes vs next date)
+    const curMonth = dateStr.slice(0,7); // YYYY-MM
+    const prevMonth = prevDateStr.slice(0,7);
+    const isNewMonth = prevDateStr && curMonth !== prevMonth; // today is first day of new month = previous was month-end
+
+    for (let j=0;j<N;j++) {
+      const idx=stockByDate[j].get(dateStr);
+      if(idx==null||idx<WARMUP) continue;
+      const hist=eligible[j].history;
+      const dailyRet=hist[idx].close/hist[idx-1].close-1;
+      activeN++;
+      bhSum+=dailyRet;
+      stockData.push({j,idx,dailyRet});
+    }
+    if(activeN<3) { prevDateStr = dateStr; continue; }
+    const bhDayRet=bhSum/activeN;
+
+    // Monthly vote strategy: evaluate at month-end (= when we detect a new month)
+    let voteTCtoday = 0;
+    if (isNewMonth) {
+      for (const sd of stockData) {
+        const j = sd.j, idx = sd.idx;
+        const cls = stockCloses[j];
+        // Use previous bar's indicators (end of last month)
+        const prevIdx = idx - 1;
+        // Only need SMA200 ready (prevIdx >= 199) — don't require 252
+        if (prevIdx < 199) continue;
+        const s200 = stockSMA200[j][prevIdx];
+        const s50 = stockSMA50[j][prevIdx];
+
+        // 12M calendar momentum: use best available lookback
+        let mom12 = null;
+        if (prevIdx >= 252) {
+          mom12 = (cls[prevIdx] / cls[prevIdx - 252]) - 1;
+        } else if (prevIdx >= 200) {
+          // Use available lookback as proxy (shorter momentum)
+          mom12 = (cls[prevIdx] / cls[prevIdx - 200]) - 1;
+        }
+
+        // Count votes (2 always available once SMA200 ready, 3rd when momentum ready)
+        let v = 0, maxVotes = 2;
+        if (s200 > 0 && cls[prevIdx] > s200) v++;
+        if (s50 > 0 && s200 > 0 && s50 > s200) v++;
+        if (mom12 != null) {
+          maxVotes = 3;
+          if (mom12 > 0) v++;
+        }
+
+        // Symmetric: exit <2, re-enter >=2 (prevents oscillation at votes=1)
+        const exitThresh = maxVotes === 3 ? 2 : 2;
+        const prevIn = stockVoteIn[j];
+        if (stockVoteIn[j] && v < exitThresh) stockVoteIn[j] = false;
+        else if (!stockVoteIn[j] && v >= 2) stockVoteIn[j] = true;
+        if (prevIn !== stockVoteIn[j]) { stockVoteTrades++; voteTCtoday += TC; }
+      }
+    }
+
+    // Compute monthly vote portfolio return (equal-weighted, per-stock in/out)
+    let voteSum = 0, voteActive = 0;
+    for (const sd of stockData) {
+      voteActive++;
+      if (stockVoteIn[sd.j]) {
+        voteSum += sd.dailyRet;
+      }
+    }
+    const voteDayRet = voteActive > 0 ? voteSum / voteActive - voteTCtoday / Math.max(voteActive, 1) : 0;
+
+    portRetWindow.push(bhDayRet);
+    if(portRetWindow.length>63) portRetWindow.shift();
+    const ret3m=portRetWindow.length>=20?portRetWindow.reduce((c,r)=>c*(1+r),1)-1:0;
+    const ret1m=portRetWindow.length>=20?portRetWindow.slice(-20).reduce((c,r)=>c*(1+r),1)-1:0;
+
+    let belowSMA200=0,totalWithSMA=0,bearishST=0,bullishST=0,stTotal=0;
+    for(const sd of stockData){
+      const sma=stockSMA200[sd.j][sd.idx-1];
+      if(sma>0){totalWithSMA++;if(stockCloses[sd.j][sd.idx-1]<sma)belowSMA200++;}
+      stTotal++;
+      if(stockSTDir[sd.j][sd.idx-1]===-1)bearishST++;
+      if(stockSTDir[sd.j][sd.idx-1]===1)bullishST++;
+    }
+    const breadth=totalWithSMA>0?belowSMA200/totalWithSMA:0;
+    const stBear=stTotal>0?bearishST/stTotal:0;
+    const stBull=stTotal>0?bullishST/stTotal:0;
+
+    lastBreadth=breadth; lastRet3m=ret3m; lastStBear=stBear;
+
+    const prevRegime=regime;
+    if(regime==='NORMAL'){
+      if(breadth>0.60&&ret3m<-0.10&&stBear>0.50){regime='CRISIS';crisisEvents++;totalTrades+=2;}
+    } else {
+      if(breadth<0.40||ret1m>0.05||stBull>0.50) regime='NORMAL';
+    }
+    let dayRet=bhDayRet;
+    if(regime==='CRISIS') dayRet=bhDayRet*0.25+0.00016*0.75;
+    if(prevRegime!==regime) dayRet-=TC;
+
+    // Combined: Monthly Vote stock selection + Crisis Overlay macro hedge
+    let combDayRet = voteDayRet;
+    if(regime==='CRISIS') combDayRet = voteDayRet*0.25+0.00016*0.75;
+    if(prevRegime!==regime) combDayRet -= TC;
+
+    dates.push(dateStr);
+    bhReturns.push(bhDayRet);
+    overlayReturns.push(dayRet);
+    voteReturns.push(voteDayRet);
+    combReturns.push(combDayRet);
+    regimeHistory.push(regime);
+    prevDateStr = dateStr;
+  }
+
+  if(dates.length<20){statsEl.innerHTML='<div>Insufficient data</div>';return;}
+
+  // Store latest crisis indicators on state for KPI display
+  window._crisisIndicators = {
+    regime, breadth: lastBreadth, ret3m: lastRet3m, stBear: lastStBear,
+    crisisEvents, crisisDays: regimeHistory.filter(r=>r==='CRISIS').length,
+    totalDays: dates.length
+  };
+
+  let cumB=100, cumO=100, cumV=100, cumC=100;
+  const cB=[100], cO=[100], cV=[100], cC=[100];
+  for(let i=0;i<dates.length;i++){
+    cumB*=(1+bhReturns[i]);cumO*=(1+overlayReturns[i]);cumV*=(1+voteReturns[i]);cumC*=(1+combReturns[i]);
+    cB.push(cumB);cO.push(cumO);cV.push(cumV);cC.push(cumC);
+  }
+  const plotDates=[dates[0],...dates];
+
+  const d0=new Date(dates[0]),d1=new Date(dates[dates.length-1]);
+  const years=Math.max((d1-d0)/(365.25*86400000),0.5);
+  const totB=cumB-100, totO=cumO-100, totV=cumV-100, totC=cumC-100;
+  const annB=(Math.pow(cumB/100,1/years)-1)*100;
+  const annO=(Math.pow(cumO/100,1/years)-1)*100;
+  const annV=(Math.pow(cumV/100,1/years)-1)*100;
+  const annC=(Math.pow(cumC/100,1/years)-1)*100;
+  const meanB=bhReturns.reduce((a,b)=>a+b,0)/bhReturns.length;
+  const meanO=overlayReturns.reduce((a,b)=>a+b,0)/overlayReturns.length;
+  const meanV=voteReturns.reduce((a,b)=>a+b,0)/voteReturns.length;
+  const meanC=combReturns.reduce((a,b)=>a+b,0)/combReturns.length;
+  const bVol=Math.sqrt(bhReturns.reduce((s,r)=>s+(r-meanB)**2,0)/(bhReturns.length-1))*Math.sqrt(252)*100;
+  const oVol=Math.sqrt(overlayReturns.reduce((s,r)=>s+(r-meanO)**2,0)/(overlayReturns.length-1))*Math.sqrt(252)*100;
+  const vVol=Math.sqrt(voteReturns.reduce((s,r)=>s+(r-meanV)**2,0)/(voteReturns.length-1))*Math.sqrt(252)*100;
+  const cVol=Math.sqrt(combReturns.reduce((s,r)=>s+(r-meanC)**2,0)/(combReturns.length-1))*Math.sqrt(252)*100;
+  const maxDD=(cum)=>{let pk=cum[0],dd=0;for(const v of cum){if(v>pk)pk=v;dd=Math.min(dd,(v-pk)/pk*100);}return dd;};
+  const bDD=maxDD(cB), oDD=maxDD(cO), vDD=maxDD(cV), cDD=maxDD(cC);
+  const sharpeO=oVol>0?(annO-4)/oVol:0;
+  const sharpeB=bVol>0?(annB-4)/bVol:0;
+  const sharpeV=vVol>0?(annV-4)/vVol:0;
+  const sharpeC=cVol>0?(annC-4)/cVol:0;
+
+  const crisisDays=regimeHistory.filter(r=>r==='CRISIS').length;
+  const crisisPct=(crisisDays/dates.length*100).toFixed(0);
+
+  const shapes=[];
+  let inCr=false,crS='';
+  for(let i=0;i<regimeHistory.length;i++){
+    if(regimeHistory[i]==='CRISIS'&&!inCr){inCr=true;crS=dates[i];}
+    else if(regimeHistory[i]!=='CRISIS'&&inCr){inCr=false;shapes.push({type:'rect',xref:'x',yref:'paper',x0:crS,x1:dates[i],y0:0,y1:1,fillcolor:'rgba(220,38,38,0.08)',line:{width:0}});}
+  }
+  if(inCr) shapes.push({type:'rect',xref:'x',yref:'paper',x0:crS,x1:dates[dates.length-1],y0:0,y1:1,fillcolor:'rgba(220,38,38,0.08)',line:{width:0}});
+
+  const bI=cB.map(v=>+v.toFixed(1));
+  const oI=cO.map(v=>+v.toFixed(1));
+  const vI=cV.map(v=>+v.toFixed(1));
+  const cI=cC.map(v=>+v.toFixed(1));
+
+  Plotly.newPlot(chartEl,[
+    {x:plotDates,y:cI,type:'scatter',mode:'lines',name:'Combined (Vote + Crisis)',
+      line:{color:'#7c3aed',width:3},hovertemplate:'Combined: $%{y:,.0f}<extra></extra>'},
+    {x:plotDates,y:oI,type:'scatter',mode:'lines',name:'Crisis Overlay Only',
+      line:{color:'#047857',width:1.5,dash:'dot'},hovertemplate:'Overlay: $%{y:,.0f}<extra></extra>'},
+    {x:plotDates,y:vI,type:'scatter',mode:'lines',name:'Monthly Vote Only',
+      line:{color:'#2563eb',width:1.5,dash:'dot'},hovertemplate:'Vote: $%{y:,.0f}<extra></extra>'},
+    {x:plotDates,y:bI,type:'scatter',mode:'lines',name:'Buy & Hold',
+      line:{color:'#6b7280',width:1.5,dash:'dash'},hovertemplate:'B&H: $%{y:,.0f}<extra></extra>'},
+  ],{
+    margin:{t:10,b:32,l:55,r:20},
+    paper_bgcolor:'transparent',plot_bgcolor:'#fafaf8',
+    font:{family:'DM Sans',size:10,color:'#5c5c56'},
+    xaxis:{tickfont:{size:9},tickformat:"%b '%y",nticks:12},
+    yaxis:{title:'Growth of $100 (log)',titlefont:{size:10},type:'log',gridcolor:'#f0f0ea',tickfont:{size:9,family:'DM Mono'},zerolinecolor:'#d5d3ca',hoverformat:',.0f'},
+    legend:{x:0,y:1.1,orientation:'h',font:{size:10}},
+    hovermode:'x unified',
+    hoverlabel:{font:{family:'DM Mono',size:10}},
+    shapes:shapes,
+  },{displayModeBar:false,responsive:true});
+
+  statsEl.innerHTML=`
+    <div style="display:flex;gap:0;font-size:11px;font-family:var(--mono)">
+      <div style="flex:1.2;padding:8px 12px;border-right:1px solid var(--bd);background:rgba(124,58,237,0.04)">
+        <div style="font-family:var(--sans);color:#7c3aed;font-size:9px;margin-bottom:3px;font-weight:700">COMBINED (VOTE + CRISIS)</div>
+        <div style="font-size:16px;font-weight:700;color:${totC>=0?'#7c3aed':'var(--r)'}">${totC>=0?'+':''}${totC.toFixed(1)}%</div>
+        <div style="font-size:9px;color:var(--t4)">${annC.toFixed(1)}% ann · Sharpe ${sharpeC.toFixed(2)} · DD ${cDD.toFixed(1)}%</div>
+      </div>
+      <div style="flex:1;padding:8px 12px;border-right:1px solid var(--bd)">
+        <div style="font-family:var(--sans);color:var(--t4);font-size:9px;margin-bottom:3px">CRISIS ONLY</div>
+        <div style="font-size:14px;font-weight:700;color:${totO>=0?'var(--g)':'var(--r)'}">${totO>=0?'+':''}${totO.toFixed(1)}%</div>
+        <div style="font-size:9px;color:var(--t4)">${annO.toFixed(1)}% ann · Sharpe ${sharpeO.toFixed(2)} · DD ${oDD.toFixed(1)}%</div>
+      </div>
+      <div style="flex:1;padding:8px 12px;border-right:1px solid var(--bd)">
+        <div style="font-family:var(--sans);color:var(--t4);font-size:9px;margin-bottom:3px">VOTE ONLY</div>
+        <div style="font-size:14px;font-weight:700;color:${totV>=0?'#2563eb':'var(--r)'}">${totV>=0?'+':''}${totV.toFixed(1)}%</div>
+        <div style="font-size:9px;color:var(--t4)">${annV.toFixed(1)}% ann · Sharpe ${sharpeV.toFixed(2)} · DD ${vDD.toFixed(1)}% · ${stockVoteTrades} trades</div>
+      </div>
+      <div style="flex:1;padding:8px 12px;border-right:1px solid var(--bd)">
+        <div style="font-family:var(--sans);color:var(--t4);font-size:9px;margin-bottom:3px">BUY & HOLD</div>
+        <div style="font-size:14px;font-weight:700;color:${totB>=0?'var(--g)':'var(--r)'}">${totB>=0?'+':''}${totB.toFixed(1)}%</div>
+        <div style="font-size:9px;color:var(--t4)">${annB.toFixed(1)}% ann · Sharpe ${sharpeB.toFixed(2)} · DD ${bDD.toFixed(1)}%</div>
+      </div>
+      <div style="flex:0.8;padding:8px 12px;border-right:1px solid var(--bd)">
+        <div style="font-family:var(--sans);color:var(--t4);font-size:9px;margin-bottom:3px">VOLATILITY</div>
+        <div style="font-size:14px;font-weight:600">${cVol.toFixed(1)}%</div>
+        <div style="font-size:9px;color:var(--t4)">Vote ${vVol.toFixed(1)}% · B&H ${bVol.toFixed(1)}%</div>
+      </div>
+      <div style="flex:0.7;padding:8px 12px">
+        <div style="font-family:var(--sans);color:var(--t4);font-size:9px;margin-bottom:3px">CRISIS MODE</div>
+        <div style="font-size:14px;font-weight:600">${crisisEvents}×</div>
+        <div style="font-size:9px;color:var(--t4)">${crisisPct}% · ${crisisDays}d</div>
+      </div>
+    </div>
+    <div style="padding:8px 12px;font-size:10px;color:var(--t3);border-top:1px solid var(--bd)">
+      ${dates[0]} to ${dates[dates.length-1]} · ${years.toFixed(1)}y · ${dates.length} days · ${eligible.length} positions ·
+      <span style="color:#7c3aed;font-weight:600">Combined</span>: per-stock vote selection + crisis macro hedge ·
+      <span style="color:#047857">Crisis Overlay</span>: 25% exposure during systemic stress ·
+      <span style="color:#2563eb">Monthly Vote</span>: exit &lt;2/3, enter ≥2/3 ·
+      <span style="color:var(--r)">Red = crisis</span>
+    </div>
+  `;
+
+  // Update KPI crisis status after backtest completes
+  updateCrisisKPI();
+}
+
+// Live crisis status KPI (called after backtest computes indicators)
+function updateCrisisKPI() {
+  const ci = window._crisisIndicators;
+  if (!ci) return;
+  const el = document.getElementById('crisisKPI');
+  if (!el) return;
+  const breadthPct = ci.breadth * 100;
+  const ret3mPct = ci.ret3m * 100;
+  const stBearPct = ci.stBear * 100;
+
+  let metCount = 0;
+  if (ci.breadth > 0.60) metCount++;
+  if (ci.ret3m < -0.10) metCount++;
+  if (ci.stBear > 0.50) metCount++;
+
+  // Count indicators in amber zone (≥75% of threshold but not yet breached)
+  let amberCount = 0;
+  if (ci.breadth <= 0.60 && ci.breadth > 0.45) amberCount++; // 75% of 60%
+  if (ci.ret3m >= -0.10 && ci.ret3m < -0.075) amberCount++; // 75% of -10%
+  if (ci.stBear <= 0.50 && ci.stBear > 0.375) amberCount++; // 75% of 50%
+
+  // Status: CRISIS (3/3) > WARNING (2/3) > WATCH (1/3) > ELEVATED (0 met but amber) > ALL CLEAR
+  const statusColor = metCount >= 3 ? '#7f1d1d' : metCount === 2 ? '#dc2626' : metCount === 1 ? '#b45309' : amberCount > 0 ? '#92400e' : 'var(--g)';
+  const statusLabel = metCount >= 3 ? 'CRISIS' : metCount === 2 ? 'WARNING' : metCount === 1 ? 'WATCH' : amberCount > 0 ? 'ELEVATED' : 'ALL CLEAR';
+  const statusBg = metCount >= 3 ? 'var(--r-bg)' : metCount >= 1 ? 'var(--a-bg)' : amberCount > 0 ? 'rgba(251,191,36,0.08)' : 'var(--g-bg)';
+  const statusSub = metCount >= 3 ? `${metCount}/3 triggers met — exposure reduced to 25%`
+    : metCount > 0 ? `${metCount}/3 triggers met`
+    : amberCount > 0 ? `0/3 triggers met · ${amberCount} approaching threshold`
+    : '0/3 triggers met';
+
+  // SVG semicircle speed dial
+  // value: 0-1 (position on arc), thresh: 0-1 (threshold position), met: bool
+  const dial = (label, displayVal, threshLabel, value01, thresh01, met) => {
+    const cx = 70, cy = 60, r = 48;
+    // Arc from 180° (left) to 0° (right) — semicircle
+    const valAngle = Math.PI * (1 - Math.max(0, Math.min(1, value01)));
+    const thrAngle = Math.PI * (1 - Math.max(0, Math.min(1, thresh01)));
+
+    // Needle endpoint
+    const nx = cx + r * 0.85 * Math.cos(valAngle);
+    const ny = cy - r * 0.85 * Math.sin(valAngle);
+    // Threshold tick endpoints
+    const tx1 = cx + (r - 4) * Math.cos(thrAngle);
+    const ty1 = cy - (r - 4) * Math.sin(thrAngle);
+    const tx2 = cx + (r + 6) * Math.cos(thrAngle);
+    const ty2 = cy - (r + 6) * Math.sin(thrAngle);
+    // Threshold label position
+    const tlx = cx + (r + 16) * Math.cos(thrAngle);
+    const tly = cy - (r + 16) * Math.sin(thrAngle);
+
+    // Arc path helper
+    const arcPath = (startFrac, endFrac) => {
+      const a1 = Math.PI * (1 - startFrac), a2 = Math.PI * (1 - endFrac);
+      const x1 = cx + r * Math.cos(a1), y1 = cy - r * Math.sin(a1);
+      const x2 = cx + r * Math.cos(a2), y2 = cy - r * Math.sin(a2);
+      return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`;
+    };
+
+    const valColor = met ? '#dc2626' : value01 > thresh01 * 0.75 ? '#b45309' : '#047857';
+
+    return `<div style="text-align:center;flex:1">
+      <svg viewBox="0 0 140 78" style="width:100%;max-width:160px">
+        <!-- Background arc -->
+        <path d="${arcPath(0, 1)}" fill="none" stroke="#e8e6df" stroke-width="10" stroke-linecap="round"/>
+        <!-- Green zone: 0 to threshold -->
+        <path d="${arcPath(0, Math.min(thresh01 * 0.75, thresh01))}" fill="none" stroke="#bbf7d0" stroke-width="10" stroke-linecap="round"/>
+        <!-- Amber zone: near threshold -->
+        <path d="${arcPath(thresh01 * 0.75, thresh01)}" fill="none" stroke="#fde68a" stroke-width="10" stroke-linecap="round"/>
+        <!-- Red zone: beyond threshold -->
+        <path d="${arcPath(thresh01, 1)}" fill="none" stroke="#fecaca" stroke-width="10" stroke-linecap="round"/>
+        <!-- Threshold tick -->
+        <line x1="${tx1}" y1="${ty1}" x2="${tx2}" y2="${ty2}" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+        <text x="${tlx}" y="${tly}" text-anchor="middle" font-size="7" fill="#dc2626" font-family="var(--mono)" font-weight="600">${threshLabel}</text>
+        <!-- Needle -->
+        <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${valColor}" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="${cx}" cy="${cy}" r="4" fill="${valColor}"/>
+        <!-- Value text -->
+        <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="12" font-weight="700" fill="${valColor}" font-family="var(--mono)">${displayVal}</text>
+      </svg>
+      <div style="font-size:10px;color:var(--t2);margin-top:-2px">
+        <span style="color:${met?'var(--r)':'var(--g)'};font-weight:700">${met?'✗':'✓'}</span> ${label}
+      </div>
+    </div>`;
+  };
+
+  // Map each metric to 0-1 scale
+  // Breadth: 0-100% where 60% = threshold → thresh01 = 0.60
+  const breadthVal = breadthPct / 100;
+  // 3M Return: +20% (safe) to -15% (worst) → map to 0-1 where -10% = threshold
+  const ret3mVal = Math.max(0, Math.min(1, (20 - ret3mPct) / 35)); // 0 = +20%, 1 = -15%
+  const ret3mThresh = (20 + 10) / 35; // -10% maps to ~0.857
+  // Supertrend: 0-100% where 50% = threshold → thresh01 = 0.50
+  const stBearVal = stBearPct / 100;
+
+  el.innerHTML = `
+    <div class="card" style="border-left:3px solid ${statusColor}">
+      <div class="card-body" style="padding:12px 20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div>
+            <div style="font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.8px">Crisis Overlay Status</div>
+            <div style="font-size:18px;font-weight:700;color:${statusColor}">${statusLabel} <span style="font-size:11px;font-weight:500;color:var(--t3)">${statusSub}</span></div>
+          </div>
+          <span style="padding:4px 12px;border-radius:12px;font-size:10px;font-weight:600;background:${statusBg};color:${statusColor}">${ci.regime}</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;border-top:1px solid var(--bd);padding-top:8px">
+          ${dial('Breadth < SMA200', breadthPct.toFixed(0)+'%', '60%', breadthVal, 0.60, ci.breadth > 0.60)}
+          ${dial('3M Return', (ret3mPct >= 0 ? '+' : '') + ret3mPct.toFixed(1)+'%', '−10%', ret3mVal, ret3mThresh, ci.ret3m < -0.10)}
+          ${dial('Bear Supertrend', stBearPct.toFixed(0)+'%', '50%', stBearVal, 0.50, ci.stBear > 0.50)}
+        </div>
+        <div style="font-size:9px;color:var(--t4);margin-top:4px;border-top:1px solid var(--bd);padding-top:6px">
+          Crisis triggers when ALL 3 conditions met simultaneously · Recovery: ANY of &lt;40% breadth, 1M &gt;+5%, or &gt;50% bullish ST ·
+          <span style="color:var(--r)">${ci.crisisEvents} events</span> · ${ci.crisisDays}d in crisis (${(ci.crisisDays/ci.totalDays*100).toFixed(0)}%)
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── TAB: RISK ANALYSIS ──────────────────
+function renderRisk(el) {
+  const ps = state.positions;
+  const top3W=[...ps].sort((a,b)=>b.weight-a.weight).slice(0,3).reduce((s,p)=>s+p.weight,0);
+  const top5W=[...ps].sort((a,b)=>b.weight-a.weight).slice(0,5).reduce((s,p)=>s+p.weight,0);
+  const hhi=ps.reduce((s,p)=>s+Math.pow(p.weight,2),0);
+
+  const withLTV = ps.filter(p=>p.availLTV>0);
+  const totalAvailMargin = withLTV.reduce((s,p)=>s+p.mktValueSGD*p.availLTV/100,0);
+
+  const byReg={};
+  ps.forEach(p=>{const r=regionMap[p.exchange];if(!byReg[r])byReg[r]=[];byReg[r].push(p)});
+
+  const chinaThemes = ['China New Economy','China AI/Robotics','China Travel','China Tech','China AI/Search','China Mid-Cap'];
+  const chinaPs = ps.filter(p=>chinaThemes.includes(p.theme));
+  const chinaW = chinaPs.reduce((s,p)=>s+p.weight,0);
+
+  const singleNames = ps.filter(p=>p.type==='Stock');
+  const snW = singleNames.reduce((s,p)=>s+p.weight,0);
+
+  const scoreColor = s => s==='LOW'?'var(--g)':s==='MODERATE'?'var(--a)':'var(--r)';
+  const scoreBg = s => s==='LOW'?'var(--g-bg)':s==='MODERATE'?'var(--a-bg)':'var(--r-bg)';
+
+  const concScore = hhi<500?'LOW':hhi<800?'MODERATE':'HIGH';
+  const geoScore = Math.max(...Object.values(byReg).map(arr=>arr.reduce((s,p)=>s+p.weight,0)))>50?'HIGH':'MODERATE';
+  const chinaScore = chinaW>40?'HIGH':chinaW>25?'MODERATE':'LOW';
+
+  el.innerHTML = `
+    <div class="g3 mb">
+      ${[
+        {title:'Concentration Risk',score:concScore,items:[{l:'HHI Index',v:fmt(hhi,0)},{l:'Top 3 Weight',v:fmt(top3W,1)+'%'},{l:'Top 5 Weight',v:fmt(top5W,1)+'%'},{l:'Position Count',v:ps.length}]},
+        {title:'Geographic Risk',score:geoScore,items:Object.entries(byReg).map(([r,arr])=>({l:r,v:fmt(arr.reduce((s,p)=>s+p.weight,0),1)+'%'}))},
+        {title:'China Exposure',score:chinaScore,items:[{l:'China Weight',v:fmt(chinaW,1)+'%'},{l:'# China Positions',v:chinaPs.length},...chinaPs.sort((a,b)=>b.weight-a.weight).slice(0,3).map(p=>({l:p.ticker,v:fmt(p.weight,1)+'%'}))]},
+      ].map(card=>`
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">${card.title}</div>
+            <span style="padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;background:${scoreBg(card.score)};color:${scoreColor(card.score)}">${card.score}</span>
+          </div>
+          <div class="card-body">
+            ${card.items.map(m=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11px">
+              <span style="color:var(--t3)">${m.l}</span>
+              <span style="font-family:var(--mono);font-weight:600">${m.v}</span>
+            </div>`).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="g2 mb">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--c)"></span>Available Margin Facility</div></div>
+        <div class="card-body">
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">Total Available Margin</div>
+            <span style="font-size:24px;font-weight:700;color:var(--b)">${fmtSGD(totalAvailMargin)}</span>
+            <span style="font-size:11px;color:var(--t3);margin-left:8px">(${fmt(totalAvailMargin/state.totalValueSGD*100,1)}% of portfolio)</span>
+          </div>
+          <div style="font-size:10px;color:var(--t3);margin-bottom:10px;padding:8px;background:var(--bg3);border-radius:6px">
+            <strong>Note:</strong> Available LTV shows the margin facility offered by the broker for each position. This is borrowing capacity available — <em>not</em> leverage currently utilised.
+          </div>
+          ${withLTV.sort((a,b)=>b.mktValueSGD*b.availLTV-a.mktValueSGD*a.availLTV).map(p=>{
+            const avail = p.mktValueSGD * p.availLTV / 100;
+            const ltvCol = p.availLTV>=70?'var(--a)':p.availLTV>=60?'var(--c)':'var(--g)';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)">
+              <span style="font-size:11px;font-weight:600;width:65px">${p.ticker}</span>
+              <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${p.availLTV}%;background:${ltvCol}"></div></div>
+              <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${ltvCol};width:35px;text-align:right">${p.availLTV}%</span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--t3);width:70px;text-align:right">${fmtSGD(avail)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--p)"></span>Single-Name Risk</div></div>
+        <div class="card-body">
+          <div style="margin-bottom:12px">
+            <span style="font-size:22px;font-weight:700;color:var(--r)">${fmt(snW,1)}%</span>
+            <span style="font-size:11px;color:var(--t3);margin-left:8px">single-stock exposure (${singleNames.length} names)</span>
+          </div>
+          ${singleNames.sort((a,b)=>b.weight-a.weight).map(p=>`
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd)">
+              <span style="font-size:11px;font-weight:600;width:65px">${p.ticker}</span>
+              <span style="font-size:10px;color:var(--t3);flex:1">${p.name}</span>
+              <span style="font-family:var(--mono);font-size:11px;width:40px;text-align:right">${fmt(p.weight,1)}%</span>
+              <span class="pl ${p.pnlPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;width:55px;text-align:right">${fmtPct(p.pnlPct)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TAB CONTROLLER
+// ═══════════════════════════════════════════════════════════════
+// Track data version — increments when live data arrives
+let _dataVersion = 0;
+const _paneVersion = {}; // tracks which version each pane was rendered at
+
+function renderTab(forceAll) {
+  const tabs = ['positions','signals','allocation','performance','risk'];
+  // Show/hide panes
+  tabs.forEach(t => {
+    document.getElementById('pane-'+t).style.display = t === state.tab ? '' : 'none';
+  });
+  // Only render if data changed since last render of this pane, or forceAll
+  const pane = document.getElementById('pane-'+state.tab);
+  if (forceAll || _paneVersion[state.tab] !== _dataVersion) {
+    switch(state.tab) {
+      case 'positions': renderPositions(pane); break;
+      case 'allocation': renderAllocation(pane); break;
+      case 'performance': renderPerformance(pane); break;
+      case 'signals': renderSignals(pane); break;
+      case 'risk': renderRisk(pane); break;
+    }
+    _paneVersion[state.tab] = _dataVersion;
+  }
+}
+
+function invalidateAllPanes() {
+  _dataVersion++;
+  // Force re-render of current visible tab
+  _paneVersion[state.tab] = -1;
+  renderTab();
+}
+
+document.getElementById('tabBar').addEventListener('click', e => {
+  if (e.target.classList.contains('tab')) {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    e.target.classList.add('active');
+    state.tab = e.target.dataset.tab;
+    renderTab();
+  }
+});
+
+window.setFilter = f => { state.filter = f; _paneVersion[state.tab] = -1; renderTab(); };
+window.setSort = col => {
+  if (state.sort.col===col) state.sort.dir = state.sort.dir==='asc'?'desc':'asc';
+  else { state.sort.col=col; state.sort.dir='desc'; }
+  _paneVersion[state.tab] = -1; renderTab();
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT — Preload-aware: instant render from embedded data
+// ═══════════════════════════════════════════════════════════════
+
+function loadPreloadedData() {
+  // Convert PRELOADED_HISTORY into the liveData format used by enrichAll()
+  const results = {};
+  const preloadKeys = Object.keys(PRELOADED_HISTORY);
+  if (preloadKeys.length === 0) return null;
+
+  for (const sym of preloadKeys) {
+    const entry = PRELOADED_HISTORY[sym];
+    if (!entry) continue;
+    // FX entries (symbol contains '=')
+    if (sym.includes('=')) {
+      results[sym] = { price: entry.price, prevClose: entry.prevClose, dayChange: 0, dayChangePct: 0, history: [] };
+      continue;
+    }
+    results[sym] = {
+      price: entry.price,
+      prevClose: entry.prevClose,
+      dayChange: entry.price - (entry.prevClose || entry.price),
+      dayChangePct: entry.prevClose ? ((entry.price - entry.prevClose) / entry.prevClose) * 100 : 0,
+      history: historyToFull(entry.history || [])
+    };
+  }
+  // Update FX from preloaded
+  if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
+  if (results['JPYSGD=X']) FX.JPY = results['JPYSGD=X'].price;
+  if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
+  return results;
+}
+
+// Manual refresh — triggered by user clicking "Refresh" button
+window.refreshPrices = async function() {
+  const pill = document.getElementById('statusPill');
+  pill.className = 'pill pill-loading';
+  pill.textContent = '◌ REFRESHING';
+
+  // Restore the progress bar UI (init() may have overwritten it with the prompt banner)
+  const prog = document.getElementById('fetchProgress');
+  if (prog) {
+    prog.innerHTML = `<div style="padding:12px 18px;display:flex;align-items:center;gap:14px">
+      <div class="loading-spinner" style="width:18px;height:18px;border-width:2px;margin:0;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--t1)" id="fetchLabel">Refreshing live prices...</span>
+          <span style="font-size:11px;font-weight:600;color:var(--b);font-family:var(--mono)" id="fetchCount">0 / 0</span>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--bg4);overflow:hidden">
+          <div id="fetchBar" style="height:100%;border-radius:3px;background:var(--b);transition:width 0.3s ease;width:0%"></div>
+        </div>
+        <div style="font-size:10px;color:var(--t3);margin-top:4px" id="fetchDetail">Preparing fetch queue...</div>
+      </div>
+    </div>`;
+    prog.style.display = 'block';
+  }
+
+  try {
+    const liveData = await fetchAllPrices();
+    const liveCount = Object.keys(liveData).filter(k => !k.includes('=')).length;
+    if (liveCount > 0) {
+      state.liveData = liveData;
+      state.dataSource = 'live';
+      enrichAll();
+      renderKPIs();
+      invalidateAllPanes();
+      const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
+      pill.className = 'pill pill-live';
+      pill.textContent = `● ${sigCount} LIVE`;
+    } else {
+      pill.className = 'pill pill-date';
+      pill.textContent = '◌ NO DATA';
+    }
+    // Hide progress bar on completion
+    if (prog) prog.style.display = 'none';
+  } catch(e) {
+    pill.className = 'pill pill-date';
+    pill.textContent = '◌ REFRESH FAILED';
+    if (prog) prog.style.display = 'none';
+  }
+};
+
+async function init() {
+  renderDate();
+
+  const hasPreload = Object.keys(PRELOADED_HISTORY).length > 0;
+
+  if (hasPreload) {
+    // ── INSTANT PATH: Embedded data available ──
+    const preloaded = loadPreloadedData();
+    state.liveData = preloaded;
+    state.dataSource = 'preloaded';
+    enrichAll();
+    renderKPIs();
+    _dataVersion++;
+    renderTab();
+    document.getElementById('loadingOverlay').style.display = 'none';
+
+    const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
+    const pill = document.getElementById('statusPill');
+    pill.className = 'pill pill-live';
+    pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : `📊 ${sigCount} PRELOADED`;
+
+    // Show a subtle refresh prompt
+    const prog = document.getElementById('fetchProgress');
+    if (prog) {
+      prog.style.display = 'block';
+      prog.innerHTML = `<div style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:15px">📊</span>
+          <div>
+            <span style="font-size:12px;font-weight:600;color:var(--t1)">Showing preloaded data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''} — ${sigCount} signals computed</span>
+            <div style="font-size:10px;color:var(--t3);margin-top:2px">Charts, signals, and backtest are fully interactive. Refresh to fetch latest prices.</div>
+          </div>
+        </div>
+        <button onclick="refreshPrices()" style="padding:7px 18px;border-radius:20px;border:1px solid var(--b);background:var(--b-bg);color:var(--b);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:36px">↻ Refresh Prices</button>
+      </div>`;
+    }
+    return; // Done — no auto-fetch
+  }
+
+  // ── FETCH PATH: No preloaded data — fetch from Yahoo Finance ──
+  // First render with snapshot data immediately
+  enrichAll();
+  renderKPIs();
+  _dataVersion++;
+  renderTab();
+  document.getElementById('loadingOverlay').style.display = 'none';
+
+  // Then auto-fetch in background with progress bar
+  try {
+    document.getElementById('statusPill').className = 'pill pill-loading';
+    document.getElementById('statusPill').textContent = '◌ FETCHING';
+
+    const liveData = await fetchAllPrices();
+    const liveCount = Object.keys(liveData).filter(k => !k.includes('=')).length;
+    const withHistory = Object.values(liveData).filter(d => d.history && d.history.length >= 15).length;
+
+    if (liveCount > 0) {
+      state.liveData = liveData;
+      state.dataSource = liveCount >= 15 ? 'live' : 'partial';
+      enrichAll();
+      renderKPIs();
+      invalidateAllPanes();
+
+      const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
+      const pill = document.getElementById('statusPill');
+      if (sigCount >= 10) {
+        pill.className = 'pill pill-live';
+        pill.textContent = `● ${sigCount} SIGNALS`;
+      } else if (withHistory > 0) {
+        pill.className = 'pill pill-live';
+        pill.style.background = '#92400e';
+        pill.textContent = `◐ ${withHistory} CACHED`;
+      } else {
+        pill.className = 'pill pill-date';
+        pill.textContent = '◌ SNAPSHOT';
+      }
+    } else {
+      document.getElementById('statusPill').className = 'pill pill-date';
+      document.getElementById('statusPill').textContent = '◌ SNAPSHOT';
+    }
+  } catch(e) {
+    document.getElementById('statusPill').className = 'pill pill-date';
+    document.getElementById('statusPill').textContent = '◌ SNAPSHOT';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

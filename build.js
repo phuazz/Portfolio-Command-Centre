@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * build.js — Fetch historical price data and bake it into index.html
- * 
+ *
  * This script:
- *   1. Reads index.html and extracts all Yahoo Finance ticker symbols
+ *   1. Reads template.html and extracts all Yahoo Finance ticker symbols
  *   2. Fetches 3-year daily OHLC history for each ticker
  *   3. Fetches FX rates (HKDSGD, JPYSGD, USDSGD)
- *   4. Embeds the data as PRELOADED_HISTORY in the HTML
- *   5. Writes the baked file — loads instantly with zero network fetch
+ *   4. Injects the data at the /* __INJECT_DATA__ *\/ marker in the template
+ *   5. Writes the baked output to index.html at the repo root
  *
  * Usage:
  *   node build.js              # Bake data into index.html
@@ -19,7 +19,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const HTML_FILE = path.join(__dirname, 'index.html');
+const TEMPLATE_FILE = path.join(__dirname, 'template.html');
+const OUTPUT_FILE = path.join(__dirname, 'index.html');
+const INJECT_MARKER = '/* __INJECT_DATA__ */';
 const CONCURRENCY = 5;
 const DELAY_MS = 150;       // Polite delay between requests
 const RANGE = '10y';        // 10 years for full backtest support
@@ -126,12 +128,16 @@ async function main() {
   console.log('║  Portfolio Command Centre — Build Script   ║');
   console.log('╚════════════════════════════════════════════╝\n');
 
-  // Read HTML
-  if (!fs.existsSync(HTML_FILE)) {
-    console.error(`❌ ${HTML_FILE} not found. Run this script from the project directory.`);
+  // Read template
+  if (!fs.existsSync(TEMPLATE_FILE)) {
+    console.error(`❌ ${TEMPLATE_FILE} not found. Run this script from the project directory.`);
     process.exit(1);
   }
-  let html = fs.readFileSync(HTML_FILE, 'utf-8');
+  let html = fs.readFileSync(TEMPLATE_FILE, 'utf-8');
+  if (!html.includes(INJECT_MARKER)) {
+    console.error(`❌ Injection marker ${INJECT_MARKER} not found in template.html.`);
+    process.exit(1);
+  }
 
   // Extract symbols
   const symbols = extractSymbols(html);
@@ -174,18 +180,13 @@ async function main() {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-  // Inject into HTML
-  // Replace PRELOADED_HISTORY
-  html = html.replace(
-    /const PRELOADED_HISTORY = \{[^}]*\};/,
-    `const PRELOADED_HISTORY = ${jsonStr};`
-  );
-  
-  // Replace PRELOADED_DATE
-  html = html.replace(
-    /const PRELOADED_DATE = [^;]+;/,
-    `const PRELOADED_DATE = '${dateStr}';`
-  );
+  // Inject baked data block at the marker
+  const dataBlock = [
+    `const PRELOADED_HISTORY = ${jsonStr};`,
+    `// PRELOADED_DATE: set by build script to show data freshness`,
+    `const PRELOADED_DATE = '${dateStr}';`,
+  ].join('\n');
+  html = html.replace(INJECT_MARKER, dataBlock);
 
   // Update SNAPSHOT prices from fetched data (keep them in sync)
   for (const [sym, data] of Object.entries(allData)) {
@@ -199,9 +200,9 @@ async function main() {
   }
 
   // Write
-  fs.writeFileSync(HTML_FILE, html, 'utf-8');
+  fs.writeFileSync(OUTPUT_FILE, html, 'utf-8');
   const finalSize = (html.length / 1024).toFixed(0);
-  console.log(`\n✅ Baked into ${HTML_FILE} (${finalSize} KB)`);
+  console.log(`\n✅ Baked into ${OUTPUT_FILE} (${finalSize} KB)`);
   console.log(`   ${stockCount} tickers with ${totalBars.toLocaleString()} bars of history`);
   console.log(`   ${fxCount} FX rates`);
   console.log(`   Data as of: ${dateStr}`);
