@@ -1,0 +1,13 @@
+{
+  "name": "portfolio-command-centre",
+  "version": "1.0.0",
+  "description": "Single-page client-side portfolio dashboard with trend signals, crisis overlay, and backtests.",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "build:dry": "node build.js --dry-run"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
