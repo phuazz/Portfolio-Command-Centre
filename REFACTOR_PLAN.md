@@ -59,6 +59,8 @@ Rollback. `git revert` of the single commit is sufficient. No snapshot branch ne
 
 Dependencies. None. This is the entry point.
 
+Post-flight note (2026-04-17). Completed. Consolidated workflow `update.yml` ran green on manual dispatch (32 seconds). Live dashboard unaffected. Git index-lock issue on the Linux mount meant all git write operations (add, commit, push) had to run from Windows PowerShell rather than the sandbox — plan for this in future sessions. No follow-ups.
+
 ### Phase 1 — Extract `template.html` with injection marker (45–60 minutes)
 
 Scope. Create `template.html` as a copy of `index.html` with the `PRELOADED_HISTORY` and `PRELOADED_DATE` assignments replaced by a single marker comment such as `/* __INJECT_DATA__ */`. `index.html` itself is not yet deleted; it continues to be served from the repo root.
