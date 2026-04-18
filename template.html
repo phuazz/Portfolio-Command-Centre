@@ -438,12 +438,14 @@ const SNAPSHOT = {
 const FX = { HKD:0.1624, JPY:0.008240, USD:1.2672, SGD:1 };
 
 // ═══════════════════════════════════════════════════════════════
-//  PRELOADED HISTORY — Injected by build script for instant load
+//  PRELOADED HISTORY — Fetched at runtime from data/*.json
 //  Format: { "MSFT": { price, prevClose, history: [{d,c,o,h,l},...] }, ... }
-//  When populated, dashboard renders fully without any network fetch.
-//  Run: node build.js  — to fetch latest data and bake into HTML.
+//  Populated by bootstrap() below before init() runs. Build pipeline
+//  writes data/history.json + data/fx.json + data/meta.json; the client
+//  fetches them on page load with a visible loading state.
 // ═══════════════════════════════════════════════════════════════
-/* __INJECT_DATA__ */
+let PRELOADED_HISTORY = {};
+let PRELOADED_DATE = '';
 
 // ═══════════════════════════════════════════════════════════════
 //  LIVE DATA FETCHER — Cached + Incremental Updates
@@ -3005,15 +3007,25 @@ async function init() {
     return; // Done — no auto-fetch
   }
 
-  // ── FETCH PATH: No preloaded data — fetch from Yahoo Finance ──
-  // First render with snapshot data immediately
+  // ── FETCH PATH: No preloaded data — render from SNAPSHOT, then
+  //    on localhost only, auto-fetch live from Yahoo Finance.
+  //    Phase 2: data/*.json is the sole source of truth in production;
+  //    failure to load it means we serve SNAPSHOT and stop rather than
+  //    hammer public CORS proxies. The live-fetch fallback below is
+  //    retained as a local-dev convenience only.
   enrichAll();
   renderKPIs();
   _dataVersion++;
   renderTab();
   document.getElementById('loadingOverlay').style.display = 'none';
 
-  // Then auto-fetch in background with progress bar
+  if (!isLocalhost()) {
+    document.getElementById('statusPill').className = 'pill pill-date';
+    document.getElementById('statusPill').textContent = '◌ SNAPSHOT';
+    return;
+  }
+
+  // Then auto-fetch in background with progress bar (localhost dev only).
   try {
     document.getElementById('statusPill').className = 'pill pill-loading';
     document.getElementById('statusPill').textContent = '◌ FETCHING';
@@ -3052,7 +3064,51 @@ async function init() {
   }
 }
 
-init();
+// ═══════════════════════════════════════════════════════════════
+//  DATA BOOTSTRAP — Fetch baked data from data/*.json at startup
+//  Phase 2: the build pipeline writes data/history.json (stock OHLC),
+//  data/fx.json (FX rates) and data/meta.json (build date, ticker list)
+//  into the repo; the client fetches them here before init() runs.
+//  On localhost, if the three files are missing, init()'s live-fetch
+//  path takes over as a dev convenience. In production, missing data
+//  falls through to a SNAPSHOT render rather than any upstream call.
+// ═══════════════════════════════════════════════════════════════
+function isLocalhost() {
+  const h = location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '';
+}
+
+async function fetchDataFile(name) {
+  const resp = await fetch('data/' + name, { cache: 'default' });
+  if (!resp.ok) throw new Error(name + ' ' + resp.status);
+  return resp.json();
+}
+
+async function bootstrap() {
+  const pill = document.getElementById('statusPill');
+  if (pill) {
+    pill.className = 'pill pill-loading';
+    pill.textContent = '◌ LOADING DATA';
+  }
+
+  try {
+    const [hist, fx, meta] = await Promise.all([
+      fetchDataFile('history.json'),
+      fetchDataFile('fx.json'),
+      fetchDataFile('meta.json'),
+    ]);
+    PRELOADED_HISTORY = Object.assign({}, hist, fx);
+    PRELOADED_DATE = (meta && meta.date) ? meta.date : '';
+  } catch (e) {
+    console.warn('[bootstrap] data/*.json load failed:', e.message);
+    // Leave PRELOADED_HISTORY empty; init() will take the FETCH PATH,
+    // which is gated to localhost-only per the Phase 2 design.
+  }
+
+  await init();
+}
+
+bootstrap();
 </script>
 </body>
 </html>

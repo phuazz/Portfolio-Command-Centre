@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * build.js — Fetch historical price data and bake it into index.html
+ * build.js — Fetch historical price data and write it out for the dashboard.
  *
  * This script:
  *   1. Reads template.html and extracts all Yahoo Finance ticker symbols
- *   2. Fetches 3-year daily OHLC history for each ticker
+ *   2. Fetches 10-year daily OHLC history for each ticker
  *   3. Fetches FX rates (HKDSGD, JPYSGD, USDSGD)
- *   4. Injects the data at the /* __INJECT_DATA__ *\/ marker in the template
- *   5. Writes the baked output to index.html at the repo root
+ *   4. Writes data/history.json (stock OHLC), data/fx.json (FX rates)
+ *      and data/meta.json (build date, ticker list) for the client to fetch
+ *   5. Writes index.html as a straight copy of template.html at the repo root
+ *
+ * The client bootstraps by fetching the three data/*.json files on page load.
  *
  * Usage:
- *   node build.js              # Bake data into index.html
- *   node build.js --dry-run    # Fetch data but don't modify HTML
+ *   node build.js              # Write data/*.json and rebuild index.html
+ *   node build.js --dry-run    # Fetch data but don't write anything
  *
  * Requirements: Node.js 18+ (uses native fetch)
  */
@@ -21,7 +24,10 @@ const path = require('path');
 
 const TEMPLATE_FILE = path.join(__dirname, 'template.html');
 const OUTPUT_FILE = path.join(__dirname, 'index.html');
-const INJECT_MARKER = '/* __INJECT_DATA__ */';
+const DATA_DIR = path.join(__dirname, 'data');
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+const FX_FILE = path.join(DATA_DIR, 'fx.json');
+const META_FILE = path.join(DATA_DIR, 'meta.json');
 const CONCURRENCY = 5;
 const DELAY_MS = 150;       // Polite delay between requests
 const RANGE = '10y';        // 10 years for full backtest support
@@ -133,11 +139,7 @@ async function main() {
     console.error(`❌ ${TEMPLATE_FILE} not found. Run this script from the project directory.`);
     process.exit(1);
   }
-  let html = fs.readFileSync(TEMPLATE_FILE, 'utf-8');
-  if (!html.includes(INJECT_MARKER)) {
-    console.error(`❌ Injection marker ${INJECT_MARKER} not found in template.html.`);
-    process.exit(1);
-  }
+  const html = fs.readFileSync(TEMPLATE_FILE, 'utf-8');
 
   // Extract symbols
   const symbols = extractSymbols(html);
@@ -179,34 +181,44 @@ async function main() {
   // Build date string
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const isoDate = now.toISOString();
 
-  // Inject baked data block at the marker
-  const dataBlock = [
-    `const PRELOADED_HISTORY = ${jsonStr};`,
-    `// PRELOADED_DATE: set by build script to show data freshness`,
-    `const PRELOADED_DATE = '${dateStr}';`,
-  ].join('\n');
-  html = html.replace(INJECT_MARKER, dataBlock);
-
-  // Update SNAPSHOT prices from fetched data (keep them in sync)
-  for (const [sym, data] of Object.entries(allData)) {
-    if (!sym.includes('=') && data.price) {
-      // Update SNAPSHOT object values
-      const snapRegex = new RegExp(`'${sym.replace(/\./g, '\\.')}':([\\d.]+)`);
-      if (html.match(snapRegex)) {
-        html = html.replace(snapRegex, `'${sym}':${data.price}`);
-      }
-    }
+  // Ensure data/ exists
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  // Write
+  // Write data/history.json (stock OHLC only — FX goes to data/fx.json)
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(stockData), 'utf-8');
+
+  // Write data/fx.json (FX rates only)
+  fs.writeFileSync(FX_FILE, JSON.stringify(fxData), 'utf-8');
+
+  // Write data/meta.json (date, ticker list, generation timestamp)
+  const meta = {
+    date: dateStr,
+    generatedAt: isoDate,
+    tickers: Object.keys(stockData),
+    fxSymbols: Object.keys(fxData),
+    tickerCount: stockCount,
+    fxCount,
+    totalBars,
+  };
+  fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2), 'utf-8');
+
+  // Copy template.html → index.html at the repo root. The client fetches
+  // data/*.json on page load; no injection happens here in Phase 2.
   fs.writeFileSync(OUTPUT_FILE, html, 'utf-8');
-  const finalSize = (html.length / 1024).toFixed(0);
-  console.log(`\n✅ Baked into ${OUTPUT_FILE} (${finalSize} KB)`);
+
+  const histSizeKB = (fs.statSync(HISTORY_FILE).size / 1024).toFixed(0);
+  const fxSizeKB = (fs.statSync(FX_FILE).size / 1024).toFixed(1);
+  const htmlSizeKB = (html.length / 1024).toFixed(0);
+  console.log(`\n✅ Wrote data/history.json (${histSizeKB} KB), data/fx.json (${fxSizeKB} KB), data/meta.json`);
   console.log(`   ${stockCount} tickers with ${totalBars.toLocaleString()} bars of history`);
   console.log(`   ${fxCount} FX rates`);
   console.log(`   Data as of: ${dateStr}`);
-  console.log(`\n🚀 Ready to deploy: git add . && git commit -m "Bake ${dateStr}" && git push`);
+  console.log(`✅ Wrote ${OUTPUT_FILE} (${htmlSizeKB} KB, straight copy of template.html)`);
+  console.log(`\n🚀 Ready to deploy: git add index.html data/ && git commit -m "Bake ${dateStr}" && git push`);
 
   // Report failures
   const failed = symbols.filter(s => !stockData[s]);
