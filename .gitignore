@@ -3,3 +3,7 @@ node_modules/
 *.log
 .env
 .env.*
+
+# Regime library lives alongside PCC but is not part of it.
+# Consumers (including PCC) should read it as an external source.
+regime-library/
