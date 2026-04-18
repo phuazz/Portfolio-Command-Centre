@@ -41,7 +41,7 @@ const NOJEKYLL_FILE = path.join(DOCS_DIR, '.nojekyll');
 const CONCURRENCY = 5;
 const DELAY_MS = 150;       // Polite delay between requests
 const RANGE = '10y';        // 10 years for full backtest support
-const FX_SYMBOLS = ['HKDSGD=X', 'JPYSGD=X', 'USDSGD=X'];
+const FX_SYMBOLS = ['HKDSGD=X', 'JPYSGD=X', 'USDSGD=X', 'AUDSGD=X', 'EURSGD=X'];
 
 // ── Extract YF symbols from HTML ──
 function extractSymbols(html) {

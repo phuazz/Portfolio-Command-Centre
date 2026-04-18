@@ -355,68 +355,83 @@ const voteCol = v => v>=3?'var(--g)':v>=2?'#22a366':v>=1?'#b45309':'var(--r)';
 const voteLabel = v => v>=3?'3/3':v>=2?'2/3':v>=1?'1/3':'0/3';
 
 // ═══════════════════════════════════════════════════════════════
-//  STATIC PORTFOLIO DATA — Parsed from SC screenshots (14 Feb 2026)
+//  STATIC PORTFOLIO DATA — Parsed from SC statement (18 Apr 2026)
 // ═══════════════════════════════════════════════════════════════
 const POSITIONS = [
-  { ticker:'3010.HK', yf:'3010.HK', name:'iShares AXJ ETF', exchange:'HKG', ccy:'HKD', avgPrice:61.00, qty:2000, invested:122000, fee:0, availLTV:70, theme:'Asia ex-Japan Equity', type:'ETF' },
-  { ticker:'3173.HK', yf:'3173.HK', name:'PP CN New Economy ETF', exchange:'HKG', ccy:'HKD', avgPrice:7.50, qty:10000, invested:75000, fee:0, availLTV:0, theme:'China New Economy', type:'ETF' },
-  { ticker:'9660.HK', yf:'9660.HK', name:'Horizon Robotics', exchange:'HKG', ccy:'HKD', avgPrice:7.40, qty:5000, invested:37000, fee:0, availLTV:0, theme:'China AI/Robotics', type:'Stock' },
-  { ticker:'9961.HK', yf:'9961.HK', name:'Trip.com', exchange:'HKG', ccy:'HKD', avgPrice:320.00, qty:200, invested:64000, fee:0, availLTV:60, theme:'China Travel', type:'Stock' },
-  { ticker:'9988.HK', yf:'9988.HK', name:'Alibaba', exchange:'HKG', ccy:'HKD', avgPrice:108.00, qty:500, invested:54000, fee:0, availLTV:60, theme:'China Tech', type:'Stock' },
+  { ticker:'SGM.AU', yf:'SGM.AX', name:'Sims Ltd', exchange:'ASX', ccy:'AUD', avgPrice:18.6806, qty:600, invested:11208.36, fee:0, availLTV:60, theme:'Australia Metals Recycling', type:'Stock' },
 
-  { ticker:'1615.JP', yf:'1615.T', name:'TOPIX Banks ETF', exchange:'TSE', ccy:'JPY', avgPrice:384.00, qty:3000, invested:1152000, fee:0, availLTV:70, theme:'Japan Financials', type:'ETF' },
+  { ticker:'2338.HK', yf:'2338.HK', name:'Weichai Power H', exchange:'HKG', ccy:'HKD', avgPrice:32.6499, qty:2000, invested:65299.80, fee:0, availLTV:60, theme:'China Heavy Industry', type:'Stock' },
+  { ticker:'3010.HK', yf:'3010.HK', name:'iShares AXJ ETF', exchange:'HKG', ccy:'HKD', avgPrice:60.7377, qty:1600, invested:97180.32, fee:0, availLTV:70, theme:'Asia ex-Japan Equity', type:'ETF' },
+  { ticker:'3173.HK', yf:'3173.HK', name:'PP CN New Economy ETF', exchange:'HKG', ccy:'HKD', avgPrice:7.4000, qty:11750, invested:86950.00, fee:0, availLTV:0, theme:'China New Economy', type:'ETF' },
+  { ticker:'3750.HK', yf:'3750.HK', name:'CATL H', exchange:'HKG', ccy:'HKD', avgPrice:653.7001, qty:100, invested:65370.01, fee:0, availLTV:40, theme:'China EV Batteries', type:'Stock' },
+  { ticker:'700.HK', yf:'0700.HK', name:'Tencent', exchange:'HKG', ccy:'HKD', avgPrice:551.8495, qty:100, invested:55184.95, fee:0, availLTV:70, theme:'China Tech', type:'Stock' },
+  { ticker:'9961.HK', yf:'9961.HK', name:'Trip.com', exchange:'HKG', ccy:'HKD', avgPrice:318.9063, qty:150, invested:47835.95, fee:0, availLTV:60, theme:'China Travel', type:'Stock' },
+  { ticker:'9988.HK', yf:'9988.HK', name:'Alibaba', exchange:'HKG', ccy:'HKD', avgPrice:108.3638, qty:700, invested:75854.66, fee:0, availLTV:70, theme:'China Tech', type:'Stock' },
 
-  { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.00, qty:200, invested:15400, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
-  { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:66.00, qty:100, invested:6600, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
-  { ticker:'GREK.US', yf:'GREK', name:'Global X MSCI Greece', exchange:'ARCA', ccy:'USD', avgPrice:64.00, qty:100, invested:6400, fee:0, availLTV:70, theme:'Greece Equity', type:'ETF' },
-  { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:69.00, qty:100, invested:6900, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
-  { ticker:'TAN.US', yf:'TAN', name:'Invesco Solar ETF', exchange:'ARCA', ccy:'USD', avgPrice:49.00, qty:200, invested:9800, fee:0, availLTV:70, theme:'Clean Energy', type:'ETF' },
-  { ticker:'XLE.US', yf:'XLE', name:'Energy Select SPDR', exchange:'ARCA', ccy:'USD', avgPrice:47.00, qty:200, invested:9400, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
+  { ticker:'1615.JP', yf:'1615.T', name:'TOPIX Banks ETF', exchange:'TSE', ccy:'JPY', avgPrice:383.6613, qty:3000, invested:1150983.90, fee:0, availLTV:70, theme:'Japan Financials', type:'ETF' },
+  { ticker:'4004.JP', yf:'4004.T', name:'Resonac Holdings', exchange:'TSE', ccy:'JPY', avgPrice:10402.6300, qty:100, invested:1040263.00, fee:0, availLTV:50, theme:'Japan Chemicals', type:'Stock' },
 
-  { ticker:'BIDU.US', yf:'BIDU', name:'Baidu', exchange:'NMS', ccy:'USD', avgPrice:134.00, qty:50, invested:6700, fee:0, availLTV:60, theme:'China AI/Search', type:'Stock' },
-  { ticker:'MAR.US', yf:'MAR', name:'Marriott International', exchange:'NMS', ccy:'USD', avgPrice:295.00, qty:30, invested:8850, fee:0, availLTV:70, theme:'US Hotels', type:'Stock' },
-  { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:250.00, qty:30, invested:7500, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
-  { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.00, qty:20, invested:6860, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
+  { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.2402, qty:225, invested:17379.05, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
+  { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:79.4777, qty:210, invested:16690.32, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
+  { ticker:'EWZ.US', yf:'EWZ', name:'iShares MSCI Brazil', exchange:'ARCA', ccy:'USD', avgPrice:40.0872, qty:220, invested:8819.18, fee:0, availLTV:70, theme:'Brazil Equity', type:'ETF' },
+  { ticker:'GDX.US', yf:'GDX', name:'VanEck Gold Miners', exchange:'ARCA', ccy:'USD', avgPrice:82.8803, qty:100, invested:8288.03, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
+  { ticker:'NASA.US', yf:'NASA', name:'Tema Space Innovators', exchange:'ARCA', ccy:'USD', avgPrice:28.0811, qty:280, invested:7862.71, fee:0, availLTV:0, theme:'Space/Aerospace', type:'ETF' },
+  { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:68.9099, qty:150, invested:10336.48, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
+  { ticker:'SLV.US', yf:'SLV', name:'iShares Silver Trust', exchange:'ARCA', ccy:'USD', avgPrice:69.1704, qty:120, invested:8300.45, fee:0, availLTV:50, theme:'Silver/Precious Metals', type:'ETF' },
+  { ticker:'TAN.US', yf:'TAN', name:'Invesco Solar ETF', exchange:'ARCA', ccy:'USD', avgPrice:48.8964, qty:200, invested:9779.28, fee:0, availLTV:70, theme:'Clean Energy', type:'ETF' },
+  { ticker:'XHB.US', yf:'XHB', name:'SPDR S&P Homebuilders', exchange:'ARCA', ccy:'USD', avgPrice:118.7083, qty:80, invested:9496.66, fee:0, availLTV:70, theme:'US Housing', type:'ETF' },
+  { ticker:'XLE.US', yf:'XLE', name:'Energy Select SPDR', exchange:'ARCA', ccy:'USD', avgPrice:51.1463, qty:360, invested:18412.67, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
 
-  { ticker:'GE.US', yf:'GE', name:'GE Aerospace', exchange:'NYS', ccy:'USD', avgPrice:210.00, qty:50, invested:10500, fee:0, availLTV:70, theme:'US Aerospace', type:'Stock' },
+  { ticker:'IBIT.US', yf:'IBIT', name:'iShares Bitcoin ETF', exchange:'NMS', ccy:'USD', avgPrice:39.3155, qty:235, invested:9239.14, fee:0, availLTV:0, theme:'Crypto/Bitcoin', type:'ETF' },
+  { ticker:'INTC.US', yf:'INTC', name:'Intel', exchange:'NMS', ccy:'USD', avgPrice:46.9923, qty:200, invested:9398.46, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
+  { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:85.8046, qty:100, invested:8580.46, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
+  { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:249.6421, qty:30, invested:7489.26, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
+  { ticker:'MU.US', yf:'MU', name:'Micron Technology', exchange:'NMS', ccy:'USD', avgPrice:424.7240, qty:20, invested:8494.48, fee:0, availLTV:60, theme:'US Semis', type:'Stock' },
+  { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
-  { ticker:'GDX.GB', yf:'GDX', name:'VanEck Gold Miners UCITS', exchange:'LSE', ccy:'USD', avgPrice:59.00, qty:200, invested:11800, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
-  { ticker:'XCSI.GB', yf:'XCSI.L', name:'Xtrackers CSI 500', exchange:'LSE', ccy:'USD', avgPrice:30.00, qty:200, invested:6000, fee:0, availLTV:0, theme:'China Mid-Cap', type:'ETF' },
-  { ticker:'XMED.GB', yf:'XMED.L', name:'Xtrackers MSCI Europe', exchange:'LSE', ccy:'USD', avgPrice:98.00, qty:100, invested:9800, fee:0, availLTV:70, theme:'European Equity', type:'ETF' },
+  { ticker:'GE.US', yf:'GE', name:'GE Aerospace', exchange:'NYS', ccy:'USD', avgPrice:210.1070, qty:40, invested:8404.28, fee:0, availLTV:70, theme:'US Aerospace', type:'Stock' },
+  { ticker:'NOK.US', yf:'NOK', name:'Nokia ADR', exchange:'NYS', ccy:'USD', avgPrice:8.5586, qty:900, invested:7702.74, fee:0, availLTV:60, theme:'Telecom Infra', type:'Stock' },
+  { ticker:'SKM.US', yf:'SKM', name:'SK Telecom ADR', exchange:'NYS', ccy:'USD', avgPrice:28.8111, qty:300, invested:8643.33, fee:0, availLTV:60, theme:'Korea Telecom', type:'Stock' },
+  { ticker:'SPHR.US', yf:'SPHR', name:'Sphere Entertainment', exchange:'NYS', ccy:'USD', avgPrice:129.3012, qty:60, invested:7758.07, fee:0, availLTV:60, theme:'US Entertainment', type:'Stock' },
 
-  // ═══ Central Depository ═══
+  { ticker:'GDX.GB', yf:'GDX', name:'VanEck Gold Miners UCITS', exchange:'LSE', ccy:'USD', avgPrice:59.2868, qty:130, invested:7707.28, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
+
+  { ticker:'SOI.FR', yf:'SOI.PA', name:'Soitec', exchange:'PAR', ccy:'EUR', avgPrice:58.2230, qty:110, invested:6404.53, fee:0, availLTV:50, theme:'Europe Semis', type:'Stock' },
+
+  // ═══ Central Depository ═══ (Account 1681-1926-6351, statement 18 Apr 2026)
   // SGD-denominated equities & ETFs
-  { ticker:'GAB', yf:'GAB.SI', name:'AMOVA STI SGDA', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:4.630 },
-  { ticker:'V7AB', yf:'V7AB.SI', name:'Astrea 7A', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG PE Bond', type:'Bond', account:'CDP', mktPriceSnap:1.025 },
-  { ticker:'D05', yf:'D05.SI', name:'DBS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:57.060 },
-  { ticker:'J69U', yf:'J69U.SI', name:'Frasers CPT Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.260 },
-  { ticker:'BN4', yf:'BN4.SI', name:'Keppel', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:3000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:12.610 },
-  { ticker:'AJBU', yf:'AJBU.SI', name:'Keppel DC REIT', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:20000, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.250 },
-  { ticker:'YYY', yf:'YYY.SI', name:'LGI-OSPL China L', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'China Equity', type:'Stock', account:'CDP', mktPriceSnap:1.867 },
-  { ticker:'CJLU', yf:'CJLU.SI', name:'Netlink NBN Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:15000, invested:null, fee:0, availLTV:0, theme:'SG Infrastructure', type:'Stock', account:'CDP', mktPriceSnap:0.985 },
-  { ticker:'O39', yf:'O39.SI', name:'OCBC Bank', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:21.110 },
-  { ticker:'P52', yf:'P52.SI', name:'PanUnited', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:30000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:1.160 },
-  { ticker:'S58', yf:'S58.SI', name:'SATS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG Aviation', type:'Stock', account:'CDP', mktPriceSnap:3.880 },
-  { ticker:'5E2', yf:'5E2.SI', name:'Seatrium', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:2.100 },
-  { ticker:'C6L', yf:'C6L.SI', name:'SIA', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG Aviation', type:'Stock', account:'CDP', mktPriceSnap:6.960 },
-  { ticker:'ES3', yf:'ES3.SI', name:'STI ETF', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:50000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:4.945 },
-  { ticker:'U11', yf:'U11.SI', name:'UOB', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:38.470 },
+  { ticker:'GAB', yf:'GAB.SI', name:'AMOVA STI SGDA', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:4.705 },
+  { ticker:'G3B', yf:'G3B.SI', name:'AMOVA STI SGDD', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:5.130 },
+  { ticker:'V7AB', yf:'V7AB.SI', name:'Astrea 7A', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG PE Bond', type:'Bond', account:'CDP', mktPriceSnap:1.034 },
+  { ticker:'D05', yf:'D05.SI', name:'DBS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:57.250 },
+  { ticker:'J69U', yf:'J69U.SI', name:'Frasers CPT Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.290 },
+  { ticker:'BN4', yf:'BN4.SI', name:'Keppel', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:3000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:11.930 },
+  { ticker:'AJBU', yf:'AJBU.SI', name:'Keppel DC REIT', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:20300, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.350 },
+  { ticker:'YYY', yf:'YYY.SI', name:'LGI-OSPL China L', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'China Equity', type:'Stock', account:'CDP', mktPriceSnap:1.883 },
+  { ticker:'CJLU', yf:'CJLU.SI', name:'Netlink NBN Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:15000, invested:null, fee:0, availLTV:0, theme:'SG Infrastructure', type:'Stock', account:'CDP', mktPriceSnap:1.010 },
+  { ticker:'O39', yf:'O39.SI', name:'OCBC Bank', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:22.720 },
+  { ticker:'P52', yf:'P52.SI', name:'PanUnited', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:30000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:1.640 },
+  { ticker:'S58', yf:'S58.SI', name:'SATS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:6442, invested:null, fee:0, availLTV:0, theme:'SG Aviation', type:'Stock', account:'CDP', mktPriceSnap:3.550 },
+  { ticker:'5E2', yf:'5E2.SI', name:'Seatrium', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5625, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:2.420 },
+  { ticker:'ES3', yf:'ES3.SI', name:'STI ETF', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:46000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:5.023 },
+  { ticker:'U11', yf:'U11.SI', name:'UOB', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:37.400 },
   // USD-denominated
-  { ticker:'ICU', yf:'ICU.SI', name:'AXJ Climate ETF', exchange:'SGX', ccy:'USD', avgPrice:null, qty:10000, invested:null, fee:0, availLTV:0, theme:'Asia Climate/ESG', type:'ETF', account:'CDP', mktPriceSnap:1.473 },
-  { ticker:'D07', yf:'D07.SI', name:'SS SPDR DJIA USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:20, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:494.330 },
-  { ticker:'S27', yf:'S27.SI', name:'SS SPDR S&P500 USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:20, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:682.630 },
+  { ticker:'ICU', yf:'ICU.SI', name:'AXJ Climate ETF', exchange:'SGX', ccy:'USD', avgPrice:null, qty:12000, invested:null, fee:0, availLTV:0, theme:'Asia Climate/ESG', type:'ETF', account:'CDP', mktPriceSnap:1.427 },
+  { ticker:'D07', yf:'D07.SI', name:'SS SPDR DJIA USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:20, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:487.980 },
+  { ticker:'S27', yf:'S27.SI', name:'SS SPDR S&P500 USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:22, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:703.240 },
   // Savings Bonds
-  { ticker:'SBAUG22', yf:null, name:'SB Aug 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBAUG22', yf:null, name:'SB Aug 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:9000, invested:9000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
   { ticker:'SBDEC22', yf:null, name:'SB Dec 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
   { ticker:'BS26102F', yf:null, name:'Bond 26102F', exchange:'SGX', ccy:'SGD', avgPrice:100.00, qty:500, invested:50000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:100.00 },
-  { ticker:'SBJUL18', yf:null, name:'SB Jul 2018', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUL22', yf:null, name:'SB Jul 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBFEB26', yf:null, name:'SB Feb 2026', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:61500, invested:61500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUL18', yf:null, name:'SB Jul 2018', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:12500, invested:12500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUL22', yf:null, name:'SB Jul 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:18000, invested:18000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
   { ticker:'SBJUL24', yf:null, name:'SB Jul 2024', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
   { ticker:'SBJUL25', yf:null, name:'SB Jul 2025', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUN22', yf:null, name:'SB Jun 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:15000, invested:15000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBJUN22', yf:null, name:'SB Jun 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:15500, invested:15500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
   { ticker:'SBNOV22', yf:null, name:'SB Nov 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
   { ticker:'SBNOV23', yf:null, name:'SB Nov 2023', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBSEP22', yf:null, name:'SB Sep 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:15000, invested:15000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
+  { ticker:'SBSEP22', yf:null, name:'SB Sep 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:13500, invested:13500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
@@ -435,7 +450,7 @@ const SNAPSHOT = {
 };
 
 // FX (derived from screenshot SGD grand totals)
-const FX = { HKD:0.1624, JPY:0.008240, USD:1.2672, SGD:1 };
+const FX = { HKD:0.1624, JPY:0.008240, USD:1.2672, AUD:0.8986, EUR:1.4914, SGD:1 };
 
 // ═══════════════════════════════════════════════════════════════
 //  PRELOADED HISTORY — Fetched at runtime from data/*.json
@@ -601,6 +616,8 @@ async function fetchAllPrices() {
       if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
       if (results['JPYSGD=X']) FX.JPY = results['JPYSGD=X'].price;
       if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
+      if (results['AUDSGD=X']) FX.AUD = results['AUDSGD=X'].price;
+      if (results['EURSGD=X']) FX.EUR = results['EURSGD=X'].price;
       return results;
     }
     if (labelEl) labelEl.textContent = 'DEV MODE — no cache found, fetching...';
@@ -730,6 +747,8 @@ async function fetchAllPrices() {
   if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
   if (results['JPYSGD=X']) FX.JPY = results['JPYSGD=X'].price;
   if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
+  if (results['AUDSGD=X']) FX.AUD = results['AUDSGD=X'].price;
+  if (results['EURSGD=X']) FX.EUR = results['EURSGD=X'].price;
 
   // Hide progress bar with completion message
   if (progEl) {
@@ -2915,6 +2934,8 @@ function loadPreloadedData() {
   if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
   if (results['JPYSGD=X']) FX.JPY = results['JPYSGD=X'].price;
   if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
+  if (results['AUDSGD=X']) FX.AUD = results['AUDSGD=X'].price;
+  if (results['EURSGD=X']) FX.EUR = results['EURSGD=X'].price;
   return results;
 }
 
