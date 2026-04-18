@@ -9,11 +9,16 @@
  *   4. Writes data/history.json (stock OHLC), data/fx.json (FX rates)
  *      and data/meta.json (build date, ticker list) for the client to fetch
  *   5. Writes index.html as a straight copy of template.html at the repo root
+ *   6. Phase 3 dual-write: mirrors the full output into docs/ as well —
+ *      docs/index.html, docs/data/*.json, and docs/.nojekyll. Both locations
+ *      are self-contained static sites, differing only in where they sit on
+ *      disk. Phase 4 will collapse this back down to docs/ only once GitHub
+ *      Pages is switched to serve from docs/.
  *
  * The client bootstraps by fetching the three data/*.json files on page load.
  *
  * Usage:
- *   node build.js              # Write data/*.json and rebuild index.html
+ *   node build.js              # Write data/*.json and rebuild both locations
  *   node build.js --dry-run    # Fetch data but don't write anything
  *
  * Requirements: Node.js 18+ (uses native fetch)
@@ -28,6 +33,13 @@ const DATA_DIR = path.join(__dirname, 'data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const FX_FILE = path.join(DATA_DIR, 'fx.json');
 const META_FILE = path.join(DATA_DIR, 'meta.json');
+// Phase 3: dual-write transitional state. The pipeline mirrors the full
+// output (index.html + data/) into docs/ as well, so GitHub Pages can be
+// switched from root → docs/ in Phase 4 without any pipeline change.
+const DOCS_DIR = path.join(__dirname, 'docs');
+const DOCS_DATA_DIR = path.join(DOCS_DIR, 'data');
+const DOCS_OUTPUT_FILE = path.join(DOCS_DIR, 'index.html');
+const DOCS_NOJEKYLL = path.join(DOCS_DIR, '.nojekyll');
 const CONCURRENCY = 5;
 const DELAY_MS = 150;       // Polite delay between requests
 const RANGE = '10y';        // 10 years for full backtest support
@@ -210,6 +222,23 @@ async function main() {
   // data/*.json on page load; no injection happens here in Phase 2.
   fs.writeFileSync(OUTPUT_FILE, html, 'utf-8');
 
+  // Phase 3 dual-write: mirror the root output into docs/ so GitHub Pages
+  // can be switched from root → docs/ in Phase 4 without any pipeline
+  // change. docs/index.html must stay byte-identical to root index.html.
+  if (!fs.existsSync(DOCS_DIR)) {
+    fs.mkdirSync(DOCS_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(DOCS_DATA_DIR)) {
+    fs.mkdirSync(DOCS_DATA_DIR, { recursive: true });
+  }
+  fs.writeFileSync(DOCS_OUTPUT_FILE, html, 'utf-8');
+  fs.copyFileSync(HISTORY_FILE, path.join(DOCS_DATA_DIR, 'history.json'));
+  fs.copyFileSync(FX_FILE, path.join(DOCS_DATA_DIR, 'fx.json'));
+  fs.copyFileSync(META_FILE, path.join(DOCS_DATA_DIR, 'meta.json'));
+  if (!fs.existsSync(DOCS_NOJEKYLL)) {
+    fs.writeFileSync(DOCS_NOJEKYLL, '', 'utf-8');
+  }
+
   const histSizeKB = (fs.statSync(HISTORY_FILE).size / 1024).toFixed(0);
   const fxSizeKB = (fs.statSync(FX_FILE).size / 1024).toFixed(1);
   const htmlSizeKB = (html.length / 1024).toFixed(0);
@@ -218,7 +247,8 @@ async function main() {
   console.log(`   ${fxCount} FX rates`);
   console.log(`   Data as of: ${dateStr}`);
   console.log(`✅ Wrote ${OUTPUT_FILE} (${htmlSizeKB} KB, straight copy of template.html)`);
-  console.log(`\n🚀 Ready to deploy: git add index.html data/ && git commit -m "Bake ${dateStr}" && git push`);
+  console.log(`✅ Mirrored to docs/: docs/index.html + docs/data/*.json (+ docs/.nojekyll)`);
+  console.log(`\n🚀 Ready to deploy: git add index.html data/ docs/ && git commit -m "Bake ${dateStr}" && git push`);
 
   // Report failures
   const failed = symbols.filter(s => !stockData[s]);
