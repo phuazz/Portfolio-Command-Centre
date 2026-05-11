@@ -2933,6 +2933,7 @@ function renderAttribution(el) {
   const ps = state.positions;
   const horizon = state.attrHorizon || '1M';
   const horizonDef = ATTR_HORIZONS.find(h => h.key === horizon) || ATTR_HORIZONS[2];
+  const expanded = state.expandedAttrThemes = state.expandedAttrThemes || {};
 
   const byHorizon = {};
   ATTR_HORIZONS.forEach(h => { byHorizon[h.key] = calcAttribution(ps, h.bars); });
@@ -3090,15 +3091,18 @@ function renderAttribution(el) {
         <div class="card-body">${topPos.length ? topPos.map(r => {
           const peak = (topPos[0].contribPp) || 0.01;
           const w = peak > 0 ? Math.max(0, (r.contribPp / peak) * 100) : 0;
-          return `<div style="display:grid;grid-template-columns:90px 1fr 60px 70px;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-size:11px;font-weight:700;color:var(--t1)">${r.pos.ticker}</span>
+          return `<div style="display:grid;grid-template-columns:150px 1fr 60px 70px;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">
+            <div style="display:flex;flex-direction:column;line-height:1.2;min-width:0">
+              <span style="font-size:11px;font-weight:700;color:var(--t1);font-family:var(--mono)">${r.pos.ticker}</span>
+              <span style="font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.pos.name} · ${r.pos.theme}">${r.pos.name}</span>
+            </div>
             <div class="bar-track" style="height:6px"><div class="bar-fill" style="width:${w}%;background:var(--g)"></div></div>
             <span class="pl ${r.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;text-align:right">${fmtPct(r.retPct)}</span>
             <span class="pl ${r.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">${fmtPct(r.contribPp)}</span>
           </div>`;
         }).join('') : '<div style="padding:16px;color:var(--t3);font-size:12px">No contributors with priced history.</div>'}
-          <div style="display:grid;grid-template-columns:90px 1fr 60px 70px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
-            <div>Ticker</div><div></div><div style="text-align:right">Return</div><div style="text-align:right">Contrib pp</div>
+          <div style="display:grid;grid-template-columns:150px 1fr 60px 70px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
+            <div>Ticker · Name</div><div></div><div style="text-align:right">Return</div><div style="text-align:right">Contrib pp</div>
           </div>
         </div>
       </div>
@@ -3107,15 +3111,18 @@ function renderAttribution(el) {
         <div class="card-body">${botPos.length ? botPos.map(r => {
           const trough = (botPos[0].contribPp) || -0.01;
           const w = trough < 0 ? Math.max(0, (r.contribPp / trough) * 100) : 0;
-          return `<div style="display:grid;grid-template-columns:90px 1fr 60px 70px;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-size:11px;font-weight:700;color:var(--t1)">${r.pos.ticker}</span>
+          return `<div style="display:grid;grid-template-columns:150px 1fr 60px 70px;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">
+            <div style="display:flex;flex-direction:column;line-height:1.2;min-width:0">
+              <span style="font-size:11px;font-weight:700;color:var(--t1);font-family:var(--mono)">${r.pos.ticker}</span>
+              <span style="font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.pos.name} · ${r.pos.theme}">${r.pos.name}</span>
+            </div>
             <div class="bar-track" style="height:6px"><div class="bar-fill" style="width:${w}%;background:var(--r)"></div></div>
             <span class="pl ${r.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;text-align:right">${fmtPct(r.retPct)}</span>
             <span class="pl ${r.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">${fmtPct(r.contribPp)}</span>
           </div>`;
         }).join('') : '<div style="padding:16px;color:var(--t3);font-size:12px">No detractors with priced history.</div>'}
-          <div style="display:grid;grid-template-columns:90px 1fr 60px 70px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
-            <div>Ticker</div><div></div><div style="text-align:right">Return</div><div style="text-align:right">Contrib pp</div>
+          <div style="display:grid;grid-template-columns:150px 1fr 60px 70px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
+            <div>Ticker · Name</div><div></div><div style="text-align:right">Return</div><div style="text-align:right">Contrib pp</div>
           </div>
         </div>
       </div>
@@ -3123,13 +3130,16 @@ function renderAttribution(el) {
 
   const tableCard = `
     <div class="card mb">
-      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t1)"></span>Theme Attribution Table · ${horizonDef.label}</div></div>
+      <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div class="card-title"><span class="indicator" style="background:var(--t1)"></span>Theme Attribution Table · ${horizonDef.label}</div>
+        <div style="font-size:10px;color:var(--t3);font-style:italic">Click a theme to drill into its constituents</div>
+      </div>
       <div class="card-body" style="overflow-x:auto;padding:0">
         <table class="tbl" style="margin:0">
           <thead>
             <tr>
               <th>Theme</th>
-              <th class="r" style="text-align:right">Positions</th>
+              <th class="r" style="text-align:right">Positions / Qty</th>
               <th class="r" style="text-align:right">Start Weight</th>
               <th class="r" style="text-align:right">Theme Return</th>
               <th class="r" style="text-align:right">Contribution (pp)</th>
@@ -3137,14 +3147,32 @@ function renderAttribution(el) {
             </tr>
           </thead>
           <tbody>
-            ${themesByContrib.map(t => `<tr>
-              <td style="font-weight:600;color:var(--t1)"><span class="indicator" style="background:${attrThemeColor(t.theme)};width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px"></span>${t.theme}</td>
+            ${themesByContrib.map(t => {
+              const isOpen = !!expanded[t.theme];
+              const childRows = isOpen ? t.positions
+                .slice()
+                .sort((a,b) => b.contribPp - a.contribPp)
+                .map(r => `<tr style="background:var(--bg3)">
+                  <td style="padding-left:32px;color:var(--t2)">
+                    <span style="font-family:var(--mono);font-weight:700;color:var(--t1);font-size:11px">${r.pos.ticker}</span>
+                    <span style="color:var(--t2);margin-left:8px;font-size:11px">${r.pos.name}</span>
+                    <span style="color:var(--t4);margin-left:8px;font-size:9px;text-transform:uppercase;letter-spacing:0.4px">${r.pos.account === 'CDP' ? 'CDP' : 'Brokerage'} · ${r.pos.ccy}</span>
+                  </td>
+                  <td class="r" style="text-align:right;font-family:var(--mono);font-size:10px;color:var(--t3)">${fmt(r.pos.qty,0)}</td>
+                  <td class="r" style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(r.weightPct,2)}%</td>
+                  <td class="r pl ${r.retPct>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:10px">${fmtPct(r.retPct)}</td>
+                  <td class="r pl ${r.contribPp>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmtPct(r.contribPp)}</td>
+                  <td class="r pl ${r.dollar>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:10px">${fmtPL(r.dollar)}</td>
+                </tr>`).join('') : '';
+              return `<tr onclick='toggleAttrTheme(${JSON.stringify(t.theme)})' style="cursor:pointer">
+              <td style="font-weight:600;color:var(--t1)"><span style="display:inline-block;width:12px;color:var(--t3);font-family:var(--mono);font-size:10px">${isOpen ? '▾' : '▸'}</span><span class="indicator" style="background:${attrThemeColor(t.theme)};width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px"></span>${t.theme}</td>
               <td class="r" style="text-align:right;font-family:var(--mono);font-size:11px">${t.positions.length}</td>
               <td class="r" style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(t.weightPct,2)}%</td>
               <td class="r pl ${t.retPct>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPct(t.retPct)}</td>
               <td class="r pl ${t.contribPp>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:700">${fmtPct(t.contribPp)}</td>
               <td class="r pl ${t.dollar>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPL(t.dollar)}</td>
-            </tr>`).join('')}
+            </tr>${childRows}`;
+            }).join('')}
             <tr class="sum">
               <td>Total</td>
               <td class="r" style="text-align:right;font-family:var(--mono);font-size:11px">${A.covered}</td>
@@ -3171,6 +3199,11 @@ function renderAttribution(el) {
     const measures = [...wf.map(() => 'relative'), 'total'];
     const values = [...wf.map(t => t.contribPp), A.portfolioRetPct];
     const textArr = [...wf.map(t => fmtPct(t.contribPp)), fmtPct(A.portfolioRetPct)];
+    const signed = n => (n>=0?'+':'') + fmt(n, 2);
+    const hoverArr = [
+      ...wf.map(t => signed(t.contribPp) + ' pp · theme return ' + signed(t.retPct) + '% · ' + t.positions.length + ' position' + (t.positions.length===1?'':'s')),
+      signed(A.portfolioRetPct) + ' pp (total)'
+    ];
     Plotly.newPlot('attrWaterfall', [{
       type: 'waterfall',
       orientation: 'h',
@@ -3179,11 +3212,12 @@ function renderAttribution(el) {
       text: textArr,
       textposition: 'outside',
       textfont: { family: 'DM Mono', size: 10, color: '#1a1a18' },
+      customdata: hoverArr,
       connector: { line: { color: 'rgba(120,120,115,0.35)', width: 1, dash: 'dot' } },
       increasing: { marker: { color: 'rgba(26,135,84,0.78)' } },
       decreasing: { marker: { color: 'rgba(192,57,43,0.78)' } },
       totals:     { marker: { color: 'rgba(29,78,216,0.85)' } },
-      hovertemplate: '%{y}: %{x:+.2f} pp<extra></extra>',
+      hovertemplate: '<b>%{y}</b><br>%{customdata}<extra></extra>',
     }], {
       margin: { t: 16, b: 44, l: 170, r: 56 },
       paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
@@ -3196,6 +3230,14 @@ function renderAttribution(el) {
 
 window.setAttrHorizon = h => {
   state.attrHorizon = h;
+  _paneVersion['attribution'] = -1;
+  renderTab();
+};
+
+window.toggleAttrTheme = function(theme) {
+  if (!state.expandedAttrThemes) state.expandedAttrThemes = {};
+  if (state.expandedAttrThemes[theme]) delete state.expandedAttrThemes[theme];
+  else state.expandedAttrThemes[theme] = true;
   _paneVersion['attribution'] = -1;
   renderTab();
 };
