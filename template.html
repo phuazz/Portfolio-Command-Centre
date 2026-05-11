@@ -1218,7 +1218,20 @@ function enrichAll() {
 function renderStockChart(containerId, position) {
   const h = position.history;
   if (!h || h.length < 15) {
-    document.getElementById(containerId).innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3)">Insufficient price data for chart.</div>';
+    const c = document.getElementById(containerId);
+    if (!c) return;
+    const isPending = !h || h.length === 0;
+    c.innerHTML = isPending
+      ? `<div style="padding:32px 24px;text-align:center;color:var(--t3);line-height:1.55">
+           <div style="font-size:24px;margin-bottom:8px">⏳</div>
+           <div style="font-size:13px;font-weight:600;color:var(--t2);margin-bottom:4px">Price history not yet baked</div>
+           <div style="font-size:11px;max-width:420px;margin:0 auto">
+             <strong>${position.ticker}</strong> (${position.yf || '—'}) was added recently and will pick up its OHLC history on the next scheduled bake (weekdays 22:00 UTC). The position is fully tracked elsewhere on the dashboard — only the chart and trend signals await data.
+           </div>
+         </div>`
+      : `<div style="padding:32px 24px;text-align:center;color:var(--t3)">
+           <div style="font-size:13px">Insufficient price history for chart (${h.length} bars; need 15+).</div>
+         </div>`;
     return;
   }
   const dates = h.map(d => d.date instanceof Date ? d.date.toISOString().slice(0,10) : d.date);
@@ -1644,10 +1657,15 @@ function renderPositions(el) {
 
     const safeId = p.ticker.replace(/\./g,'_');
     const hasChart = p.history && p.history.length >= 15;
+    // Non-bond positions are always clickable so newly-added tickers (no baked
+    // history yet) still expand into the position-detail panel. renderStockChart
+    // degrades to an "awaiting next bake" message when history is missing.
+    const clickable = p.type !== 'Bond';
+    const hoverTitle = !clickable ? 'Bond — no chart' : (hasChart ? 'Click for chart + signal analysis' : 'Click for position detail (price history pending next bake)');
 
-    return `<tr id="pos-row-${safeId}" class="${hasChart?'clickable':''}" ${hasChart?`onclick="toggleChart('${p.ticker}')"`:''}  title="${hasChart?'Click for chart + signal analysis':'No chart data available'}">
+    return `<tr id="pos-row-${safeId}" class="${clickable?'clickable':''}" ${clickable?`onclick="toggleChart('${p.ticker}')"`:''}  title="${hoverTitle}">
       <td><span class="tag ${exchTags[p.exchange]}">${p.exchange}</span><span style="font-size:8px;color:var(--t4);display:block">${acct}</span></td>
-      <td><strong>${p.ticker}</strong>${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px">📈</span>':''}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
+      <td><strong>${p.ticker}</strong>${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${p.dayChangePct!==0?`<br><span class="pl ${dayC}" style="font-size:9px">${fmtPct(p.dayChangePct)}</span>`:''}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>
