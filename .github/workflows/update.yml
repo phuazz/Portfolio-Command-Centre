@@ -2,7 +2,17 @@ name: Update Prices
 
 on:
   schedule:
+    # 21:00 UTC (05:00 SGT) Mon-Fri — immediate snapshot after the US close.
+    # Some European, HK and SG daily bars are still close=null at this point;
+    # build.js substitutes regularMarketPrice as a provisional last bar so
+    # the dashboard tracks the live chart price.
     - cron: '0 21 * * 1-5'
+    # 04:00 UTC (12:00 SGT) Tue-Sat — finalisation pass ~7 hours later.
+    # Picks up any lingering close=null bars that Yahoo has since finalised
+    # and adds a mid-day Asian intraday read. Each run does a fresh full
+    # Yahoo refetch, so the later build's history.json simply overwrites
+    # the earlier one with finalised closes where now available.
+    - cron: '0 4 * * 2-6'
   workflow_dispatch:
 
 permissions:
