@@ -521,10 +521,23 @@ function parseYahooResponse(json) {
   if (validCloses.length < 2) return null;
   const currentPrice = meta.regularMarketPrice || validCloses[validCloses.length - 1];
   const prevClose = meta.chartPreviousClose || validCloses[validCloses.length - 2];
+  // Substitute meta.regularMarketPrice for a null close on the current
+  // session's bar so the 1-Day attribution tracks the live chart price even
+  // before Yahoo finalises the daily close. Tagged provisional; the same
+  // epoch is reused once finalised, so mergeHistory overwrites cleanly.
   const history = [];
+  const lastIdx = timestamps.length - 1;
   for (let i = 0; i < timestamps.length; i++) {
-    if (closes[i] != null && !isNaN(closes[i])) {
-      history.push({ d: timestamps[i], c: closes[i], o: opens[i]||closes[i], h: highs[i]||closes[i], l: lows[i]||closes[i] });
+    let c = closes[i];
+    let provisional = false;
+    if ((c == null || isNaN(c)) && i === lastIdx && meta.regularMarketPrice != null) {
+      c = meta.regularMarketPrice;
+      provisional = true;
+    }
+    if (c != null && !isNaN(c)) {
+      const bar = { d: timestamps[i], c, o: opens[i]||c, h: highs[i]||c, l: lows[i]||c };
+      if (provisional) bar.p = 1;
+      history.push(bar);
     }
   }
   return { price: currentPrice, prevClose, history };
@@ -538,10 +551,22 @@ function historyToFull(compact) {
 }
 
 function mergeHistory(cached, fresh) {
-  // Merge fresh bars into cached history, dedup by timestamp
+  // Dedup by UTC calendar date (not raw epoch) so a finalised bar always
+  // replaces a provisional one for the same trading session, even if Yahoo
+  // shifts the epoch between the live-quote and the finalised-close fetches.
+  // Rule: finalised wins over provisional; otherwise fresh wins over cached.
   const map = new Map();
-  (cached || []).forEach(h => map.set(h.d, h));
-  (fresh || []).forEach(h => map.set(h.d, h)); // fresh overwrites
+  const key = d => new Date(d * 1000).toISOString().slice(0, 10);
+  const accept = bar => {
+    const k = key(bar.d);
+    const existing = map.get(k);
+    if (!existing) { map.set(k, bar); return; }
+    if (existing.p && !bar.p) { map.set(k, bar); return; } // finalised replaces provisional
+    if (!existing.p && bar.p) return;                       // keep finalised
+    map.set(k, bar);                                        // same kind — newer wins
+  };
+  (cached || []).forEach(accept);
+  (fresh || []).forEach(accept);
   const merged = [...map.values()].sort((a,b) => a.d - b.d);
   // Keep last ~2600 bars (10 years of trading days + buffer)
   return merged.slice(-2600);

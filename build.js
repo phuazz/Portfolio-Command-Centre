@@ -86,16 +86,32 @@ async function fetchTicker(symbol, range = '10y') {
       const price = meta.regularMarketPrice || closes.filter(c => c != null).pop();
       const prevClose = meta.chartPreviousClose || closes.filter(c => c != null).slice(-2)[0];
       
+      // Yahoo daily bars finalise at different lags per exchange — Paris,
+      // HK and SG closes can sit at close=null for hours after the bell. To
+      // keep the dashboard's last bar in sync with the live chart price,
+      // substitute meta.regularMarketPrice for a null close on the current
+      // session's bar, and tag it as provisional. The same epoch is reused
+      // when the close finalises on a later fetch, so merge by `d` overwrites
+      // the provisional bar cleanly.
       const history = [];
+      const lastIdx = timestamps.length - 1;
       for (let i = 0; i < timestamps.length; i++) {
-        if (closes[i] != null && !isNaN(closes[i])) {
-          history.push({
+        let c = closes[i];
+        let provisional = false;
+        if ((c == null || isNaN(c)) && i === lastIdx && meta.regularMarketPrice != null) {
+          c = meta.regularMarketPrice;
+          provisional = true;
+        }
+        if (c != null && !isNaN(c)) {
+          const bar = {
             d: timestamps[i],
-            c: +closes[i].toFixed(4),
-            o: +(opens[i] || closes[i]).toFixed(4),
-            h: +(highs[i] || closes[i]).toFixed(4),
-            l: +(lows[i] || closes[i]).toFixed(4)
-          });
+            c: +c.toFixed(4),
+            o: +(opens[i] || c).toFixed(4),
+            h: +(highs[i] || c).toFixed(4),
+            l: +(lows[i] || c).toFixed(4)
+          };
+          if (provisional) bar.p = 1;
+          history.push(bar);
         }
       }
 
