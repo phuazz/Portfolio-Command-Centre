@@ -77,6 +77,11 @@ async function fetchTicker(symbol, range = '10y') {
 
       const meta = result.meta;
       const quotes = result.indicators?.quote?.[0];
+      // adjclose carries the dividend- and split-adjusted close. Baking it
+      // into history.json lets the dashboard compute proper total returns
+      // (YTD, 1M, etc.) for dividend payers without a per-page refetch.
+      const adjQuotes = result.indicators?.adjclose?.[0];
+      const adjcloses = adjQuotes?.adjclose || [];
       const timestamps = result.timestamp || [];
       const closes = quotes?.close || [];
       const opens = quotes?.open || [];
@@ -84,34 +89,26 @@ async function fetchTicker(symbol, range = '10y') {
       const lows = quotes?.low || [];
 
       const price = meta.regularMarketPrice || closes.filter(c => c != null).pop();
-      const prevClose = meta.chartPreviousClose || closes.filter(c => c != null).slice(-2)[0];
-      
-      // Yahoo daily bars finalise at different lags per exchange — Paris,
-      // HK and SG closes can sit at close=null for hours after the bell. To
-      // keep the dashboard's last bar in sync with the live chart price,
-      // substitute meta.regularMarketPrice for a null close on the current
-      // session's bar, and tag it as provisional. The same epoch is reused
-      // when the close finalises on a later fetch, so merge by `d` overwrites
-      // the provisional bar cleanly.
+      // BUG FIX: meta.chartPreviousClose is the close BEFORE the chart range
+      // starts (~10 years ago for range=10y), not the previous trading day.
+      // Use the proper previous-close fields, fall back to last-2 close.
+      const prevClose = meta.regularMarketPreviousClose
+                     || meta.previousClose
+                     || closes.filter(c => c != null).slice(-2)[0];
+
       const history = [];
       const lastIdx = timestamps.length - 1;
       for (let i = 0; i < timestamps.length; i++) {
-        let c = closes[i];
-        let provisional = false;
-        if ((c == null || isNaN(c)) && i === lastIdx && meta.regularMarketPrice != null) {
-          c = meta.regularMarketPrice;
-          provisional = true;
-        }
-        if (c != null && !isNaN(c)) {
-          const bar = {
+        if (closes[i] != null && !isNaN(closes[i])) {
+          const ac = (adjcloses[i] != null && !isNaN(adjcloses[i])) ? adjcloses[i] : closes[i];
+          history.push({
             d: timestamps[i],
-            c: +c.toFixed(4),
-            o: +(opens[i] || c).toFixed(4),
-            h: +(highs[i] || c).toFixed(4),
-            l: +(lows[i] || c).toFixed(4)
-          };
-          if (provisional) bar.p = 1;
-          history.push(bar);
+            c: +closes[i].toFixed(4),
+            ac: +ac.toFixed(4),
+            o: +(opens[i] || closes[i]).toFixed(4),
+            h: +(highs[i] || closes[i]).toFixed(4),
+            l: +(lows[i] || closes[i]).toFixed(4)
+          });
         }
       }
 

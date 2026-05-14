@@ -515,39 +515,68 @@ function parseYahooResponse(json) {
   if (!result) return null;
   const meta = result.meta;
   const quotes = result.indicators?.quote?.[0];
+  // adjclose carries the dividend- and split-adjusted close, which is what we
+  // need for total-return calculations (YTD, 1M, etc.). Without this, dividend
+  // payers like STI ETF / DBS look worse than they actually were.
+  const adjQuotes = result.indicators?.adjclose?.[0];
+  const adjcloses = adjQuotes?.adjclose || [];
   const timestamps = result.timestamp || [];
   const closes = quotes?.close || [], highs = quotes?.high || [], lows = quotes?.low || [], opens = quotes?.open || [];
   const validCloses = closes.filter(c => c != null && !isNaN(c));
   if (validCloses.length < 2) return null;
   const currentPrice = meta.regularMarketPrice || validCloses[validCloses.length - 1];
-  const prevClose = meta.chartPreviousClose || validCloses[validCloses.length - 2];
-  // Substitute meta.regularMarketPrice for a null close on the current
-  // session's bar so the 1-Day attribution tracks the live chart price even
-  // before Yahoo finalises the daily close. Tagged provisional; the same
-  // epoch is reused once finalised, so mergeHistory overwrites cleanly.
+  // BUG FIX: meta.chartPreviousClose is the close BEFORE the chart range
+  // starts, i.e. ~10 years ago for range=10y. Using it makes dayChangePct
+  // compute a 10-year return masquerading as a day change. Use the actual
+  // previous-trading-day close fields, with last-2 close as a final fallback.
+  const prevClose = meta.regularMarketPreviousClose
+                 || meta.previousClose
+                 || validCloses[validCloses.length - 2];
   const history = [];
   const lastIdx = timestamps.length - 1;
   for (let i = 0; i < timestamps.length; i++) {
-    let c = closes[i];
-    let provisional = false;
-    if ((c == null || isNaN(c)) && i === lastIdx && meta.regularMarketPrice != null) {
-      c = meta.regularMarketPrice;
-      provisional = true;
-    }
-    if (c != null && !isNaN(c)) {
-      const bar = { d: timestamps[i], c, o: opens[i]||c, h: highs[i]||c, l: lows[i]||c };
-      if (provisional) bar.p = 1;
-      history.push(bar);
+    if (closes[i] != null && !isNaN(closes[i])) {
+      const ac = (adjcloses[i] != null && !isNaN(adjcloses[i])) ? adjcloses[i] : closes[i];
+      history.push({ d: timestamps[i], c: closes[i], ac, o: opens[i]||closes[i], h: highs[i]||closes[i], l: lows[i]||closes[i] });
     }
   }
   return { price: currentPrice, prevClose, history };
 }
 
 function historyToFull(compact) {
-  // Convert compact cache format to full format used by rest of app
+  // Convert compact cache format to full format used by rest of app.
+  // adjclose (h.ac) was added later — fall back to raw close for cached entries
+  // that pre-date the change. Those entries will refresh on the next fetch.
   return compact.map(h => ({
-    date: new Date(h.d * 1000), close: h.c, open: h.o, high: h.h, low: h.l
+    date: new Date(h.d * 1000), close: h.c, adjclose: h.ac != null ? h.ac : h.c,
+    open: h.o, high: h.h, low: h.l
   }));
+}
+
+// Period return on the adjclose series — total return, includes dividends
+// (Yahoo's adjclose is split- and dividend-adjusted). Returns null when there
+// is not enough history to compute. `mode`: 'ytd' (vs last close of prior
+// calendar year) or '1m' (vs 21 trading days back).
+function periodReturn(historyFull, mode) {
+  if (!historyFull || historyFull.length < 2) return null;
+  const last = historyFull[historyFull.length - 1];
+  const lastAc = last.adjclose;
+  if (lastAc == null || lastAc <= 0) return null;
+  let refIdx = -1;
+  if (mode === 'ytd') {
+    // Find the latest bar whose calendar year is strictly less than the
+    // current bar's year — that bar's close is the YTD base.
+    const yr = last.date.getFullYear();
+    for (let i = historyFull.length - 2; i >= 0; i--) {
+      if (historyFull[i].date.getFullYear() < yr) { refIdx = i; break; }
+    }
+  } else if (mode === '1m') {
+    refIdx = historyFull.length - 1 - 21;
+  }
+  if (refIdx < 0) return null;
+  const refAc = historyFull[refIdx].adjclose;
+  if (refAc == null || refAc <= 0) return null;
+  return lastAc / refAc - 1;
 }
 
 function mergeHistory(cached, fresh) {
@@ -1224,7 +1253,12 @@ function enrichAll() {
     const pnlSGD = pnl * fxRate;
     const pnlPct = hasCost && p.invested > 0 ? (pnl / p.invested) * 100 : 0;
 
-    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, history, trendSignals, hasCost };
+    // Period total-returns from adjclose history (includes reinvested dividends).
+    // Bonds are skipped — adjclose math is meaningless on par-value instruments.
+    const ytdRet = (p.type !== 'Bond' && history) ? periodReturn(history, 'ytd') : null;
+    const m1Ret  = (p.type !== 'Bond' && history) ? periodReturn(history, '1m')  : null;
+
+    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost };
   });
 
   state.totalValueSGD = state.positions.reduce((s,p) => s + p.mktValueSGD, 0);
@@ -1665,7 +1699,16 @@ function renderPositions(el) {
   // ── Equity/ETF/REIT rows ──
   const eqRows = equities.map(p => {
     const plC = p.pnlPct>=0?'pos':'neg';
-    const dayC = p.dayChangePct>=0?'pos':'neg';
+    // YTD and 1M total returns from adjclose history (includes reinvested
+    // dividends). The previous version showed dayChangePct here, but the
+    // upstream prevClose was sourced from meta.chartPreviousClose which is
+    // the close before the 10y chart window — so the displayed % was a 10y
+    // price-only return mislabelled as a day change. Now corrected to YTD
+    // (primary, larger) and 1M (secondary, dimmer).
+    const ytdC = p.ytdRet != null ? (p.ytdRet >= 0 ? 'pos' : 'neg') : '';
+    const m1C  = p.m1Ret  != null ? (p.m1Ret  >= 0 ? 'pos' : 'neg') : '';
+    const ytdTxt = p.ytdRet != null ? `<span class="pl ${ytdC}" style="font-size:9px" title="Year-to-date total return (adjclose, dividends reinvested)">${fmtPct(p.ytdRet * 100)} YTD</span>` : '';
+    const m1Txt  = p.m1Ret  != null ? `<span class="pl ${m1C}"  style="font-size:9px;opacity:0.75" title="1-month total return (~21 trading days, adjclose)">${fmtPct(p.m1Ret * 100)} 1M</span>` : '';
     const barW = Math.min(p.weight/15*100,100);
     const sc = p.trendSignals.score;
     const sig2 = p.trendSignals.signal;
@@ -1692,7 +1735,7 @@ function renderPositions(el) {
       <td><span class="tag ${exchTags[p.exchange]}">${p.exchange}</span><span style="font-size:8px;color:var(--t4);display:block">${acct}</span></td>
       <td><strong>${p.ticker}</strong>${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
-      <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${p.dayChangePct!==0?`<br><span class="pl ${dayC}" style="font-size:9px">${fmtPct(p.dayChangePct)}</span>`:''}</td>
+      <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${ytdTxt?`<br>${ytdTxt}`:''}${m1Txt?`<br>${m1Txt}`:''}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>
       <td class="r">${actionCol}</td>
       <td class="r" style="font-size:11px">${fmt(p.weight,1)}%<div class="bar-track" style="margin-top:3px;width:50px;display:inline-block"><div class="bar-fill" style="width:${barW}%;background:${exchColors[p.exchange]}"></div></div></td>
