@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <title>Portfolio Command Centre — Illustrative</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
 /* ═══════════════════════════════════════════
@@ -54,7 +54,7 @@
 
   --serif: 'Instrument Serif', Georgia, serif;
   --sans: 'DM Sans', -apple-system, sans-serif;
-  --mono: 'DM Mono', 'SF Mono', monospace;
+  --mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
   --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -3227,6 +3227,13 @@ function calcYtdAttribution(ps, trades) {
     const unrealisedSGD = unrealised * fxRate;
     const dollar        = realisedSGD + unrealisedSGD;
     const startSGD      = jan1Qty > 0 ? jan1Qty * (jan1Px || 0) * fxRate : 0;
+    // Effective basis = max(start NAV, cost of capital deployed during YTD).
+    // For themes built entirely during the year, startSGD is 0 — using the
+    // sum of YTD buy costs as denominator gives a meaningful return number
+    // instead of 0.00%.
+    const buyCostNative = trades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p, 0);
+    const buyCostSGD    = buyCostNative * fxRate;
+    const basisSGD      = Math.max(startSGD, buyCostSGD);
 
     // Theme from POSITIONS if available, else from first trade entry
     const theme = pos ? pos.theme : (trades[0]?.th || '(Unclassified)');
@@ -3236,10 +3243,10 @@ function calcYtdAttribution(ps, trades) {
       isClosed: !pos,
       theme,
       jan1Qty, jan1Px, currentPx, endQty,
-      buyQty, sellQty,
+      buyQty, sellQty, buyCostSGD,
       realisedSGD, unrealisedSGD, dollar,
-      startSGD,
-      retPct: startSGD > 0 ? (dollar / startSGD) * 100 : 0,
+      startSGD, basisSGD,
+      retPct: basisSGD > 0 ? (dollar / basisSGD) * 100 : 0,
     });
     totalStart += startSGD;
   }
@@ -3256,8 +3263,9 @@ function calcYtdAttribution(ps, trades) {
   const themeMap = {};
   rows.forEach(r => {
     const t = r.theme || '(Unclassified)';
-    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, contribPp:0, weightPct:0, realisedSGD:0, unrealisedSGD:0, positions:[] };
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, basisSGD:0, dollar:0, contribPp:0, weightPct:0, realisedSGD:0, unrealisedSGD:0, positions:[] };
     themeMap[t].startSGD     += r.startSGD;
+    themeMap[t].basisSGD     += r.basisSGD || 0;
     themeMap[t].dollar       += r.dollar;
     themeMap[t].contribPp    += r.contribPp;
     themeMap[t].weightPct    += r.weightPct;
@@ -3267,7 +3275,7 @@ function calcYtdAttribution(ps, trades) {
   });
   const themes = Object.values(themeMap).map(t => ({
     ...t,
-    retPct: t.startSGD > 0 ? (t.dollar / t.startSGD) * 100 : 0,
+    retPct: t.basisSGD > 0 ? (t.dollar / t.basisSGD) * 100 : 0,
   }));
 
   return {
