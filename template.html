@@ -1274,10 +1274,10 @@ function calcTradePlan(px, atr, atsStop, atsBreached, atsFinalDir, hh55, signal)
 // ═══════════════════════════════════════════════════════════════
 //  FORMATTING
 // ═══════════════════════════════════════════════════════════════
-const fmt = (n,d=0) => n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-const fmtSGD = n => 'S$'+fmt(n,0);
-const fmtPct = n => (n>=0?'+':'')+fmt(n,2)+'%';
-const fmtPL = (n,pre='S$') => (n>=0?'+':'-')+pre+fmt(Math.abs(n),0);
+const fmt = (n,d=0) => (n==null||!isFinite(n)) ? '—' : n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtSGD = n => (n==null||!isFinite(n)) ? '—' : 'S$'+fmt(n,0);
+const fmtPct = n => (n==null||!isFinite(n)) ? '—' : (n>=0?'+':'')+fmt(n,2)+'%';
+const fmtPL = (n,pre='S$') => (n==null||!isFinite(n)) ? '—' : (n>=0?'+':'-')+pre+fmt(Math.abs(n),0);
 
 const exchColors = {HKG:'#b91c1c',TSE:'#be185d',ARCA:'#1d4ed8',NMS:'#2563eb',NYS:'#4f46e5',LSE:'#6d28d9',SGX:'#047857'};
 const exchTags = {HKG:'tag-hk',TSE:'tag-jp',ARCA:'tag-us',NMS:'tag-us',NYS:'tag-us',LSE:'tag-gb',SGX:'tag-sg'};
@@ -3239,7 +3239,7 @@ function calcYtdAttribution(ps, trades) {
       buyQty, sellQty,
       realisedSGD, unrealisedSGD, dollar,
       startSGD,
-      retPct: startSGD > 0 ? (dollar / startSGD) * 100 : null,
+      retPct: startSGD > 0 ? (dollar / startSGD) * 100 : 0,
     });
     totalStart += startSGD;
   }
