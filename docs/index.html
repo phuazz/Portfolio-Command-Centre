@@ -392,6 +392,9 @@ const POSITIONS = [
   { ticker:'MU.US', yf:'MU', name:'Micron Technology', exchange:'NMS', ccy:'USD', avgPrice:424.7240, qty:10, invested:4247.24, fee:0, availLTV:60, theme:'US Semis', type:'Stock' },
   { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
+  // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
+  { ticker:'USD.CASH', yf:null, name:'USD Cash (18-May proceeds, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:39820.59, invested:39820.59, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+
   { ticker:'NOK.US', yf:'NOK', name:'Nokia ADR', exchange:'NYS', ccy:'USD', avgPrice:8.5586, qty:900, invested:7702.74, fee:0, availLTV:60, theme:'Telecom Infra', type:'Stock' },
   { ticker:'SKM.US', yf:'SKM', name:'SK Telecom ADR', exchange:'NYS', ccy:'USD', avgPrice:28.8111, qty:300, invested:8643.33, fee:0, availLTV:60, theme:'Korea Telecom', type:'Stock' },
   { ticker:'SPHR.US', yf:'SPHR', name:'Sphere Entertainment', exchange:'NYS', ccy:'USD', avgPrice:129.3012, qty:60, invested:7758.07, fee:0, availLTV:60, theme:'US Entertainment', type:'Stock' },
@@ -1285,9 +1288,10 @@ const themeCats = {
   'China & Asia':['China New Economy','China AI/Robotics','China Travel','China Tech','China AI/Search','China Mid-Cap','China Semis','Asia ex-Japan Equity'],
   'US & Developed':['US Tech','US EV/Tech','US Aerospace','US Hotels','US Energy','US Pharma','European Equity','Greece Equity','Japan Financials'],
   'Commodities & Resources':['Gold Miners','Copper/Commodities','Rare Earth Minerals','Clean Energy'],
-  'Frontier & EM':['Argentina Equity']
+  'Frontier & EM':['Argentina Equity'],
+  'Cash & Liquidity':['Cash & Money Market']
 };
-const themeCatColors = {'Singapore':'#047857','China & Asia':'#b91c1c','US & Developed':'#1d4ed8','Commodities & Resources':'#b45309','Frontier & EM':'#059669'};
+const themeCatColors = {'Singapore':'#047857','China & Asia':'#b91c1c','US & Developed':'#1d4ed8','Commodities & Resources':'#b45309','Frontier & EM':'#059669','Cash & Liquidity':'#64748b'};
 
 // ═══════════════════════════════════════════════════════════════
 //  APPLICATION STATE
@@ -1318,7 +1322,7 @@ function enrichAll() {
     history = (live && live.history && live.history.length >= 5) ? live.history : null;
 
     // Compute trend signals
-    if (p.type === 'Bond') {
+    if (p.type === 'Bond' || p.type === 'Cash') {
       trendSignals = { score: 0, signal: '—', reasons: ['Bond'], details: {}, source: 'none' };
     } else if (history && history.length >= 15) {
       try {
@@ -1971,7 +1975,7 @@ function renderAllocation(el) {
           ${(() => {
             const byType2 = {};
             ps.forEach(p=>{const t=p.type||'Other';if(!byType2[t])byType2[t]=[];byType2[t].push(p)});
-            const typeColors = {ETF:'#2563eb',Stock:'#b91c1c',REIT:'#7c3aed',Bond:'#047857',Other:'#6b7280'};
+            const typeColors = {ETF:'#2563eb',Stock:'#b91c1c',REIT:'#7c3aed',Bond:'#047857',Cash:'#64748b',Other:'#6b7280'};
             return Object.entries(byType2).sort((a,b)=>b[1].reduce((s,p)=>s+p.mktValueSGD,0)-a[1].reduce((s,p)=>s+p.mktValueSGD,0)).map(([t,arr])=>{
               const w=arr.reduce((s,p)=>s+p.weight,0);
               return `<div class="alloc-row"><div class="alloc-label">${t} (${arr.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${w}%;background:${typeColors[t]||'#6b7280'};color:#fff">${w>8?fmt(w,1)+'%':''}</div></div><div class="alloc-val">${fmtSGD(arr.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>`;
@@ -3290,13 +3294,35 @@ function renderAttribution(el) {
   const horizonDef = ATTR_HORIZONS.find(h => h.key === horizon) || ATTR_HORIZONS[2];
   const expanded = state.expandedAttrThemes = state.expandedAttrThemes || {};
 
+  // YTD-FIX-2026-05-18: per-horizon try/catch so a single horizon's failure
+  // does not block the others or swallow the click silently.
   const byHorizon = {};
   ATTR_HORIZONS.forEach(h => {
-    byHorizon[h.key] = h.ytd
-      ? calcYtdAttribution(ps, TRADES_YTD)
-      : calcAttribution(ps, h.bars);
+    try {
+      byHorizon[h.key] = h.ytd
+        ? calcYtdAttribution(ps, TRADES_YTD)
+        : calcAttribution(ps, h.bars);
+    } catch (err) {
+      console.error('Attribution failed for horizon', h.key, err);
+      byHorizon[h.key] = { error: err.message || String(err), bars: h.bars, totalStart: 0, totalDollar: 0, portfolioRetPct: 0, rows: [], themes: [], covered: 0, skipped: ps.length };
+    }
   });
   const A = byHorizon[horizon];
+
+  if (A && A.error) {
+    el.innerHTML = `
+      <div class="card mb">
+        <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div class="card-title"><span class="indicator" style="background:var(--r)"></span>Attribution failed for ${horizonDef.label}</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${ATTR_HORIZONS.map(h => `<button class="fbtn ${h.key === horizon ? 'active' : ''}" onclick="setAttrHorizon('${h.key}')">${h.label}</button>`).join('')}</div>
+        </div>
+        <div class="card-body" style="padding:24px 16px;color:var(--t3);font-size:13px;line-height:1.55">
+          <div style="margin-bottom:8px"><strong style="color:var(--r)">Runtime error:</strong> <code style="background:var(--bg3);padding:2px 6px;border-radius:3px">${A.error}</code></div>
+          <div style="color:var(--t4);font-size:11px">Check the browser console for the full stack trace. The other horizons (1D / 1W / 1M) may still work — click their buttons above.</div>
+        </div>
+      </div>`;
+    return;
+  }
 
   if (!A || A.covered === 0) {
     el.innerHTML = `
@@ -3320,6 +3346,9 @@ function renderAttribution(el) {
 
   const sumContrib = A.themes.reduce((s,t) => s + t.contribPp, 0);
   const reconciles = Math.abs(sumContrib - A.portfolioRetPct) < 0.01;
+  const isYtd = horizonDef.ytd === true;
+  const totalRealised   = isYtd ? A.rows.reduce((s,r) => s + (r.realisedSGD || 0), 0) : 0;
+  const totalUnrealised = isYtd ? A.rows.reduce((s,r) => s + (r.unrealisedSGD || 0), 0) : 0;
 
   const horizonBtns = ATTR_HORIZONS.map(h => `
     <button class="fbtn ${h.key === horizon ? 'active' : ''}" onclick="setAttrHorizon('${h.key}')">${h.label}</button>
@@ -3359,7 +3388,7 @@ function renderAttribution(el) {
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Portfolio Return · ${horizonDef.label}</div>
             <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${A.portfolioRetPct>=0?'var(--g)':'var(--r)'}">${fmtPct(A.portfolioRetPct)}</div>
-            <div style="font-size:11px;color:var(--t3)">${fmtPL(A.totalDollar)} on ${fmtSGD(A.totalStart)} start value</div>
+            <div style="font-size:12px;color:var(--t2)">${fmtPL(A.totalDollar)} on ${fmtSGD(A.totalStart)} start value</div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Top Contributor</div>
@@ -3374,13 +3403,24 @@ function renderAttribution(el) {
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Themes Positive</div>
             <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:var(--t1)">${positiveThemes.length}<span style="font-size:14px;color:var(--t3);font-weight:500"> / ${A.themes.length}</span></div>
-            <div style="font-size:11px;color:var(--t3)">${A.covered} priced · ${A.skipped} excluded</div>
+            <div style="font-size:12px;color:var(--t2)">${A.covered} priced · ${A.skipped} excluded</div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Reconciliation</div>
             <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${reconciles?'var(--g)':'var(--r)'}">${fmtPct(sumContrib)}</div>
-            <div style="font-size:11px;color:var(--t3)">Σ contribs vs ${fmtPct(A.portfolioRetPct)} portfolio</div>
+            <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(A.portfolioRetPct)} portfolio</div>
           </div>
+          ${isYtd ? `
+          <div>
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Realised P&L · YTD</div>
+            <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${totalRealised>=0?'var(--g)':'var(--r)'}">${fmtPL(totalRealised)}</div>
+            <div style="font-size:12px;color:var(--t2)">closed lots, FIFO across ${A.rows.filter(r => Math.abs(r.realisedSGD || 0) > 0.5).length} tickers</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Unrealised P&L · YTD</div>
+            <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${totalUnrealised>=0?'var(--g)':'var(--r)'}">${fmtPL(totalUnrealised)}</div>
+            <div style="font-size:12px;color:var(--t2)">open lots marked to current price</div>
+          </div>` : ''}
         </div>
       </div>
     </div>`;
@@ -3398,10 +3438,10 @@ function renderAttribution(el) {
             const w = Math.min(100, (Math.abs(t.contribPp) / maxAbsContrib) * 100);
             const col = t.contribPp >= 0 ? 'var(--g)' : 'var(--r)';
             return `<div style="display:grid;grid-template-columns:150px 1fr 60px 60px;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd)">
-              <div style="font-size:11px;font-weight:600;color:var(--t1);display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.theme}"><span class="indicator" style="background:${attrThemeColor(t.theme)};width:6px;height:6px;border-radius:50%;flex-shrink:0"></span>${t.theme}</div>
+              <div style="font-size:12px;font-weight:700;color:var(--t1);display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.theme}"><span class="indicator" style="background:${attrThemeColor(t.theme)};width:6px;height:6px;border-radius:50%;flex-shrink:0"></span>${t.theme}</div>
               <div class="bar-track" style="height:8px"><div class="bar-fill" style="width:${w}%;background:${col}"></div></div>
-              <div class="pl ${t.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:11px;text-align:right">${fmtPct(t.retPct)}</div>
-              <div class="pl ${t.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">${fmtPct(t.contribPp)}</div>
+              <div class="pl ${t.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:12px;text-align:right">${fmtPct(t.retPct)}</div>
+              <div class="pl ${t.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:13px;font-weight:700;text-align:right">${fmtPct(t.contribPp)}</div>
             </div>`;
           }).join('')}
           <div style="display:grid;grid-template-columns:150px 1fr 60px 60px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
@@ -3456,8 +3496,8 @@ function renderAttribution(el) {
               <span style="font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.pos.name} · ${r.pos.theme}">${r.pos.name}</span>
             </div>
             <div class="bar-track" style="height:6px"><div class="bar-fill" style="width:${w}%;background:var(--g)"></div></div>
-            <span class="pl ${r.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;text-align:right">${fmtPct(r.retPct)}</span>
-            <span class="pl ${r.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">${fmtPct(r.contribPp)}</span>
+            <span class="pl ${r.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:12px;text-align:right">${fmtPct(r.retPct)}</span>
+            <span class="pl ${r.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:13px;font-weight:700;text-align:right">${fmtPct(r.contribPp)}</span>
           </div>`;
         }).join('') : '<div style="padding:16px;color:var(--t3);font-size:12px">No contributors with priced history.</div>'}
           <div style="display:grid;grid-template-columns:150px 1fr 60px 70px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
@@ -3476,8 +3516,8 @@ function renderAttribution(el) {
               <span style="font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.pos.name} · ${r.pos.theme}">${r.pos.name}</span>
             </div>
             <div class="bar-track" style="height:6px"><div class="bar-fill" style="width:${w}%;background:var(--r)"></div></div>
-            <span class="pl ${r.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;text-align:right">${fmtPct(r.retPct)}</span>
-            <span class="pl ${r.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">${fmtPct(r.contribPp)}</span>
+            <span class="pl ${r.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:12px;text-align:right">${fmtPct(r.retPct)}</span>
+            <span class="pl ${r.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:13px;font-weight:700;text-align:right">${fmtPct(r.contribPp)}</span>
           </div>`;
         }).join('') : '<div style="padding:16px;color:var(--t3);font-size:12px">No detractors with priced history.</div>'}
           <div style="display:grid;grid-template-columns:150px 1fr 60px 70px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
@@ -3502,6 +3542,7 @@ function renderAttribution(el) {
               <th class="r" style="text-align:right">Start Weight</th>
               <th class="r" style="text-align:right">Theme Return</th>
               <th class="r" style="text-align:right">Contribution (pp)</th>
+              ${isYtd ? '<th class="r" style="text-align:right">Realised (SGD)</th><th class="r" style="text-align:right">Unrealised (SGD)</th>' : ''}
               <th class="r" style="text-align:right">P&amp;L (SGD)</th>
             </tr>
           </thead>
@@ -3521,6 +3562,7 @@ function renderAttribution(el) {
                   <td class="r" style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(r.weightPct,2)}%</td>
                   <td class="r pl ${r.retPct>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:10px">${fmtPct(r.retPct)}</td>
                   <td class="r pl ${r.contribPp>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmtPct(r.contribPp)}</td>
+                  ${isYtd ? `<td class="r pl ${(r.realisedSGD||0)>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:10px">${fmtPL(r.realisedSGD||0)}</td><td class="r pl ${(r.unrealisedSGD||0)>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:10px">${fmtPL(r.unrealisedSGD||0)}</td>` : ''}
                   <td class="r pl ${r.dollar>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:10px">${fmtPL(r.dollar)}</td>
                 </tr>`).join('') : '';
               return `<tr onclick='toggleAttrTheme(${JSON.stringify(t.theme)})' style="cursor:pointer">
@@ -3529,6 +3571,7 @@ function renderAttribution(el) {
               <td class="r" style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(t.weightPct,2)}%</td>
               <td class="r pl ${t.retPct>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPct(t.retPct)}</td>
               <td class="r pl ${t.contribPp>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:700">${fmtPct(t.contribPp)}</td>
+              ${isYtd ? `<td class="r pl ${(t.realisedSGD||0)>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPL(t.realisedSGD||0)}</td><td class="r pl ${(t.unrealisedSGD||0)>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPL(t.unrealisedSGD||0)}</td>` : ''}
               <td class="r pl ${t.dollar>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPL(t.dollar)}</td>
             </tr>${childRows}`;
             }).join('')}
@@ -3538,7 +3581,8 @@ function renderAttribution(el) {
               <td class="r" style="text-align:right;font-family:var(--mono);font-size:11px">100.00%</td>
               <td class="r pl ${A.portfolioRetPct>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPct(A.portfolioRetPct)}</td>
               <td class="r pl ${sumContrib>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:700">${fmtPct(sumContrib)}</td>
-              <td class="r pl ${A.totalDollar>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px">${fmtPL(A.totalDollar)}</td>
+              ${isYtd ? `<td class="r pl ${totalRealised>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmtPL(totalRealised)}</td><td class="r pl ${totalUnrealised>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmtPL(totalUnrealised)}</td>` : ''}
+              <td class="r pl ${A.totalDollar>=0?'pos':'neg'}" style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmtPL(A.totalDollar)}</td>
             </tr>
           </tbody>
         </table>
