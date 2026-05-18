@@ -3281,6 +3281,124 @@ function calcYtdAttribution(ps, trades) {
   };
 }
 
+
+// ─── TWRR (Modified Dietz) ON THE EQUITY SUB-PORTFOLIO ──────────────
+// For YTD: for each priced position, walks the trade ledger to reconstruct
+// a daily qty trajectory, sums (qty × close × FX) per day to a daily equity
+// NAV time-series, treats each trade day's net flow as an external cash
+// flow into/out of the equity sub-portfolio, and geometrically links the
+// sub-period returns. Bonds and cash are excluded — they have no meaningful
+// equity-style daily return.
+//
+// Returns:
+//   { equityTwrr, days, flowCount, flowTotalSGD, bmv, emv, error?, dates[] }
+function calcTwrr(ps, trades, startDateStr) {
+  // 1. Priced equity universe: any position with usable history.
+  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
+  if (priced.length === 0) return { equityTwrr: 0, days: 0, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'No priced equity positions' };
+
+  // 2. Unified date axis = union of all bar dates >= startDate.
+  const allDates = new Set();
+  for (const p of priced) {
+    for (const bar of p.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      if (ds >= startDateStr) allDates.add(ds);
+    }
+  }
+  const dates = [...allDates].sort();
+  if (dates.length < 2) return { equityTwrr: 0, days: dates.length, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'Not enough trading dates in window' };
+
+  // 3. Index trades by ticker × date for the qty walk, and by date alone for cash-flow aggregation.
+  const tradesByTickerDate = {};
+  const tradesByDate = {};
+  for (const t of trades) {
+    if (!tradesByTickerDate[t.t]) tradesByTickerDate[t.t] = {};
+    if (!tradesByTickerDate[t.t][t.d]) tradesByTickerDate[t.t][t.d] = [];
+    tradesByTickerDate[t.t][t.d].push(t);
+    if (!tradesByDate[t.d]) tradesByDate[t.d] = [];
+    tradesByDate[t.d].push(t);
+  }
+
+  // 4. qty trajectory per ticker: start at jan1Qty, apply trades chronologically (post-trade snapshot per date).
+  const qtyMatrix = {};
+  for (const p of priced) {
+    const all = trades.filter(t => t.t === p.ticker);
+    const buyTotal  = all.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
+    const sellTotal = all.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
+    let qty = p.qty - buyTotal + sellTotal;     // jan-1 inferred qty
+    qtyMatrix[p.ticker] = {};
+    for (const ds of dates) {
+      const tt = tradesByTickerDate[p.ticker]?.[ds] || [];
+      for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
+      qtyMatrix[p.ticker][ds] = qty;
+    }
+  }
+
+  // 5. close matrix per ticker × date with forward-fill (handles cross-market non-trading days).
+  const closeMatrix = {};
+  for (const p of priced) {
+    closeMatrix[p.ticker] = {};
+    for (const bar of p.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      closeMatrix[p.ticker][ds] = bar.close;
+    }
+    let last = null;
+    for (const ds of dates) {
+      if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
+      else if (last != null) closeMatrix[p.ticker][ds] = last;
+    }
+  }
+
+  // 6. Daily equity NAV + daily trade cash flow (SGD, sign-adjusted from equity-sub perspective).
+  //    + flow = buy (cash INTO equity);  − flow = sell (cash OUT of equity into the cash bucket).
+  const navByDate = {};
+  const cfByDate = {};
+  for (const ds of dates) {
+    let nav = 0;
+    for (const p of priced) {
+      const qty = qtyMatrix[p.ticker][ds];
+      const px  = closeMatrix[p.ticker][ds];
+      if (qty > 0 && px != null) nav += qty * px * (p.fxRate || 1);
+    }
+    navByDate[ds] = nav;
+
+    let cf = 0;
+    for (const t of (tradesByDate[ds] || [])) {
+      const pos = ps.find(p => p.ticker === t.t);
+      const fx  = pos ? pos.fxRate : (typeof FX === 'object' ? (FX[t.ccy] || 1) : 1);
+      const usd = t.q * t.p * fx;
+      cf += (t.a === 'B' ? usd : -usd);
+    }
+    cfByDate[ds] = cf;
+  }
+
+  // 7. Geometric link of daily Modified-Dietz sub-period returns.
+  //    Sub-period return = (EMV − CF) / BMV − 1
+  //    (CF assumed at end of period — simplest Dietz; mid-period weighting is a 2nd-order refinement.)
+  let cumRet = 1;
+  let flowCount = 0, flowTotalSGD = 0;
+  for (let i = 1; i < dates.length; i++) {
+    const bmv = navByDate[dates[i - 1]];
+    const emv = navByDate[dates[i]];
+    const cf  = cfByDate[dates[i]];
+    if (bmv <= 0) continue;
+    const r = (emv - cf) / bmv - 1;
+    if (isFinite(r)) cumRet *= (1 + r);
+    if (cf !== 0) { flowCount++; flowTotalSGD += cf; }
+  }
+
+  return {
+    equityTwrr: (cumRet - 1) * 100,
+    days: dates.length,
+    flowCount,
+    flowTotalSGD,
+    bmv: navByDate[dates[0]],
+    emv: navByDate[dates[dates.length - 1]],
+  };
+}
+
 function attrThemeColor(theme) {
   for (const [cat, list] of Object.entries(themeCats)) {
     if (list.includes(theme)) return themeCatColors[cat];
@@ -3349,6 +3467,8 @@ function renderAttribution(el) {
   const isYtd = horizonDef.ytd === true;
   const totalRealised   = isYtd ? A.rows.reduce((s,r) => s + (r.realisedSGD || 0), 0) : 0;
   const totalUnrealised = isYtd ? A.rows.reduce((s,r) => s + (r.unrealisedSGD || 0), 0) : 0;
+  // Equity TWRR (Modified Dietz) only meaningful on YTD horizon.
+  const twrr = isYtd ? (() => { try { return calcTwrr(ps, TRADES_YTD, '2026-01-01'); } catch (e) { console.error('TWRR calc failed:', e); return { equityTwrr: 0, error: e.message }; } })() : null;
 
   const horizonBtns = ATTR_HORIZONS.map(h => `
     <button class="fbtn ${h.key === horizon ? 'active' : ''}" onclick="setAttrHorizon('${h.key}')">${h.label}</button>
@@ -3390,6 +3510,12 @@ function renderAttribution(el) {
             <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${A.portfolioRetPct>=0?'var(--g)':'var(--r)'}">${fmtPct(A.portfolioRetPct)}</div>
             <div style="font-size:12px;color:var(--t2)">${fmtPL(A.totalDollar)} on ${fmtSGD(A.totalStart)} start value</div>
           </div>
+          ${isYtd && twrr && !twrr.error ? `
+          <div title="Modified Dietz time-weighted return on the equity sub-portfolio. Removes the effect of when capital was deployed during the year; treats each trade as an external cash flow into/out of the equity bucket. The CFA / GIPS standard for performance reporting.">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Equity TWRR · YTD</div>
+            <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${twrr.equityTwrr>=0?'var(--g)':'var(--r)'}">${fmtPct(twrr.equityTwrr)}</div>
+            <div style="font-size:12px;color:var(--t2)">Modified Dietz · ${twrr.days} trading days · ${twrr.flowCount} flows</div>
+          </div>` : ''}
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Top Contributor</div>
             <div style="font-family:var(--sans);font-size:14px;font-weight:700;color:var(--t1);line-height:1.25">${topContribTheme && topContribTheme.contribPp > 0 ? topContribTheme.theme : '—'}</div>
