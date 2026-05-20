@@ -3521,10 +3521,10 @@ function getEquityCurve(ps, trades, startDateStr) {
     }
   }
 
-  // Daily NAV + CF — built first, then leading zero-NAV days (holidays /
-  // missing-data days at the window edge) are trimmed off so the chart and
-  // KPIs never show a misleading "Start NAV: 0".
-  const navAll = [], cfAll = [];
+  // CASH-INCLUDED-NAV: compute equity NAV per day, plus cash + bond/unpriced
+  // constant, so total NAV reflects the full portfolio. Trades become
+  // internal rotations between equity and cash buckets — no external CF.
+  const equityAll = [], cfAll = [];
   for (const ds of dates) {
     let n = 0;
     for (const p of priced) {
@@ -3532,25 +3532,49 @@ function getEquityCurve(ps, trades, startDateStr) {
       const px = closeMatrix[p.ticker][ds];
       if (q > 0 && px != null) n += q * px * (p.fxRate || 1);
     }
-    navAll.push(n);
+    equityAll.push(n);
     let c = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
-      // CF must use the SAME priced-equity constituent set as NAV. Trades on
-      // tickers we do not price (UBER, XPEV, etc.) would otherwise create
-      // phantom Modified Dietz returns: a sell out of an unpriced ticker
-      // would shrink CF without shrinking NAV, mis-attributed as +N% return.
       if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
       const fx = pos.fxRate || 1;
       c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fx;
     }
     cfAll.push(c);
   }
+
+  // Current cash NAV in SGD (USD.CASH position if it exists, else 0).
+  const cashPos = ps.find(p => p.type === 'Cash');
+  const cashToday = cashPos ? (cashPos.qty * (cashPos.fxRate || 1)) : 0;
+
+  // Cumulative cf summed forward — gives "cash deployed into equity so far".
+  // cash(t) = cash_today + Σ cf from (t+1 .. end), i.e. add back future deployments.
+  // Equivalently cash(Jan-1) = cash_today + Σ cf over the whole window.
+  const cashSeries = new Array(equityAll.length);
+  // Compute backward: cashSeries[last] = cashToday; cashSeries[t] = cashSeries[t+1] + cfAll[t+1].
+  cashSeries[equityAll.length - 1] = cashToday;
+  for (let i = equityAll.length - 2; i >= 0; i--) {
+    cashSeries[i] = cashSeries[i + 1] + cfAll[i + 1];
+  }
+
+  // Bonds + other unpriced positions are held at constant current value
+  // (zero price movement assumed for bonds; V7AB Astrea has no Yahoo feed).
+  const constantOther = ps
+    .filter(p => p.type === 'Bond' || (!p.history && p.type !== 'Cash'))
+    .reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+
+  // Total all-in NAV per day. This is the number that should approximate
+  // the landing-page Total Market Value when the window includes today.
+  const navAll = equityAll.map((eq, i) => eq + cashSeries[i] + constantOther);
+
+  // Trim leading zero-NAV days as before (still possible if first day has
+  // no priced bars yet AND cash trajectory starts elsewhere).
   let firstReal = 0;
   while (firstReal < navAll.length && navAll[firstReal] <= 0) firstReal++;
   const trimmedDates = dates.slice(firstReal);
-  const nav = navAll.slice(firstReal);
-  const cf  = cfAll.slice(firstReal);
+  const nav        = navAll.slice(firstReal);
+  // Internal-rotation accounting: CF from the portfolio perspective is zero.
+  const cf         = new Array(nav.length).fill(0);
   dates.length = 0;
   trimmedDates.forEach(d => dates.push(d));
 
@@ -3687,8 +3711,8 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       <div id="equityCurveChart" style="height:420px"></div>
       <!-- NAV-scope-note -->
       <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;font-size:11px;color:var(--t3);line-height:1.55">
-        <strong style="color:var(--t2)">Why does the start NAV not match the landing-page total?</strong>
-        The equity curve is the priced-equity sub-portfolio only — Modified Dietz TWRR is calculated on positions with daily price history. The landing-page Total Market Value (~S$1.36M) additionally includes Singapore Savings Bonds (~S$250k, no daily price feed), USD cash from recent sales (~S$68k, no equity return by definition), and the one CDP position Yahoo Finance does not price (V7AB Astrea, ~S$10k). Excluding these is intentional — they would dilute equity-selection skill without contributing meaningful daily returns.
+        <strong style="color:var(--t2)">All-in portfolio NAV.</strong>
+        The curve now includes the equity sub-portfolio <em>plus</em> USD cash dry powder (intentional defensive call) <em>plus</em> bonds (held at constant value — no equity-style daily return) <em>plus</em> the V7AB CDP position (no Yahoo price feed). Total NAV should approximately match the landing-page <strong>Total Market Value of ${fmtSGD(state.totalValueSGD || 0)}</strong> on today's date; small differences come from FX timing and the fact that bonds are held at a flat current value rather than their own (very stable) yield path. Trades during the window are <strong>internal rotations</strong> between equity and cash buckets — they do not register as external cash flows, so daily returns reflect pure price movement of held assets.
       </div>
     </div>`;
 
