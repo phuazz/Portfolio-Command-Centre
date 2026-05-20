@@ -3697,19 +3697,28 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     const ddY   = curve.drawdown;
     const isPct = (state.perfChartMode || 'pct') === 'pct';
     const navY  = isPct ? curve.cumReturn : curve.nav;
+    // Pre-formatted hover strings (1 decimal). Plotly x-unified hover does
+    // not reliably honour inline format specs on multi-trace traces, so we
+    // drive the displayed readout via customdata pre-formatted strings.
+    const primaryHover = isPct
+      ? curve.cumReturn.map(v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%')
+      : curve.nav.map(v => 'S$' + Math.round(v).toLocaleString('en-US'));
+    const ddHover = curve.drawdown.map(v => v.toFixed(1) + '%');
     const trace1 = isPct ? {
       type: 'scatter', mode: 'lines', name: 'Return',
       x: curve.dates, y: navY,
       line: { color: 'rgba(26,135,84,0.95)', width: 2 },
       fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
-      hovertemplate: '%{x}<br>Return: %{y:+.1f}%<extra></extra>',
+      customdata: primaryHover,
+      hovertemplate: '<b>%{x|%-d %b %Y}</b><br>Return: %{customdata}<extra></extra>',
       yaxis: 'y1',
     } : {
       type: 'scatter', mode: 'lines', name: 'Equity NAV',
       x: curve.dates, y: navY,
       line: { color: 'rgba(26,135,84,0.95)', width: 2 },
       fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
-      hovertemplate: '%{x}<br>NAV: S$%{y:,.0f}<extra></extra>',
+      customdata: primaryHover,
+      hovertemplate: '<b>%{x|%-d %b %Y}</b><br>NAV: %{customdata}<extra></extra>',
       yaxis: 'y1',
     };
     const trace2 = {
@@ -3717,7 +3726,8 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       x: curve.dates, y: ddY,
       line: { color: 'rgba(192,57,43,0.6)', width: 1 },
       fill: 'tozeroy', fillcolor: 'rgba(192,57,43,0.18)',
-      hovertemplate: '%{x}<br>Drawdown: %{y:.1f}%<extra></extra>',
+      customdata: ddHover,
+      hovertemplate: '<b>%{x|%-d %b %Y}</b><br>Drawdown: %{customdata}<extra></extra>',
       yaxis: 'y2',
     };
     if (!document.getElementById('equityCurveChart')) return;
