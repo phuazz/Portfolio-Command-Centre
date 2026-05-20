@@ -3359,16 +3359,26 @@ function calcTwrr(ps, trades, startDateStr) {
     }
   }
 
-  // 5. close matrix per ticker × date with forward-fill (handles cross-market non-trading days).
+  // 5. close matrix per ticker × date with forward-fill, SEEDED from the last
+  // close BEFORE the window. Without the seed, staggered market openings make
+  // NAV ramp up over the first few days and Modified Dietz mis-reads it as
+  // organic return.
   const closeMatrix = {};
   for (const p of priced) {
     closeMatrix[p.ticker] = {};
+    let lastCloseBeforeWindow_twrr = null;
+    for (let i = p.history.length - 1; i >= 0; i--) {
+      const bar = p.history[i];
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      if (ds < startDateStr) { lastCloseBeforeWindow_twrr = bar.close; break; }
+    }
     for (const bar of p.history) {
       const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
       const ds = d.toISOString().slice(0, 10);
       closeMatrix[p.ticker][ds] = bar.close;
     }
-    let last = null;
+    let last = lastCloseBeforeWindow_twrr;
     for (const ds of dates) {
       if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
       else if (last != null) closeMatrix[p.ticker][ds] = last;
@@ -3391,7 +3401,10 @@ function calcTwrr(ps, trades, startDateStr) {
     let cf = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
-      const fx  = pos ? pos.fxRate : (typeof FX === 'object' ? (FX[t.ccy] || 1) : 1);
+      // CF must use the same priced-equity constituent set as NAV. Trades on
+      // unpriced tickers would create phantom Modified Dietz returns.
+      if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
+      const fx = pos.fxRate || 1;
       const usd = t.q * t.p * fx;
       cf += (t.a === 'B' ? usd : -usd);
     }
@@ -3479,16 +3492,29 @@ function getEquityCurve(ps, trades, startDateStr) {
     }
   }
 
-  // Close matrix with forward fill
+  // Close matrix with forward fill, SEEDED from the last close BEFORE the
+  // window. Without the seed, staggered market openings (US Jan 2, HK Jan 5,
+  // JPN Jan 4, etc.) cause NAV to ramp up over the first few days as each
+  // market reports its first window bar — Modified Dietz then mis-reads
+  // that ramp as a sub-period return. Seeding fixes the first-day artifact.
   const closeMatrix = {};
   for (const p of priced) {
     closeMatrix[p.ticker] = {};
+    // Find last close strictly before the window starts (so the day before
+    // dates[0] becomes our 'last known price'). Walk history backward.
+    let lastCloseBeforeWindow = null;
+    for (let i = p.history.length - 1; i >= 0; i--) {
+      const bar = p.history[i];
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      if (ds < startDateStr) { lastCloseBeforeWindow = bar.close; break; }
+    }
     for (const bar of p.history) {
       const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
       const ds = d.toISOString().slice(0, 10);
       closeMatrix[p.ticker][ds] = bar.close;
     }
-    let last = null;
+    let last = lastCloseBeforeWindow;   // seed
     for (const ds of dates) {
       if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
       else if (last != null) closeMatrix[p.ticker][ds] = last;
@@ -3510,7 +3536,12 @@ function getEquityCurve(ps, trades, startDateStr) {
     let c = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
-      const fx = pos ? pos.fxRate : (typeof FX === 'object' ? (FX[t.ccy] || 1) : 1);
+      // CF must use the SAME priced-equity constituent set as NAV. Trades on
+      // tickers we do not price (UBER, XPEV, etc.) would otherwise create
+      // phantom Modified Dietz returns: a sell out of an unpriced ticker
+      // would shrink CF without shrinking NAV, mis-attributed as +N% return.
+      if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
+      const fx = pos.fxRate || 1;
       c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fx;
     }
     cfAll.push(c);
@@ -3563,11 +3594,29 @@ function getEquityCurve(ps, trades, startDateStr) {
     if (dailyReturn[i] < worst.return) worst = { date: dates[i], return: dailyReturn[i] * 100 };
   }
 
+  // Period-level Modified Dietz MWRR — independent cross-check on the daily-linked TWRR.
+  //   MWRR = (EMV - BMV - netCF) / (BMV + Σ CF_i * (1 - days_from_start_i / total_days))
+  // Each CF is weighted by its remaining time in the period. Less prone to
+  // single-day artifacts than the daily geometric linking.
+  const bmv0 = nav[0];
+  const emv0 = nav[nav.length - 1];
+  let netCF = 0, weightedCF = 0;
+  const N = dates.length - 1;
+  for (let i = 1; i < dates.length; i++) {
+    netCF += cf[i];
+    const w = N > 0 ? (1 - i / N) : 0;
+    weightedCF += cf[i] * w;
+  }
+  const denom = bmv0 + weightedCF;
+  const mwrrPct = denom > 0 ? ((emv0 - bmv0 - netCF) / denom) * 100 : 0;
+
   return {
     dates, nav, cf, dailyReturn, cumReturn, drawdown,
     startNav: nav[0],
     currentNav: nav[nav.length - 1],
     totalReturnPct: cumReturn[cumReturn.length - 1],
+    mwrrPct,
+    netCF,
     maxDrawdown: maxDD,
     bestDay: best,
     worstDay: worst,
@@ -3599,7 +3648,8 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
   const kpis = [
     { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: curve.dates[0] },
     { label: 'Current NAV',      value: fmtSGD(curve.currentNav), sub: curve.dates[curve.dates.length - 1] },
-    { label: 'Total Return',     value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length} trading days` },
+    { label: 'Total Return (TWRR)', value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length} trading days · Modified Dietz daily` },
+    { label: 'MWRR (cross-check)',  value: fmtPct(curve.mwrrPct), cls: curve.mwrrPct >= 0 ? 'pos' : 'neg', sub: `Δ ${(curve.mwrrPct - curve.totalReturnPct).toFixed(2)} pp vs TWRR${Math.abs(curve.mwrrPct - curve.totalReturnPct) > 3 ? ' ⚠' : ''}` },
     { label: 'Max Drawdown',     value: fmtPct(curve.maxDrawdown.value), cls: 'neg', sub: `${curve.maxDrawdown.from} → ${curve.maxDrawdown.date}` },
     { label: 'Best Day',         value: fmtPct(curve.bestDay.return),   cls: 'pos', sub: curve.bestDay.date },
     { label: 'Worst Day',        value: fmtPct(curve.worstDay.return),  cls: 'neg', sub: curve.worstDay.date },
