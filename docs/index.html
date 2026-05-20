@@ -3586,12 +3586,16 @@ function getEquityCurve(ps, trades, startDateStr) {
     }
   }
 
-  // Best / worst day
-  let best = { date: dates[1] || dates[0], return: -Infinity };
-  let worst = { date: dates[1] || dates[0], return: Infinity };
+  // Best / worst day. UNIT FIX: compare daily returns in their native (fraction)
+  // units, only multiply by 100 when storing the display value. Previous bug
+  // stored best.r as percent then compared the next fraction against it, so
+  // best/worst never updated past the first non-zero daily return — labelled
+  // 'best.r_fraction' for marker.
+  let best  = { date: dates[1] || dates[0], r_frac: -Infinity, return: 0 };
+  let worst = { date: dates[1] || dates[0], r_frac:  Infinity, return: 0 };
   for (let i = 1; i < dates.length; i++) {
-    if (dailyReturn[i] > best.return)  best  = { date: dates[i], return: dailyReturn[i] * 100 };
-    if (dailyReturn[i] < worst.return) worst = { date: dates[i], return: dailyReturn[i] * 100 };
+    if (dailyReturn[i] > best.r_frac)  best  = { date: dates[i], r_frac: dailyReturn[i], return: dailyReturn[i] * 100 };
+    if (dailyReturn[i] < worst.r_frac) worst = { date: dates[i], r_frac: dailyReturn[i], return: dailyReturn[i] * 100 };
   }
 
   // Period-level Modified Dietz MWRR — independent cross-check on the daily-linked TWRR.
@@ -3681,6 +3685,11 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
         </div>`).join('')}
       </div>
       <div id="equityCurveChart" style="height:420px"></div>
+      <!-- NAV-scope-note -->
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;font-size:11px;color:var(--t3);line-height:1.55">
+        <strong style="color:var(--t2)">Why does the start NAV not match the landing-page total?</strong>
+        The equity curve is the priced-equity sub-portfolio only — Modified Dietz TWRR is calculated on positions with daily price history. The landing-page Total Market Value (~S$1.36M) additionally includes Singapore Savings Bonds (~S$250k, no daily price feed), USD cash from recent sales (~S$68k, no equity return by definition), and the one CDP position Yahoo Finance does not price (V7AB Astrea, ~S$10k). Excluding these is intentional — they would dilute equity-selection skill without contributing meaningful daily returns.
+      </div>
     </div>`;
 
   // Render Plotly chart
@@ -3693,7 +3702,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       x: curve.dates, y: navY,
       line: { color: 'rgba(26,135,84,0.95)', width: 2 },
       fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
-      hovertemplate: '%{x}<br>Return: %{y:+.2f}%<extra></extra>',
+      hovertemplate: '%{x}<br>Return: %{y:+.1f}%<extra></extra>',
       yaxis: 'y1',
     } : {
       type: 'scatter', mode: 'lines', name: 'Equity NAV',
@@ -3708,7 +3717,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       x: curve.dates, y: ddY,
       line: { color: 'rgba(192,57,43,0.6)', width: 1 },
       fill: 'tozeroy', fillcolor: 'rgba(192,57,43,0.18)',
-      hovertemplate: '%{x}<br>Drawdown: %{y:.2f}%<extra></extra>',
+      hovertemplate: '%{x}<br>Drawdown: %{y:.1f}%<extra></extra>',
       yaxis: 'y2',
     };
     if (!document.getElementById('equityCurveChart')) return;
