@@ -1304,6 +1304,7 @@ let state = {
   sort: { col:'weight', dir:'desc' },
   filter: 'ALL',
   attrHorizon: '1M',
+  perfWindow: 'YTD',
   totalValueSGD: 0,
   totalInvestedSGD: 0,
   totalPnLSGD: 0,
@@ -2056,7 +2057,12 @@ function renderPerformance(el) {
   const byTheme={};
   ps.forEach(p=>{if(!byTheme[p.theme])byTheme[p.theme]=[];byTheme[p.theme].push(p)});
 
+  // Equity curve card sits at the top of the tab. setPerfWindow re-renders
+  // just this container, leaving the rest of the Performance tab alone.
+  const perfWindow = state.perfWindow || 'YTD';
+
   el.innerHTML = `
+    <div class="card mb" id="equityCurveCard"></div>
     <div class="g2 mb">
       <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>Return Heatmap</div></div>
         <div class="card-body">
@@ -2132,6 +2138,9 @@ function renderPerformance(el) {
       xaxis:{tickangle:-45}, yaxis:{title:'Return %',gridcolor:'#e2e0d8',zerolinecolor:'#c0beb5'}
     },{displayModeBar:false,responsive:true});
   },100);
+
+  // Equity curve + drawdown + KPI strip at the top of the tab
+  setTimeout(() => renderEquityCurve('equityCurveCard', ps, TRADES_YTD, perfWindow), 80);
 }
 
 
@@ -3256,10 +3265,12 @@ function calcYtdAttribution(ps, trades) {
 
   const totalDollar = rows.reduce((s, r) => s + r.dollar, 0);
 
-  // Weights & contributions
+  // Weights & contributions. Null-out contribPp when there is no recorded
+  // P&L for this row so the renderer prints '—' rather than '+0.00%'
+  // (matches the retPct null treatment — flags data-quality fallback rows).
   rows.forEach(r => {
     r.weightPct = totalStart > 0 ? (r.startSGD / totalStart) * 100 : 0;
-    r.contribPp = totalStart > 0 ? (r.dollar   / totalStart) * 100 : 0;
+    r.contribPp = (r.dollar === 0) ? null : (totalStart > 0 ? (r.dollar / totalStart) * 100 : null);
   });
 
   // Group by theme — same shape as calcAttribution
@@ -3270,7 +3281,7 @@ function calcYtdAttribution(ps, trades) {
     themeMap[t].startSGD     += r.startSGD;
     themeMap[t].basisSGD     += r.basisSGD || 0;
     themeMap[t].dollar       += r.dollar;
-    themeMap[t].contribPp    += r.contribPp;
+    themeMap[t].contribPp    += (r.contribPp || 0);   // null coerced to 0 for safe summation
     themeMap[t].weightPct    += r.weightPct;
     themeMap[t].realisedSGD  += r.realisedSGD;
     themeMap[t].unrealisedSGD+= r.unrealisedSGD;
@@ -3279,6 +3290,7 @@ function calcYtdAttribution(ps, trades) {
   const themes = Object.values(themeMap).map(t => ({
     ...t,
     retPct: (t.dollar === 0) ? null : (t.basisSGD > 0 ? (t.dollar / t.basisSGD) * 100 : null),
+    contribPp: (t.dollar === 0) ? null : t.contribPp,
   }));
 
   return {
@@ -3409,6 +3421,248 @@ function calcTwrr(ps, trades, startDateStr) {
     emv: navByDate[dates[dates.length - 1]],
   };
 }
+
+
+// ─── EQUITY CURVE + DRAWDOWN ENGINE ─────────────────────────────────
+// Reconstructs daily equity NAV from history.json closes + TRADES_YTD
+// quantity walk. Returns the full time series ready for charting plus
+// rich KPIs (max drawdown, best/worst day).
+//
+// Returns: { dates, nav, cf, dailyReturn, cumReturn, drawdown,
+//            startNav, currentNav, totalReturnPct, maxDrawdown:{value,date,from},
+//            bestDay:{date,return}, worstDay:{date,return} }
+function getEquityCurve(ps, trades, startDateStr) {
+  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
+  if (priced.length === 0) return { dates: [], nav: [], error: 'No priced positions' };
+
+  // Build unified date axis from window-start onward
+  const allDates = new Set();
+  for (const p of priced) {
+    for (const bar of p.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      if (ds >= startDateStr) allDates.add(ds);
+    }
+  }
+  const dates = [...allDates].sort();
+  if (dates.length < 2) return { dates, nav: [], error: 'Not enough trading days' };
+
+  // Index trades
+  const tradesByTickerDate = {};
+  const tradesByDate = {};
+  for (const t of trades) {
+    if (!tradesByTickerDate[t.t]) tradesByTickerDate[t.t] = {};
+    if (!tradesByTickerDate[t.t][t.d]) tradesByTickerDate[t.t][t.d] = [];
+    tradesByTickerDate[t.t][t.d].push(t);
+    if (!tradesByDate[t.d]) tradesByDate[t.d] = [];
+    tradesByDate[t.d].push(t);
+  }
+
+  // Reconstruct qty per ticker per date.
+  // For YTD window: jan1Qty = currentQty - net flow over window.
+  // For 1M/3M window: similar, but only YTD trades in our ledger so we
+  // walk net flow from start-of-window forward.
+  const qtyMatrix = {};
+  for (const p of priced) {
+    // Compute the qty as of the start of the window:
+    // qtyAtStart = currentQty - net flow from start-of-window through today
+    const tradesInWindow = trades.filter(t => t.t === p.ticker && t.d >= startDateStr);
+    const buyInWindow  = tradesInWindow.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
+    const sellInWindow = tradesInWindow.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
+    let qty = p.qty - buyInWindow + sellInWindow;
+    qtyMatrix[p.ticker] = {};
+    for (const ds of dates) {
+      const tt = tradesByTickerDate[p.ticker]?.[ds] || [];
+      for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
+      qtyMatrix[p.ticker][ds] = qty;
+    }
+  }
+
+  // Close matrix with forward fill
+  const closeMatrix = {};
+  for (const p of priced) {
+    closeMatrix[p.ticker] = {};
+    for (const bar of p.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      closeMatrix[p.ticker][ds] = bar.close;
+    }
+    let last = null;
+    for (const ds of dates) {
+      if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
+      else if (last != null) closeMatrix[p.ticker][ds] = last;
+    }
+  }
+
+  // Daily NAV + CF — built first, then leading zero-NAV days (holidays /
+  // missing-data days at the window edge) are trimmed off so the chart and
+  // KPIs never show a misleading "Start NAV: 0".
+  const navAll = [], cfAll = [];
+  for (const ds of dates) {
+    let n = 0;
+    for (const p of priced) {
+      const q = qtyMatrix[p.ticker][ds];
+      const px = closeMatrix[p.ticker][ds];
+      if (q > 0 && px != null) n += q * px * (p.fxRate || 1);
+    }
+    navAll.push(n);
+    let c = 0;
+    for (const t of (tradesByDate[ds] || [])) {
+      const pos = ps.find(p => p.ticker === t.t);
+      const fx = pos ? pos.fxRate : (typeof FX === 'object' ? (FX[t.ccy] || 1) : 1);
+      c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fx;
+    }
+    cfAll.push(c);
+  }
+  let firstReal = 0;
+  while (firstReal < navAll.length && navAll[firstReal] <= 0) firstReal++;
+  const trimmedDates = dates.slice(firstReal);
+  const nav = navAll.slice(firstReal);
+  const cf  = cfAll.slice(firstReal);
+  dates.length = 0;
+  trimmedDates.forEach(d => dates.push(d));
+
+  // Daily Modified Dietz returns
+  const dailyReturn = [0];
+  for (let i = 1; i < dates.length; i++) {
+    const bmv = nav[i - 1];
+    const emv = nav[i];
+    const c   = cf[i];
+    dailyReturn.push(bmv > 0 ? ((emv - c) / bmv - 1) : 0);
+  }
+
+  // Cumulative TWRR-style return %
+  const cumReturn = [];
+  let cum = 1;
+  for (let i = 0; i < dates.length; i++) {
+    cum *= (1 + dailyReturn[i]);
+    cumReturn.push((cum - 1) * 100);
+  }
+
+  // Drawdown: peak-to-current % at each day, using cumulative return as the "wealth index"
+  const drawdown = [];
+  let peakIdx = 0;
+  let peakVal = cumReturn[0];
+  let maxDD = { value: 0, date: dates[0], from: dates[0] };
+  for (let i = 0; i < dates.length; i++) {
+    if (cumReturn[i] > peakVal) { peakVal = cumReturn[i]; peakIdx = i; }
+    // Drawdown from peak (in pp of cumulative return)
+    const dd = (1 + cumReturn[i] / 100) / (1 + peakVal / 100) - 1;
+    drawdown.push(dd * 100);
+    if (dd * 100 < maxDD.value) {
+      maxDD = { value: dd * 100, date: dates[i], from: dates[peakIdx] };
+    }
+  }
+
+  // Best / worst day
+  let best = { date: dates[1] || dates[0], return: -Infinity };
+  let worst = { date: dates[1] || dates[0], return: Infinity };
+  for (let i = 1; i < dates.length; i++) {
+    if (dailyReturn[i] > best.return)  best  = { date: dates[i], return: dailyReturn[i] * 100 };
+    if (dailyReturn[i] < worst.return) worst = { date: dates[i], return: dailyReturn[i] * 100 };
+  }
+
+  return {
+    dates, nav, cf, dailyReturn, cumReturn, drawdown,
+    startNav: nav[0],
+    currentNav: nav[nav.length - 1],
+    totalReturnPct: cumReturn[cumReturn.length - 1],
+    maxDrawdown: maxDD,
+    bestDay: best,
+    worstDay: worst,
+  };
+}
+
+// Window-start date for chart selectors. Returns ISO date string.
+function _perfWindowStart(windowKey) {
+  if (windowKey === 'YTD') return '2026-01-01';
+  const today = new Date();
+  if (windowKey === '1M') today.setMonth(today.getMonth() - 1);
+  else if (windowKey === '3M') today.setMonth(today.getMonth() - 3);
+  else if (windowKey === '6M') today.setMonth(today.getMonth() - 6);
+  return today.toISOString().slice(0, 10);
+}
+
+// Render the equity-curve + drawdown card. Called by renderPerformance.
+function renderEquityCurve(elId, ps, trades, windowKey) {
+  const startDate = _perfWindowStart(windowKey);
+  const curve = getEquityCurve(ps, trades, startDate);
+  const container = document.getElementById(elId);
+  if (!container) return;
+  if (curve.error) {
+    container.innerHTML = `<div style="padding:32px;text-align:center;color:var(--t3);font-size:13px">${curve.error}</div>`;
+    return;
+  }
+
+  // KPI strip values
+  const kpis = [
+    { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: curve.dates[0] },
+    { label: 'Current NAV',      value: fmtSGD(curve.currentNav), sub: curve.dates[curve.dates.length - 1] },
+    { label: 'Total Return',     value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length} trading days` },
+    { label: 'Max Drawdown',     value: fmtPct(curve.maxDrawdown.value), cls: 'neg', sub: `${curve.maxDrawdown.from} → ${curve.maxDrawdown.date}` },
+    { label: 'Best Day',         value: fmtPct(curve.bestDay.return),   cls: 'pos', sub: curve.bestDay.date },
+    { label: 'Worst Day',        value: fmtPct(curve.worstDay.return),  cls: 'neg', sub: curve.worstDay.date },
+  ];
+
+  const winBtns = ['1M','3M','YTD'].map(w =>
+    `<button class="fbtn ${w === windowKey ? 'active' : ''}" onclick="setPerfWindow('${w}')">${w}</button>`
+  ).join('');
+
+  container.innerHTML = `
+    <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div class="card-title"><span class="indicator" style="background:var(--g)"></span>Equity Curve — Daily NAV with Drawdown</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${winBtns}</div>
+    </div>
+    <div class="card-body" style="padding-top:8px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:16px">
+        ${kpis.map(k => `<div>
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">${k.label}</div>
+          <div style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:18px;font-weight:700;color:${k.cls === 'pos' ? 'var(--g)' : k.cls === 'neg' ? 'var(--r)' : 'var(--t1)'}">${k.value}</div>
+          <div style="font-size:11px;color:var(--t3);font-family:var(--mono);margin-top:2px">${k.sub}</div>
+        </div>`).join('')}
+      </div>
+      <div id="equityCurveChart" style="height:420px"></div>
+    </div>`;
+
+  // Render Plotly chart
+  setTimeout(() => {
+    const navY  = curve.nav;
+    const ddY   = curve.drawdown;
+    const trace1 = {
+      type: 'scatter', mode: 'lines', name: 'Equity NAV',
+      x: curve.dates, y: navY,
+      line: { color: 'rgba(26,135,84,0.95)', width: 2 },
+      fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
+      hovertemplate: '%{x}<br>NAV: S$%{y:,.0f}<extra></extra>',
+      yaxis: 'y1',
+    };
+    const trace2 = {
+      type: 'scatter', mode: 'lines', name: 'Drawdown',
+      x: curve.dates, y: ddY,
+      line: { color: 'rgba(192,57,43,0.6)', width: 1 },
+      fill: 'tozeroy', fillcolor: 'rgba(192,57,43,0.18)',
+      hovertemplate: '%{x}<br>Drawdown: %{y:.2f}%<extra></extra>',
+      yaxis: 'y2',
+    };
+    if (!document.getElementById('equityCurveChart')) return;
+    Plotly.newPlot('equityCurveChart', [trace1, trace2], {
+      margin: { t: 10, b: 50, l: 70, r: 60 },
+      paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+      font: { family: 'DM Sans', size: 11, color: '#5c5c56' },
+      showlegend: false,
+      hovermode: 'x unified',
+      xaxis: { type: 'date', gridcolor: '#e2e0d8', tickfont: { size: 10 } },
+      yaxis:  { title: { text: 'NAV (S$)', font: { size: 11 } }, gridcolor: '#e2e0d8', tickfont: { size: 10, family: 'JetBrains Mono' }, tickformat: ',.0f', side: 'left',  rangemode: 'tozero' },
+      yaxis2: { title: { text: 'Drawdown (%)', font: { size: 11, color: 'rgba(192,57,43,0.85)' } }, gridcolor: 'rgba(0,0,0,0)', tickfont: { size: 10, color: 'rgba(192,57,43,0.85)', family: 'JetBrains Mono' }, ticksuffix: '%', side: 'right', overlaying: 'y', rangemode: 'tozero' },
+    }, { displayModeBar: false, responsive: true });
+  }, 60);
+}
+
+window.setPerfWindow = (w) => {
+  state.perfWindow = w;
+  // Re-render only the equity curve container without nuking the whole tab.
+  renderEquityCurve('equityCurveCard', state.positions, TRADES_YTD, w);
+};
 
 function attrThemeColor(theme) {
   for (const [cat, list] of Object.entries(themeCats)) {
