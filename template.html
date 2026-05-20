@@ -1305,6 +1305,7 @@ let state = {
   filter: 'ALL',
   attrHorizon: '1M',
   perfWindow: 'YTD',
+  perfChartMode: 'pct',  // 'pct' rebased to 0% | 'nav' absolute S$
   totalValueSGD: 0,
   totalInvestedSGD: 0,
   totalPnLSGD: 0,
@@ -3607,11 +3608,19 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
   const winBtns = ['1M','3M','YTD'].map(w =>
     `<button class="fbtn ${w === windowKey ? 'active' : ''}" onclick="setPerfWindow('${w}')">${w}</button>`
   ).join('');
+  const mode = state.perfChartMode || 'pct';
+  const modeBtns = [['pct','%'],['nav','S$']].map(([k,label]) =>
+    `<button class="fbtn ${k === mode ? 'active' : ''}" onclick="setPerfChartMode('${k}')">${label}</button>`
+  ).join('');
 
   container.innerHTML = `
     <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div class="card-title"><span class="indicator" style="background:var(--g)"></span>Equity Curve — Daily NAV with Drawdown</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${winBtns}</div>
+      <div class="card-title"><span class="indicator" style="background:var(--g)"></span>Equity Curve — ${mode === 'pct' ? 'Rebased Return' : 'Daily NAV'} with Drawdown</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:4px;align-items:center" title="Chart axis: rebased to 0% at window start, or absolute S$ NAV">${modeBtns}</div>
+        <div style="width:1px;height:18px;background:var(--bd)"></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${winBtns}</div>
+      </div>
     </div>
     <div class="card-body" style="padding-top:8px">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:16px">
@@ -3626,9 +3635,17 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
 
   // Render Plotly chart
   setTimeout(() => {
-    const navY  = curve.nav;
     const ddY   = curve.drawdown;
-    const trace1 = {
+    const isPct = (state.perfChartMode || 'pct') === 'pct';
+    const navY  = isPct ? curve.cumReturn : curve.nav;
+    const trace1 = isPct ? {
+      type: 'scatter', mode: 'lines', name: 'Return',
+      x: curve.dates, y: navY,
+      line: { color: 'rgba(26,135,84,0.95)', width: 2 },
+      fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
+      hovertemplate: '%{x}<br>Return: %{y:+.2f}%<extra></extra>',
+      yaxis: 'y1',
+    } : {
       type: 'scatter', mode: 'lines', name: 'Equity NAV',
       x: curve.dates, y: navY,
       line: { color: 'rgba(26,135,84,0.95)', width: 2 },
@@ -3652,7 +3669,9 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       showlegend: false,
       hovermode: 'x unified',
       xaxis: { type: 'date', gridcolor: '#e2e0d8', tickfont: { size: 10 } },
-      yaxis:  { title: { text: 'NAV (S$)', font: { size: 11 } }, gridcolor: '#e2e0d8', tickfont: { size: 10, family: 'JetBrains Mono' }, tickformat: ',.0f', side: 'left',  rangemode: 'tozero' },
+      yaxis:  isPct
+        ? { title: { text: 'Cumulative Return (%)', font: { size: 11 } }, gridcolor: '#e2e0d8', zerolinecolor: '#9a9890', zerolinewidth: 1, tickfont: { size: 10, family: 'JetBrains Mono' }, ticksuffix: '%', side: 'left' }
+        : { title: { text: 'NAV (S$)', font: { size: 11 } }, gridcolor: '#e2e0d8', tickfont: { size: 10, family: 'JetBrains Mono' }, tickformat: ',.0f', side: 'left', rangemode: 'tozero' },
       yaxis2: { title: { text: 'Drawdown (%)', font: { size: 11, color: 'rgba(192,57,43,0.85)' } }, gridcolor: 'rgba(0,0,0,0)', tickfont: { size: 10, color: 'rgba(192,57,43,0.85)', family: 'JetBrains Mono' }, ticksuffix: '%', side: 'right', overlaying: 'y', rangemode: 'tozero' },
     }, { displayModeBar: false, responsive: true });
   }, 60);
@@ -3662,6 +3681,11 @@ window.setPerfWindow = (w) => {
   state.perfWindow = w;
   // Re-render only the equity curve container without nuking the whole tab.
   renderEquityCurve('equityCurveCard', state.positions, TRADES_YTD, w);
+};
+
+window.setPerfChartMode = (m) => {
+  state.perfChartMode = m;
+  renderEquityCurve('equityCurveCard', state.positions, TRADES_YTD, state.perfWindow || 'YTD');
 };
 
 function attrThemeColor(theme) {
