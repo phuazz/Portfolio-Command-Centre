@@ -1282,6 +1282,85 @@ const fmtPL = (n,pre='S$') => (n==null||!isFinite(n)) ? '—' : (n>=0?'+':'-')+p
 const exchColors = {HKG:'#b91c1c',TSE:'#be185d',ARCA:'#1d4ed8',NMS:'#2563eb',NYS:'#4f46e5',LSE:'#6d28d9',SGX:'#047857'};
 const exchTags = {HKG:'tag-hk',TSE:'tag-jp',ARCA:'tag-us',NMS:'tag-us',NYS:'tag-us',LSE:'tag-gb',SGX:'tag-sg'};
 const regionMap = {HKG:'Asia Pacific',TSE:'Asia Pacific',ARCA:'United States',NMS:'United States',NYS:'United States',LSE:'Europe',SGX:'Singapore'};
+
+// ═══════════════════════════════════════════════════════════════
+//  STRUCTURED CLASSIFICATION TAGS — foundation for pivot views
+//  Each enriched position carries .region, .sector, .assetClass
+//  alongside the existing free-text .theme. Allocation tab pivots
+//  on any of the four. Attribution stays theme-led but can cross-
+//  tab against sector. GICS-aligned sectors where applicable plus
+//  a 'Diversified' catch-all for broad-market ETFs.
+// ═══════════════════════════════════════════════════════════════
+const REGION_BY_EXCHANGE = {
+  ASX:'Australia', HKG:'Asia Pacific ex-Japan', TSE:'Japan', SGX:'Singapore',
+  ARCA:'United States', NMS:'United States', NYS:'United States',
+  LSE:'Europe', PAR:'Europe',
+};
+
+const SECTOR_BY_TICKER = {
+  // Singapore CDP
+  'GAB':'Diversified','G3B':'Diversified','ES3':'Diversified','ICU':'Diversified',
+  'D05':'Financials','O39':'Financials','U11':'Financials','V7AB':'Financials',
+  'J69U':'Real Estate','AJBU':'Real Estate',
+  'BN4':'Industrials','P52':'Industrials','S58':'Industrials','5E2':'Industrials',
+  'CJLU':'Communication Services',
+  'YYY':'Diversified',
+  'D07':'Diversified','S27':'Diversified',
+  // Asia Pacific ex-Japan (HKG)
+  '2338.HK':'Industrials','3010.HK':'Diversified','3173.HK':'Diversified',
+  '3750.HK':'Industrials','981.HK':'Information Technology','992.HK':'Information Technology',
+  '9961.HK':'Consumer Discretionary',
+  // Japan
+  '1615.JP':'Financials','4004.JP':'Materials',
+  // United States
+  'ARGT.US':'Diversified',
+  'COPX.US':'Materials','GDX.US':'Materials','REMX.US':'Materials','SLV.US':'Materials',
+  'IEZ.US':'Energy','XLE.US':'Energy',
+  'NASA.US':'Industrials','TAN.US':'Industrials',
+  'CPRX.US':'Health Care',
+  'INTC.US':'Information Technology','MRVL.US':'Information Technology',
+  'MSFT.US':'Information Technology','MU.US':'Information Technology',
+  'TSLA.US':'Consumer Discretionary',
+  'NOK.US':'Communication Services','SKM.US':'Communication Services','SPHR.US':'Communication Services',
+  // Europe
+  'GDX.GB':'Materials','SOI.FR':'Information Technology',
+  // Australia
+  'SGM.AU':'Materials',
+  // Cash
+  'USD.CASH':'Cash',
+};
+
+// ETFs that hold non-equity content — overrides default Equity classification.
+const ASSET_CLASS_BY_TICKER = {
+  'SLV.US':'Commodity',
+};
+
+// Dec 31 2025 close (native ccy) for closed-out positions that were sold during
+// YTD but are no longer in POSITIONS. Used by calcYtdAttribution as the pre-YTD
+// FIFO lot cost basis so the realised P&L on these trades is computed from
+// 'year-end-2025 mark' rather than the trade ledger fallback (which would be 0).
+// Sourced from history.json's last 2025 bar for each ticker (data retained
+// from earlier bakes when these were still in POSITIONS).
+const PRE_YTD_BASIS = {
+  // All 8 closed-out tickers with pre-YTD inventory, basis = Dec 31 2025 close
+  // (native ccy) sourced from history.json. Data retained from earlier bakes.
+  'UBER.US':   81.71,
+  'XPEV.US':   20.28,
+  'BIDU.US':  130.66,
+  'GREK.US':   65.91,
+  'OXY.US':    41.12,
+  'SXLE.GB':   36.0175,
+  '9988.HK':  142.80,
+  'GE.US':    308.03,
+};
+
+function deriveAssetClass(p) {
+  if (ASSET_CLASS_BY_TICKER[p.ticker]) return ASSET_CLASS_BY_TICKER[p.ticker];
+  if (p.type === 'Cash') return 'Cash';
+  if (p.type === 'Bond') return 'Fixed Income';
+  if (p.type === 'REIT') return 'Real Estate';
+  return 'Equity';   // Stock or generic ETF defaults to Equity
+}
 const regionColors = {'Asia Pacific':'#b91c1c','United States':'#1d4ed8','Europe':'#6d28d9','Singapore':'#047857'};
 const themeCats = {
   'Singapore':['SG Broad Market','SG Banks','SG REITs','SG Industrials','SG Aviation','SG Infrastructure','SG PE Bond','SG Govt Bond','China Equity','Asia Climate/ESG','US Broad Market'],
@@ -1353,7 +1432,11 @@ function enrichAll() {
     const ytdRet = (p.type !== 'Bond' && history) ? periodReturn(history, 'ytd') : null;
     const m1Ret  = (p.type !== 'Bond' && history) ? periodReturn(history, '1m')  : null;
 
-    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost };
+    // Structured classification tags — additive; existing .theme stays untouched.
+    const region     = REGION_BY_EXCHANGE[p.exchange] || 'Other';
+    const sector     = SECTOR_BY_TICKER[p.ticker] || (p.type === 'Bond' ? 'Government' : 'Other');
+    const assetClass = deriveAssetClass(p);
+    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost, region, sector, assetClass };
   });
 
   state.totalValueSGD = state.positions.reduce((s,p) => s + p.mktValueSGD, 0);
@@ -3187,13 +3270,17 @@ function calcYtdAttribution(ps, trades) {
     const lots = [];
     if (jan1Qty > 0) {
       if (jan1Px == null) {
-        // Fall back: use first sell price (or buy price) as pre-YTD cost basis.
-        // This makes realised P&L conservative for the pre-YTD slice (= 0 if
-        // the first event is a sell at this cost). UI footnotes the position.
-        const firstSell = trades.find(tr => tr.a === 'S');
-        const firstBuy  = trades.find(tr => tr.a === 'B');
-        jan1Px = firstSell ? firstSell.p : (firstBuy ? firstBuy.p : 0);
-        flags.push({ ticker, reason: 'pre-YTD lot — cost basis unavailable, sell price used' });
+        // Closed-out positions with no current POSITIONS entry: try the
+        // PRE_YTD_BASIS lookup (Dec 31 2025 close from earlier-bake history)
+        // before falling back to sell-price-as-cost.
+        if (PRE_YTD_BASIS[ticker] != null) {
+          jan1Px = PRE_YTD_BASIS[ticker];
+        } else {
+          const firstSell = trades.find(tr => tr.a === 'S');
+          const firstBuy  = trades.find(tr => tr.a === 'B');
+          jan1Px = firstSell ? firstSell.p : (firstBuy ? firstBuy.p : 0);
+          flags.push({ ticker, reason: 'pre-YTD lot — cost basis unavailable, sell price used' });
+        }
       }
       lots.push({ qty: jan1Qty, cost: jan1Px });
     }
@@ -3559,8 +3646,11 @@ function getEquityCurve(ps, trades, startDateStr) {
 
   // Bonds + other unpriced positions are held at constant current value
   // (zero price movement assumed for bonds; V7AB Astrea has no Yahoo feed).
+  // Bonds are excluded from the all-in equity curve scope (constant value, no
+  // equity-style return — they would only flatten the chart's volatility
+  // signal). Keep non-bond unpriced positions (none typical, but defensive).
   const constantOther = ps
-    .filter(p => p.type === 'Bond' || (!p.history && p.type !== 'Cash'))
+    .filter(p => p.type !== 'Bond' && p.type !== 'Cash' && !p.history)
     .reduce((s, p) => s + (p.mktValueSGD || 0), 0);
 
   // Total all-in NAV per day. This is the number that should approximate
@@ -3711,8 +3801,8 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       <div id="equityCurveChart" style="height:420px"></div>
       <!-- NAV-scope-note -->
       <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;font-size:11px;color:var(--t3);line-height:1.55">
-        <strong style="color:var(--t2)">All-in portfolio NAV.</strong>
-        The curve now includes the equity sub-portfolio <em>plus</em> USD cash dry powder (intentional defensive call) <em>plus</em> bonds (held at constant value — no equity-style daily return) <em>plus</em> the V7AB CDP position (no Yahoo price feed). Total NAV should approximately match the landing-page <strong>Total Market Value of ${fmtSGD(state.totalValueSGD || 0)}</strong> on today's date; small differences come from FX timing and the fact that bonds are held at a flat current value rather than their own (very stable) yield path. Trades during the window are <strong>internal rotations</strong> between equity and cash buckets — they do not register as external cash flows, so daily returns reflect pure price movement of held assets.
+        <strong style="color:var(--t2)">Performance scope.</strong>
+        Curve covers the equity sub-portfolio <em>plus</em> USD cash (intentional defensive holding). <strong>Singapore Savings Bonds and the V7AB PE bond are excluded</strong> — they generate no equity-style return and would just dilute the volatility signal. Trades during the window are <strong>internal rotations</strong> between equity and cash buckets — they do not register as external cash flows, so daily returns reflect pure price movement of held assets. The landing-page <strong>Total Market Value of ${fmtSGD(state.totalValueSGD || 0)}</strong> additionally includes the bonds (~S\$260k) that this chart does not display.
       </div>
     </div>`;
 
@@ -3858,9 +3948,14 @@ function renderAttribution(el) {
 
   const maxAbsContrib = Math.max(0.01, ...A.themes.map(t => Math.abs(t.contribPp)));
 
-  // Theme heatmap matrix
+  // Theme heatmap matrix. Filter out themes with no recorded P&L across all
+  // horizons (closed-out positions with unknown pre-YTD basis) so the heatmap
+  // stays focused on themes that actually drove return.
   const allThemes = new Set();
-  ATTR_HORIZONS.forEach(h => byHorizon[h.key].themes.forEach(t => allThemes.add(t.theme)));
+  ATTR_HORIZONS.forEach(h => byHorizon[h.key].themes.forEach(t => {
+    const hasRealValue = t.contribPp != null && isFinite(t.contribPp) && t.contribPp !== 0;
+    if (hasRealValue) allThemes.add(t.theme);
+  }));
   const themesOrdered = [...allThemes].sort((a,b) => {
     const ca = byHorizon[horizon].themes.find(t => t.theme === a)?.contribPp ?? -Infinity;
     const cb = byHorizon[horizon].themes.find(t => t.theme === b)?.contribPp ?? -Infinity;
