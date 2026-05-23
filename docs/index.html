@@ -2219,11 +2219,80 @@ function setAllocPivot(p) {
   if (pane) renderAllocation(pane);
 }
 
+// Sort state for the allocation table. Clicking a column toggles direction
+// when re-clicking the same column, otherwise switches to that column with
+// a sensible default direction (desc for numeric columns).
+function setAllocSort(col) {
+  if (!state.allocSort) state.allocSort = { col: 'volContrib', dir: 'desc' };
+  if (state.allocSort.col === col) {
+    state.allocSort.dir = state.allocSort.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    state.allocSort = { col, dir: 'desc' };
+  }
+  const pane = document.getElementById('pane-allocation');
+  if (pane) renderAllocation(pane);
+}
+
 function renderAllocation(el) {
   const ps = state.positions;
   if (!state.allocPivot) state.allocPivot = 'theme';
   const pivot = state.allocPivot;
   const out = calcAllocationRisk(ps, TRADES_YTD, pivot);
+
+  // Sort state — default to vol contribution descending so risk centres
+  // surface first. Click handlers in the table headers toggle this.
+  if (!state.allocSort) state.allocSort = { col: 'volContrib', dir: 'desc' };
+  const sortCol = state.allocSort.col;
+  const sortDir = state.allocSort.dir;
+  out.buckets.sort((a, b) => {
+    const va = a[sortCol], vb = b[sortCol];
+    if (typeof va === 'string') return sortDir === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb);
+    return sortDir === 'desc' ? (vb - va) : (va - vb);
+  });
+
+  // Sort-arrow helper for the header cells.
+  const sortArrow = c => state.allocSort.col === c
+    ? `<span style="color:var(--t1);margin-left:3px">${state.allocSort.dir === 'desc' ? '▼' : '▲'}</span>`
+    : '';
+
+  // ─── Risk summary numbers ─────────────────────────────────────
+  // Sort a separate copy by vol contribution for the top-3 figure (independent
+  // of the user's chosen sort column).
+  const byVol = [...out.buckets].sort((a, b) => b.volContrib - a.volContrib);
+  const top3Vol = byVol.slice(0, 3).reduce((s, b) => s + b.volContrib, 0);
+  const diversifiers = out.buckets.filter(b => b.volContrib < 0);
+  const diversifierContrib = diversifiers.reduce((s, b) => s + b.volContrib, 0);
+  // Risk skew = vol_contrib − weight, in percentage points. Positive means
+  // the bucket is over-contributing risk relative to its capital share.
+  const withSkew = out.buckets
+    .filter(b => b.volAnnual > 0)
+    .map(b => ({ key: b.key, skew: b.volContrib - b.weight, weight: b.weight, vc: b.volContrib }))
+    .sort((a, b) => b.skew - a.skew);
+  const topSkew = withSkew[0] || null;
+
+  const summaryHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:12px 14px;background:var(--bg2);border-radius:6px;margin-bottom:12px">
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Portfolio Vol (ann.)</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${fmt(out.portfolioVol,1)}%</div>
+        <div style="font-size:10px;color:var(--t3)">total risk envelope</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Top-3 Risk Share</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${fmt(top3Vol,1)}%</div>
+        <div style="font-size:10px;color:var(--t3)">${byVol.slice(0,3).map(b=>b.key).join(' · ')}</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Diversifiers</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${diversifiers.length>0?'var(--g)':'var(--t3)'}">${diversifiers.length}${diversifiers.length>0?` (${fmt(diversifierContrib,1)}%)`:''}</div>
+        <div style="font-size:10px;color:var(--t3)">${diversifiers.length>0?diversifiers.map(b=>b.key).slice(0,2).join(' · '):'no negative vol contrib'}</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Biggest Risk Skew</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${topSkew&&topSkew.skew>0?'var(--r)':'var(--t1)'}">${topSkew?(topSkew.skew>=0?'+':'')+fmt(topSkew.skew,1)+'pp':'—'}</div>
+        <div style="font-size:10px;color:var(--t3)">${topSkew?`${topSkew.key} (${fmt(topSkew.weight,1)}% w → ${fmt(topSkew.vc,1)}% risk)`:'—'}</div>
+      </div>
+    </div>`;
 
   // Currency exposure (simple, not part of pivot)
   const byCcy = {};
@@ -2258,20 +2327,23 @@ function renderAllocation(el) {
 
     <div class="card mb">
       <div class="card-head"><div class="card-title"><span class="indicator" style="background:${out.buckets[0]?.color||'var(--t1)'}"></span>By ${PIVOT_LABELS[pivot]} — Weight, YTD Return, Volatility &amp; Risk Contribution</div></div>
-      <div class="card-body" style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead>
-            <tr style="border-bottom:2px solid var(--bd);text-align:left;color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">
-              <th style="padding:8px 6px;width:18%">Bucket</th>
-              <th style="padding:8px 6px;width:30%">Allocation</th>
-              <th style="padding:8px 6px;text-align:right;width:11%">Weight</th>
-              <th style="padding:8px 6px;text-align:right;width:13%">YTD Return</th>
-              <th style="padding:8px 6px;text-align:right;width:13%">Vol (ann.)</th>
-              <th style="padding:8px 6px;text-align:right;width:15%">Vol Contribution</th>
-            </tr>
-          </thead>
-          <tbody>${rowHTML}</tbody>
-        </table>
+      <div class="card-body">
+        ${summaryHTML}
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="border-bottom:2px solid var(--bd);text-align:left;color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">
+                <th style="padding:8px 6px;width:18%;cursor:pointer;user-select:none" onclick="setAllocSort('key')">Bucket${sortArrow('key')}</th>
+                <th style="padding:8px 6px;width:30%">Allocation</th>
+                <th style="padding:8px 6px;text-align:right;width:11%;cursor:pointer;user-select:none" onclick="setAllocSort('weight')">Weight${sortArrow('weight')}</th>
+                <th style="padding:8px 6px;text-align:right;width:13%;cursor:pointer;user-select:none" onclick="setAllocSort('ytdReturn')">YTD Return${sortArrow('ytdReturn')}</th>
+                <th style="padding:8px 6px;text-align:right;width:13%;cursor:pointer;user-select:none" onclick="setAllocSort('volAnnual')">Vol (ann.)${sortArrow('volAnnual')}</th>
+                <th style="padding:8px 6px;text-align:right;width:15%;cursor:pointer;user-select:none" onclick="setAllocSort('volContrib')">Vol Contribution${sortArrow('volContrib')}</th>
+              </tr>
+            </thead>
+            <tbody>${rowHTML}</tbody>
+          </table>
+        </div>
         <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:10px;color:var(--t3);line-height:1.5">
           <strong style="color:var(--t2)">Vol Contribution</strong> decomposes total portfolio volatility (${fmt(out.portfolioVol,1)}%) by bucket. Sums to 100% by construction.
           A bucket whose vol contribution exceeds its weight is adding risk faster than capital.
