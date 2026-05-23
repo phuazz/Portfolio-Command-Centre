@@ -1285,7 +1285,7 @@ const fmtPL = (n,pre='S$') => (n==null||!isFinite(n)) ? '—' : (n>=0?'+':'-')+p
 
 const exchColors = {HKG:'#b91c1c',TSE:'#be185d',ARCA:'#1d4ed8',NMS:'#2563eb',NYS:'#4f46e5',LSE:'#6d28d9',SGX:'#047857'};
 const exchTags = {HKG:'tag-hk',TSE:'tag-jp',ARCA:'tag-us',NMS:'tag-us',NYS:'tag-us',LSE:'tag-gb',SGX:'tag-sg'};
-const regionMap = {HKG:'Asia Pacific',TSE:'Asia Pacific',ARCA:'United States',NMS:'United States',NYS:'United States',LSE:'Europe',SGX:'Singapore'};
+const regionMap = {HKG:'Asia Pacific',TSE:'Asia Pacific',ASX:'Asia Pacific',ARCA:'United States',NMS:'United States',NYS:'United States',LSE:'Europe',PAR:'Europe',SGX:'Singapore'};
 
 // ═══════════════════════════════════════════════════════════════
 //  STRUCTURED CLASSIFICATION TAGS — foundation for pivot views
@@ -2010,47 +2010,286 @@ function renderPositions(el) {
 }
 
 // ─── TAB: ALLOCATION ─────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  ALLOCATION — pivot-aware engine
+//  Multi-lens decomposition of the portfolio by Region | Sector |
+//  Asset Class | Theme. For each bucket the engine computes:
+//    - weight       : current MV / total MV
+//    - ytdReturn    : geometric link of daily bucket returns over YTD
+//    - volAnnual    : annualised standard deviation of bucket daily returns
+//    - volContrib   : marginal contribution to portfolio variance,
+//                     where Σ_b w_b · cov(r_b, r_p) / σ²_p = 1 by identity.
+//  Concentration metrics: HHI, effective N, top-5 weight, diversification
+//  ratio (Σ w_b · σ_b) / σ_portfolio.
+// ═══════════════════════════════════════════════════════════════
+const PIVOT_LABELS = {region:'Region', sector:'Sector', assetClass:'Asset Class', theme:'Theme'};
+const SECTOR_COLORS = {
+  'Information Technology':'#2563eb', 'Financials':'#047857', 'Industrials':'#b45309',
+  'Energy':'#dc2626', 'Materials':'#a16207', 'Real Estate':'#7c3aed',
+  'Health Care':'#0891b2', 'Consumer Discretionary':'#be185d',
+  'Communication Services':'#6d28d9', 'Consumer Staples':'#0e7490',
+  'Utilities':'#65a30d', 'Diversified':'#64748b',
+  'Cash':'#94a3b8', 'Fixed Income':'#475569', 'Government':'#475569',
+  'Other':'#9ca3af'
+};
+const ASSET_CLASS_COLORS = {
+  'Equity':'#1d4ed8', 'Fixed Income':'#047857', 'Real Estate':'#7c3aed',
+  'Commodity':'#b45309', 'Cash':'#64748b', 'Other':'#9ca3af'
+};
+const REGION_COLORS_FULL = {
+  'Singapore':'#047857', 'United States':'#1d4ed8', 'Europe':'#6d28d9',
+  'Asia Pacific ex-Japan':'#b91c1c', 'Japan':'#be185d', 'Australia':'#dc2626',
+  'Other':'#9ca3af'
+};
+
+function _bucketKeyFor(p, pivot) {
+  if (pivot === 'region') return REGION_BY_EXCHANGE[p.exchange] || 'Other';
+  if (pivot === 'sector') return SECTOR_BY_TICKER[p.ticker] || (p.type === 'Bond' ? 'Fixed Income' : p.type === 'Cash' ? 'Cash' : 'Other');
+  if (pivot === 'assetClass') return deriveAssetClass(p);
+  if (pivot === 'theme') {
+    for (const [cat, themes] of Object.entries(themeCats)) {
+      if (themes.includes(p.theme)) return cat;
+    }
+    return 'Other';
+  }
+  return 'Other';
+}
+
+function _bucketColorFor(pivot, key) {
+  if (pivot === 'region') return REGION_COLORS_FULL[key] || '#64748b';
+  if (pivot === 'sector') return SECTOR_COLORS[key] || '#64748b';
+  if (pivot === 'assetClass') return ASSET_CLASS_COLORS[key] || '#64748b';
+  if (pivot === 'theme') return themeCatColors[key] || '#64748b';
+  return '#64748b';
+}
+
+// Compute bucketed risk + return statistics over the YTD window.
+// Vol contribution uses current (today) weights with historical bucket
+// daily returns — the canonical "fixed-weights" decomposition.
+function calcAllocationRisk(ps, trades, pivot) {
+  const startDateStr = '2026-01-01';
+  const totalMV = ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+
+  // Group positions by bucket
+  const groups = {};
+  for (const p of ps) {
+    const k = _bucketKeyFor(p, pivot);
+    if (!groups[k]) groups[k] = { positions: [], mv: 0 };
+    groups[k].positions.push(p);
+    groups[k].mv += p.mktValueSGD || 0;
+  }
+
+  // Priced subset only — bonds/cash/unpriced have no daily-return history.
+  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
+
+  // Unified date axis from YTD start onward
+  const allDates = new Set();
+  for (const p of priced) {
+    for (const bar of p.history) {
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
+      if (ds >= startDateStr) allDates.add(ds);
+    }
+  }
+  const dates = [...allDates].sort();
+
+  // closeMatrix with seed-from-last-close-before-window (same convention
+  // as getEquityCurve, so staggered market openings do not produce
+  // first-day return artifacts).
+  const closeMatrix = {};
+  for (const p of priced) {
+    closeMatrix[p.ticker] = {};
+    let seed = null;
+    for (let i = p.history.length - 1; i >= 0; i--) {
+      const bar = p.history[i];
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
+      if (ds < startDateStr) { seed = bar.close; break; }
+    }
+    for (const bar of p.history) {
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
+      closeMatrix[p.ticker][ds] = bar.close;
+    }
+    let last = seed;
+    for (const ds of dates) {
+      if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
+      else if (last != null) closeMatrix[p.ticker][ds] = last;
+    }
+  }
+
+  // Per-bucket daily value series using CURRENT qty (fixed-weights convention
+  // for vol decomposition — current allocation, historical price moves).
+  const bucketValueSeries = {};
+  for (const [k, g] of Object.entries(groups)) {
+    const series = new Array(dates.length).fill(0);
+    for (const p of g.positions) {
+      if (!closeMatrix[p.ticker]) continue;
+      const fx = p.fxRate || 1;
+      for (let i = 0; i < dates.length; i++) {
+        const px = closeMatrix[p.ticker][dates[i]];
+        if (px != null) series[i] += p.qty * px * fx;
+      }
+    }
+    bucketValueSeries[k] = series;
+  }
+
+  // Daily returns per bucket
+  const bucketReturns = {};
+  for (const [k, series] of Object.entries(bucketValueSeries)) {
+    const rets = [];
+    for (let i = 1; i < series.length; i++) {
+      rets.push(series[i-1] > 0 ? (series[i] / series[i-1] - 1) : 0);
+    }
+    bucketReturns[k] = rets;
+  }
+
+  // Portfolio daily return = w_b weighted sum of bucket daily returns
+  const N = Math.max(0, dates.length - 1);
+  const portRets = new Array(N).fill(0);
+  for (const [k, g] of Object.entries(groups)) {
+    const w = totalMV > 0 ? g.mv / totalMV : 0;
+    const rets = bucketReturns[k];
+    for (let i = 0; i < N; i++) portRets[i] += w * rets[i];
+  }
+
+  // Stats helpers
+  const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
+  const variance = (a,m) => { m = m ?? mean(a); return a.length ? a.reduce((s,x)=>s+(x-m)*(x-m),0)/a.length : 0; };
+  const covar = (a,b) => {
+    const ma = mean(a), mb = mean(b);
+    return a.length ? a.reduce((s,x,i)=>s+(x-ma)*(b[i]-mb),0)/a.length : 0;
+  };
+
+  const portVar = variance(portRets);
+  const portVol = Math.sqrt(portVar);
+
+  // Assemble result buckets
+  const result = [];
+  for (const [k, g] of Object.entries(groups)) {
+    const w = totalMV > 0 ? g.mv / totalMV : 0;
+    const rets = bucketReturns[k];
+    const vol = Math.sqrt(variance(rets));
+    const cv = portVar > 0 ? covar(rets, portRets) : 0;
+    const volContribFrac = portVar > 0 ? (w * cv / portVar) : 0;
+    let cum = 1;
+    for (const r of rets) cum *= (1 + r);
+    const ytdReturn = (cum - 1) * 100;
+    const volAnnual = vol * Math.sqrt(252) * 100;
+    result.push({
+      key: k,
+      mv: g.mv,
+      weight: w * 100,
+      ytdReturn,
+      volAnnual,
+      volContrib: volContribFrac * 100,
+      count: g.positions.length,
+      color: _bucketColorFor(pivot, k)
+    });
+  }
+  result.sort((a,b) => b.weight - a.weight);
+
+  // Concentration block
+  const weightsFrac = result.map(r => r.weight / 100);
+  const hhi = weightsFrac.reduce((s,w)=>s+w*w, 0);
+  const effectiveN = hhi > 0 ? 1/hhi : 0;
+  const top5 = result.slice(0,5).reduce((s,b)=>s+b.weight, 0);
+  const wAvgVolFrac = result.reduce((s,b)=>s + (b.weight/100) * (b.volAnnual/100), 0);
+  const portVolAnnual = portVol * Math.sqrt(252);
+  const divRatio = portVolAnnual > 0 ? wAvgVolFrac / portVolAnnual : 0;
+
+  return {
+    totalMV,
+    portfolioVol: portVolAnnual * 100,
+    buckets: result,
+    concentration: { hhi: hhi * 10000, effectiveN, top5, divRatio }
+  };
+}
+
+function setAllocPivot(p) {
+  state.allocPivot = p;
+  const pane = document.querySelector('.tab-content[data-tab="allocation"]') || document.getElementById('content');
+  renderAllocation(pane);
+}
+
 function renderAllocation(el) {
   const ps = state.positions;
-  const byReg = {};
-  ps.forEach(p=>{const r=regionMap[p.exchange];if(!byReg[r])byReg[r]=[];byReg[r].push(p)});
+  if (!state.allocPivot) state.allocPivot = 'theme';
+  const pivot = state.allocPivot;
+  const out = calcAllocationRisk(ps, TRADES_YTD, pivot);
 
-  const regionData = Object.entries(byReg).map(([r,arr])=>({label:r,value:arr.reduce((s,p)=>s+p.mktValueSGD,0),color:regionColors[r],pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100})).sort((a,b)=>b.value-a.value);
+  // Currency exposure (simple, not part of pivot)
+  const byCcy = {};
+  ps.forEach(p => { if(!byCcy[p.ccy]) byCcy[p.ccy] = []; byCcy[p.ccy].push(p); });
+  const ccyData = Object.entries(byCcy).map(([c,arr])=>({label:c, value:arr.reduce((s,p)=>s+p.mktValueSGD,0), pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100})).sort((a,b)=>b.value-a.value);
+  const ccyCol = {HKD:'#b91c1c',JPY:'#be185d',USD:'#1d4ed8',SGD:'#047857',EUR:'#6d28d9',GBP:'#7c3aed',AUD:'#dc2626'};
 
-  const themeData = Object.entries(themeCats).map(([cat,themes])=>{
-    const arr=ps.filter(p=>themes.includes(p.theme));
-    return {label:cat,value:arr.reduce((s,p)=>s+p.mktValueSGD,0),color:themeCatColors[cat],pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100,count:arr.length};
-  }).sort((a,b)=>b.value-a.value);
+  const sorted = [...ps].sort((a,b)=>b.mktValueSGD - a.mktValueSGD);
 
-  const byCcy={};
-  ps.forEach(p=>{if(!byCcy[p.ccy])byCcy[p.ccy]=[];byCcy[p.ccy].push(p)});
-  const ccyData = Object.entries(byCcy).map(([c,arr])=>({label:c,value:arr.reduce((s,p)=>s+p.mktValueSGD,0),pct:arr.reduce((s,p)=>s+p.mktValueSGD,0)/state.totalValueSGD*100})).sort((a,b)=>b.value-a.value);
-  const ccyCol={HKD:'#b91c1c',JPY:'#be185d',USD:'#1d4ed8',SGD:'#047857'};
+  const pivotTabs = ['region','sector','assetClass','theme'].map(p =>
+    `<button onclick="setAllocPivot('${p}')" style="padding:8px 14px;border:1px solid var(--bd);background:${pivot===p?'var(--t1)':'var(--bg2)'};color:${pivot===p?'#fff':'var(--t2)'};font-size:12px;font-weight:600;cursor:pointer;border-radius:5px">${PIVOT_LABELS[p]}</button>`
+  ).join('');
 
-  const sorted=[...ps].sort((a,b)=>b.mktValueSGD-a.mktValueSGD);
+  const retCol = v => v > 0 ? 'var(--g)' : (v < 0 ? 'var(--r)' : 'var(--t3)');
+
+  const rowHTML = out.buckets.map(b => `
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:8px 6px;font-size:12px;font-weight:600;color:var(--t2)">${b.key} <span style="color:var(--t4);font-weight:400;font-size:10px">(${b.count})</span></td>
+      <td style="padding:8px 6px;width:30%"><div class="alloc-bar" style="height:18px"><div class="alloc-fill" style="width:${b.weight}%;background:${b.color};color:#fff;font-size:10px">${b.weight>10?fmt(b.weight,1)+'%':''}</div></div></td>
+      <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${fmt(b.weight,1)}%</td>
+      <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:${retCol(b.ytdReturn)};font-weight:600">${b.ytdReturn === 0 && b.volAnnual === 0 ? '—' : fmtPct(b.ytdReturn)}</td>
+      <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--t2)">${b.volAnnual > 0 ? fmt(b.volAnnual,1)+'%' : '—'}</td>
+      <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--t1);font-weight:700">${b.volAnnual > 0 ? fmt(b.volContrib,1)+'%' : '—'}</td>
+    </tr>
+  `).join('');
 
   el.innerHTML = `
-    <div class="g2 mb">
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:${regionColors['Asia Pacific']}"></span>Geographic Allocation</div></div>
-        <div class="card-body">${regionData.map(r=>`
-          <div class="alloc-row">
-            <div class="alloc-label">${r.label}</div>
-            <div class="alloc-bar"><div class="alloc-fill" style="width:${r.pct}%;background:${r.color};color:#fff">${r.pct>15?fmt(r.pct,1)+'%':''}</div></div>
-            <div class="alloc-val">${fmtSGD(r.value)}</div>
-          </div>`).join('')}
-        </div>
-      </div>
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Thematic Allocation</div></div>
-        <div class="card-body">${themeData.map(t=>`
-          <div class="alloc-row">
-            <div class="alloc-label">${t.label} <span style="font-size:9px;color:var(--t4)">(${t.count})</span></div>
-            <div class="alloc-bar"><div class="alloc-fill" style="width:${t.pct}%;background:${t.color};color:#fff">${t.pct>12?fmt(t.pct,1)+'%':''}</div></div>
-            <div class="alloc-val">${fmtSGD(t.value)}</div>
-          </div>`).join('')}
+    <div class="card mb">
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t1)"></span>Allocation Pivot</div></div>
+      <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap">${pivotTabs}</div>
+    </div>
+
+    <div class="card mb">
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:${out.buckets[0]?.color||'var(--t1)'}"></span>By ${PIVOT_LABELS[pivot]} — Weight, YTD Return, Volatility &amp; Risk Contribution</div></div>
+      <div class="card-body" style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="border-bottom:2px solid var(--bd);text-align:left;color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">
+              <th style="padding:8px 6px;width:18%">Bucket</th>
+              <th style="padding:8px 6px;width:30%">Allocation</th>
+              <th style="padding:8px 6px;text-align:right;width:11%">Weight</th>
+              <th style="padding:8px 6px;text-align:right;width:13%">YTD Return</th>
+              <th style="padding:8px 6px;text-align:right;width:13%">Vol (ann.)</th>
+              <th style="padding:8px 6px;text-align:right;width:15%">Vol Contribution</th>
+            </tr>
+          </thead>
+          <tbody>${rowHTML}</tbody>
+        </table>
+        <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:10px;color:var(--t3);line-height:1.5">
+          <strong style="color:var(--t2)">Vol Contribution</strong> decomposes total portfolio volatility (${fmt(out.portfolioVol,1)}%) by bucket. Sums to 100% by construction.
+          A bucket whose vol contribution exceeds its weight is adding risk faster than capital.
+          Buckets without priced history (Bonds, Cash) show — for return and vol.
         </div>
       </div>
     </div>
-    <div class="g3 mb">
+
+    <div class="g2 mb">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:#dc2626"></span>Risk vs Return — ${PIVOT_LABELS[pivot]} Buckets (YTD)</div></div>
+        <div class="card-body"><div id="allocScatterChart" style="height:340px"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--p)"></span>Concentration Metrics</div></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px">
+            <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">HHI</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.hhi,0)}</div><div style="font-size:10px;color:var(--t3)">${out.concentration.hhi<1500?'Diversified':out.concentration.hhi<2500?'Moderate':'Concentrated'}</div></div>
+            <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Effective N</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.effectiveN,1)}</div><div style="font-size:10px;color:var(--t3)">equivalent equal-weighted buckets</div></div>
+            <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Top 5 Share</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.top5,1)}%</div><div style="font-size:10px;color:var(--t3)">of total exposure</div></div>
+            <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Diversification Ratio</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.divRatio,2)}</div><div style="font-size:10px;color:var(--t3)">${out.concentration.divRatio>1.4?'strong':out.concentration.divRatio>1.15?'moderate':'weak'} diversification benefit</div></div>
+            <div style="grid-column:1/3"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Portfolio Volatility (annualised)</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.portfolioVol,1)}%</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g2 mb">
       <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--c)"></span>Currency Exposure</div></div>
         <div class="card-body">${ccyData.map(c=>`
           <div class="alloc-row">
@@ -2060,69 +2299,67 @@ function renderAllocation(el) {
           </div>`).join('')}
         </div>
       </div>
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--p)"></span>By Product Type</div></div>
-        <div class="card-body">
-          ${(() => {
-            const byType2 = {};
-            ps.forEach(p=>{const t=p.type||'Other';if(!byType2[t])byType2[t]=[];byType2[t].push(p)});
-            const typeColors = {ETF:'#2563eb',Stock:'#b91c1c',REIT:'#7c3aed',Bond:'#047857',Cash:'#64748b',Other:'#6b7280'};
-            return Object.entries(byType2).sort((a,b)=>b[1].reduce((s,p)=>s+p.mktValueSGD,0)-a[1].reduce((s,p)=>s+p.mktValueSGD,0)).map(([t,arr])=>{
-              const w=arr.reduce((s,p)=>s+p.weight,0);
-              return `<div class="alloc-row"><div class="alloc-label">${t} (${arr.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${w}%;background:${typeColors[t]||'#6b7280'};color:#fff">${w>8?fmt(w,1)+'%':''}</div></div><div class="alloc-val">${fmtSGD(arr.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>`;
-            }).join('');
-          })()}
-        </div>
-      </div>
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t1)"></span>By Account</div></div>
-        <div class="card-body">
-          ${(() => {
-            const scPs2=ps.filter(p=>p.account!=='CDP');
-            const cdpPs2=ps.filter(p=>p.account==='CDP');
-            const scW=scPs2.reduce((s,p)=>s+p.weight,0);
-            const cdpW=cdpPs2.reduce((s,p)=>s+p.weight,0);
-            return `
-              <div class="alloc-row"><div class="alloc-label">Brokerage (${scPs2.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${scW}%;background:#1d4ed8;color:#fff">${fmt(scW,1)}%</div></div><div class="alloc-val">${fmtSGD(scPs2.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>
-              <div class="alloc-row"><div class="alloc-label">CDP (${cdpPs2.length})</div><div class="alloc-bar"><div class="alloc-fill" style="width:${cdpW}%;background:#047857;color:#fff">${fmt(cdpW,1)}%</div></div><div class="alloc-val">${fmtSGD(cdpPs2.reduce((s,p)=>s+p.mktValueSGD,0))}</div></div>
-            `;
-          })()}
-        </div>
-      </div>
       <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t1)"></span>Top 10 Concentration</div></div>
         <div class="card-body">
           ${sorted.slice(0,10).map((p,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--bd)">
             <span style="font-family:var(--mono);font-size:10px;color:var(--t4);width:14px">${i+1}</span>
             <span style="font-size:11px;font-weight:600;width:65px">${p.ticker}</span>
-            <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${p.weight*3}%;background:${exchColors[p.exchange]}"></div></div>
+            <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${p.weight*3}%;background:${exchColors[p.exchange]||'#64748b'}"></div></div>
             <span style="font-family:var(--mono);font-size:11px;width:45px;text-align:right">${fmt(p.weight,1)}%</span>
           </div>`).join('')}
-          <div style="margin-top:8px;font-size:10px;color:var(--t3)">
-            Top 5: <strong style="color:var(--t1)">${fmt(sorted.slice(0,5).reduce((s,p)=>s+p.weight,0),1)}%</strong> · HHI: <strong style="color:var(--t1)">${fmt(ps.reduce((s,p)=>s+Math.pow(p.weight,2),0),0)}</strong>
-          </div>
         </div>
       </div>
     </div>
-    <div class="mb" id="allocChartWrap">
+
+    <div class="mb">
       <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>Portfolio Composition — Treemap</div></div>
         <div id="treemapChart" style="height:320px"></div>
       </div>
     </div>
   `;
 
+  // Render scatter plot
+  setTimeout(()=>{
+    const buckets = out.buckets.filter(b => b.volAnnual > 0);
+    if (buckets.length === 0) return;
+    Plotly.newPlot('allocScatterChart', [{
+      x: buckets.map(b => b.volAnnual),
+      y: buckets.map(b => b.ytdReturn),
+      text: buckets.map(b => b.key),
+      mode: 'markers+text',
+      textposition: 'top center',
+      textfont: { size: 10, family: 'DM Sans', color: '#374151' },
+      marker: {
+        size: buckets.map(b => Math.max(12, Math.sqrt(b.weight) * 8)),
+        color: buckets.map(b => b.color),
+        line: { width: 1.5, color: '#fff' },
+        opacity: 0.85
+      },
+      customdata: buckets.map(b => [b.weight, b.volContrib, b.count]),
+      hovertemplate: '<b>%{text}</b><br>Weight: %{customdata[0]:.1f}%<br>Vol Contribution: %{customdata[1]:.1f}%<br>Annualised Vol: %{x:.1f}%<br>YTD Return: %{y:.1f}%<br>Positions: %{customdata[2]}<extra></extra>'
+    }], {
+      xaxis: { title: { text: 'Annualised Volatility (%)', font: { size: 11 } }, zeroline: false, gridcolor: '#e5e7eb' },
+      yaxis: { title: { text: 'YTD Return (%)', font: { size: 11 } }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#e5e7eb' },
+      margin: { l: 55, r: 20, t: 15, b: 55 },
+      paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+      font: { family: 'DM Sans', size: 11, color: '#1a1a18' },
+      showlegend: false
+    }, { displayModeBar: false, responsive: true });
+  }, 80);
+
   // Render treemap
   setTimeout(()=>{
     const labels = ps.map(p=>p.ticker);
-    const parents = ps.map(p=>regionMap[p.exchange]);
+    const parents = ps.map(p=>regionMap[p.exchange] || 'Other');
     const values = ps.map(p=>p.mktValueSGD);
     const colors = ps.map(p=>p.pnlPct>=0?`rgba(26,135,84,${Math.min(0.2+p.pnlPct/150,0.9)})`:`rgba(192,57,43,${Math.min(0.2+Math.abs(p.pnlPct)/100,0.9)})`);
     const text = ps.map(p=>`${p.ticker}<br>${fmtPct(p.pnlPct)}<br>${fmt(p.weight,1)}%`);
-
     const regions = [...new Set(parents)];
     const allLabels = [...regions, ...labels];
     const allParents = [...regions.map(()=>''), ...parents];
     const allValues = [...regions.map(r=>0), ...values];
     const allText = [...regions.map(r=>r), ...text];
     const allColors = [...regions.map(r=>regionColors[r]||'#999'), ...colors];
-
     Plotly.newPlot('treemapChart', [{
       type:'treemap', labels:allLabels, parents:allParents, values:allValues,
       text:allText, textinfo:'text', hovertemplate:'%{label}<br>%{text}<extra></extra>',
