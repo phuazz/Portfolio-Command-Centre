@@ -2047,10 +2047,20 @@ function _bucketKeyFor(p, pivot) {
   if (pivot === 'sector') return SECTOR_BY_TICKER[p.ticker] || (p.type === 'Bond' ? 'Fixed Income' : p.type === 'Cash' ? 'Cash' : 'Other');
   if (pivot === 'assetClass') return deriveAssetClass(p);
   if (pivot === 'theme') {
-    for (const [cat, themes] of Object.entries(themeCats)) {
-      if (themes.includes(p.theme)) return cat;
-    }
-    return 'Other';
+    // Align with Attribution: group by p.theme directly (~30 themes), not by
+    // the 6 broad themeCats categories. Colours are mapped back to the parent
+    // category via _themeCat() so the chart keeps visual cohesion.
+    return p.theme || 'Other';
+  }
+  return 'Other';
+}
+
+// _themeCat helper: map an individual theme string to its parent category
+// from themeCats. Used for colour lookup so individual themes inherit the
+// category palette (Singapore green, China & Asia red, etc.).
+function _themeCat(theme) {
+  for (const [cat, themes] of Object.entries(themeCats)) {
+    if (themes.includes(theme)) return cat;
   }
   return 'Other';
 }
@@ -2059,7 +2069,7 @@ function _bucketColorFor(pivot, key) {
   if (pivot === 'region') return REGION_COLORS_FULL[key] || '#64748b';
   if (pivot === 'sector') return SECTOR_COLORS[key] || '#64748b';
   if (pivot === 'assetClass') return ASSET_CLASS_COLORS[key] || '#64748b';
-  if (pivot === 'theme') return themeCatColors[key] || '#64748b';
+  if (pivot === 'theme') return themeCatColors[_themeCat(key)] || '#64748b';
   return '#64748b';
 }
 
@@ -2205,8 +2215,8 @@ function calcAllocationRisk(ps, trades, pivot) {
 
 function setAllocPivot(p) {
   state.allocPivot = p;
-  const pane = document.querySelector('.tab-content[data-tab="allocation"]') || document.getElementById('content');
-  renderAllocation(pane);
+  const pane = document.getElementById('pane-allocation');
+  if (pane) renderAllocation(pane);
 }
 
 function renderAllocation(el) {
