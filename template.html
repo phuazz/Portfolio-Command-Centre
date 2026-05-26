@@ -3479,8 +3479,19 @@ function calcAttribution(ps, bars) {
   for (const p of ps) {
     if (!p.history || p.history.length < bars + 1) continue;
     const n = p.history.length;
-    const closeNow  = p.history[n - 1].close;
-    const closeThen = p.history[Math.max(0, n - 1 - bars)].close;
+    const lastBarClose = p.history[n - 1].close;
+    // Snapshot-aware: when the live snapshot price differs from the latest
+    // history bar, treat the snapshot as a virtual bar at index n. closeNow
+    // becomes the snapshot; closeThen shifts back `bars` periods to
+    // history[n - bars]. This catches the case where the price pipeline
+    // captures today's snapshot but has not yet extended the daily history
+    // array — without this fix the 1D return reads yesterday-vs-day-before
+    // instead of today-vs-yesterday.
+    const snapshotFresher = p.mktPrice != null && Math.abs(p.mktPrice - lastBarClose) > 1e-6;
+    const closeNow  = snapshotFresher ? p.mktPrice : lastBarClose;
+    const closeThen = snapshotFresher
+      ? p.history[Math.max(0, n - bars)].close
+      : p.history[Math.max(0, n - 1 - bars)].close;
     if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen === 0) continue;
     const fx        = p.fxRate || 1;
     const startSGD  = closeThen * p.qty * fx;
