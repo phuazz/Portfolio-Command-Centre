@@ -384,6 +384,7 @@ const POSITIONS = [
   { ticker:'XLE.US', yf:'XLE', name:'Energy Select SPDR', exchange:'ARCA', ccy:'USD', avgPrice:51.1463, qty:180, invested:9206.34, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
 
   { ticker:'CPRX.US', yf:'CPRX', name:'Catalyst Pharmaceuticals', exchange:'NMS', ccy:'USD', avgPrice:31.1300, qty:280, invested:8716.40, fee:0, availLTV:50, theme:'US Pharma', type:'Stock' },
+  { ticker:'GRID.US', yf:'GRID', name:'First Trust NASDAQ Clean Edge', exchange:'NMS', ccy:'USD', avgPrice:196.7000, qty:45, invested:8851.50, fee:0, availLTV:50, theme:'Clean Energy', type:'ETF' },
   { ticker:'IGV.US', yf:'IGV', name:'iShares Expanded Tech-Software', exchange:'NMS', ccy:'USD', avgPrice:93.7900, qty:100, invested:9379.00, fee:0, availLTV:50, theme:'US Tech', type:'ETF' },
   { ticker:'INTC.US', yf:'INTC', name:'Intel', exchange:'NMS', ccy:'USD', avgPrice:46.9923, qty:100, invested:4699.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
   { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:85.8046, qty:100, invested:8580.46, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
@@ -392,9 +393,10 @@ const POSITIONS = [
   { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
   // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
-  { ticker:'USD.CASH', yf:null, name:'USD Cash (post-22-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:35458.00, invested:35458.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'USD.CASH', yf:null, name:'USD Cash (post-26-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:18031.00, invested:18031.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
 
   { ticker:'BNY.US', yf:'BNY', name:'Bank of NY Mellon', exchange:'NYS', ccy:'USD', avgPrice:140.1200, qty:65, invested:9107.80, fee:0, availLTV:60, theme:'US Financials', type:'Stock' },
+  { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1066.9300, qty:8, invested:8535.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
   { ticker:'NOK.US', yf:'NOK', name:'Nokia ADR', exchange:'NYS', ccy:'USD', avgPrice:8.5586, qty:900, invested:7702.74, fee:0, availLTV:60, theme:'Telecom Infra', type:'Stock' },
   { ticker:'SKM.US', yf:'SKM', name:'SK Telecom ADR', exchange:'NYS', ccy:'USD', avgPrice:28.8111, qty:300, invested:8643.33, fee:0, availLTV:60, theme:'Korea Telecom', type:'Stock' },
   { ticker:'SPHR.US', yf:'SPHR', name:'Sphere Entertainment', exchange:'NYS', ccy:'USD', avgPrice:129.3012, qty:60, invested:7758.07, fee:0, availLTV:60, theme:'US Entertainment', type:'Stock' },
@@ -530,6 +532,8 @@ const TRADES_YTD = [
   {d:'2026-05-19',t:'LIFE.US',a:'S',q:300,p:19.6600,ccy:'USD',yf:'LIFE',th:'US Tech'},
   {d:'2026-05-22',t:'IGV.US',a:'B',q:100,p:93.7900,ccy:'USD',yf:'IGV',th:'US Tech'},
   {d:'2026-05-22',t:'BNY.US',a:'B',q:65,p:140.1200,ccy:'USD',yf:'BNY',th:'US Financials'},
+  {d:'2026-05-26',t:'GRID.US',a:'B',q:45,p:196.7000,ccy:'USD',yf:'GRID',th:'Clean Energy'},
+  {d:'2026-05-26',t:'LLY.US',a:'B',q:8,p:1066.9300,ccy:'USD',yf:'LLY',th:'US Pharma'},
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
@@ -1320,8 +1324,8 @@ const SECTOR_BY_TICKER = {
   'ARGT.US':'Diversified',
   'COPX.US':'Materials','GDX.US':'Materials','REMX.US':'Materials','SLV.US':'Materials',
   'IEZ.US':'Energy','XLE.US':'Energy',
-  'NASA.US':'Industrials','TAN.US':'Industrials',
-  'CPRX.US':'Health Care',
+  'GRID.US':'Industrials','NASA.US':'Industrials','TAN.US':'Industrials',
+  'CPRX.US':'Health Care','LLY.US':'Health Care',
   'IGV.US':'Information Technology','INTC.US':'Information Technology','MRVL.US':'Information Technology',
   'MSFT.US':'Information Technology','MU.US':'Information Technology',
   'TSLA.US':'Consumer Discretionary',
