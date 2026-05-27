@@ -377,6 +377,7 @@ const POSITIONS = [
   { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:81.5767, qty:330, invested:26920.32, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
   { ticker:'GDX.US', yf:'GDX', name:'VanEck Gold Miners', exchange:'ARCA', ccy:'USD', avgPrice:82.8803, qty:100, invested:8288.03, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
   { ticker:'IEZ.US', yf:'IEZ', name:'iShares US Oil Equip Services', exchange:'ARCA', ccy:'USD', avgPrice:31.9400, qty:250, invested:7985.00, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
+  { ticker:'MOO.US', yf:'MOO', name:'VanEck Agribusiness', exchange:'ARCA', ccy:'USD', avgPrice:80.4500, qty:100, invested:8045.00, fee:0, availLTV:50, theme:'Agribusiness', type:'ETF' },
   { ticker:'NASA.US', yf:'NASA', name:'Tema Space Innovators', exchange:'ARCA', ccy:'USD', avgPrice:28.0811, qty:280, invested:7862.71, fee:0, availLTV:0, theme:'Space/Aerospace', type:'ETF' },
   { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:68.9099, qty:150, invested:10336.48, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
   { ticker:'SLV.US', yf:'SLV', name:'iShares Silver Trust', exchange:'ARCA', ccy:'USD', avgPrice:69.1704, qty:120, invested:8300.45, fee:0, availLTV:50, theme:'Silver/Precious Metals', type:'ETF' },
@@ -393,7 +394,7 @@ const POSITIONS = [
   { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
   // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
-  { ticker:'USD.CASH', yf:null, name:'USD Cash (post-26-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:18031.00, invested:18031.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'USD.CASH', yf:null, name:'USD Cash (post-27-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:9966.00, invested:9966.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
 
   { ticker:'BNY.US', yf:'BNY', name:'Bank of NY Mellon', exchange:'NYS', ccy:'USD', avgPrice:140.1200, qty:65, invested:9107.80, fee:0, availLTV:60, theme:'US Financials', type:'Stock' },
   { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1066.9300, qty:8, invested:8535.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
@@ -534,6 +535,7 @@ const TRADES_YTD = [
   {d:'2026-05-22',t:'BNY.US',a:'B',q:65,p:140.1200,ccy:'USD',yf:'BNY',th:'US Financials'},
   {d:'2026-05-26',t:'GRID.US',a:'B',q:45,p:196.7000,ccy:'USD',yf:'GRID',th:'Clean Energy'},
   {d:'2026-05-26',t:'LLY.US',a:'B',q:8,p:1066.9300,ccy:'USD',yf:'LLY',th:'US Pharma'},
+  {d:'2026-05-27',t:'MOO.US',a:'B',q:100,p:80.4500,ccy:'USD',yf:'MOO',th:'Agribusiness'},
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
@@ -1382,7 +1384,7 @@ const SECTOR_BY_TICKER = {
   '1615.JP':'Financials','4004.JP':'Materials',
   // United States
   'ARGT.US':'Diversified',
-  'COPX.US':'Materials','GDX.US':'Materials','REMX.US':'Materials','SLV.US':'Materials',
+  'COPX.US':'Materials','GDX.US':'Materials','MOO.US':'Materials','REMX.US':'Materials','SLV.US':'Materials',
   'IEZ.US':'Energy','XLE.US':'Energy',
   'GRID.US':'Industrials','NASA.US':'Industrials','TAN.US':'Industrials',
   'CPRX.US':'Health Care','LLY.US':'Health Care',
@@ -1435,7 +1437,7 @@ const themeCats = {
   'Singapore':['SG Broad Market','SG Banks','SG REITs','SG Industrials','SG Aviation','SG Infrastructure','SG PE Bond','SG Govt Bond','China Equity','Asia Climate/ESG','US Broad Market'],
   'China & Asia':['China New Economy','China AI/Robotics','China Travel','China Tech','China AI/Search','China Mid-Cap','China Semis','Asia ex-Japan Equity'],
   'US & Developed':['US Tech','US Financials','US EV/Tech','US Aerospace','US Hotels','US Energy','US Pharma','European Equity','Greece Equity','Japan Financials'],
-  'Commodities & Resources':['Gold Miners','Copper/Commodities','Rare Earth Minerals','Clean Energy'],
+  'Commodities & Resources':['Gold Miners','Copper/Commodities','Rare Earth Minerals','Clean Energy','Agribusiness'],
   'Frontier & EM':['Argentina Equity'],
   'Cash & Liquidity':['Cash & Money Market']
 };
