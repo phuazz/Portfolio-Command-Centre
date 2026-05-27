@@ -4308,6 +4308,15 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       </div>
     </div>`;
 
+  // Benchmark selector — must initialise BEFORE the kpis array uses it.
+  // Default STI. Compute the benchmark curve only when a benchmark is
+  // selected and the chart is in rebased % mode; otherwise it is null and
+  // downstream uses gate on that.
+  const mode_pre = state.perfChartMode || 'pct';
+  const benchmarkSel = state.perfBenchmark || 'STI';
+  const benchmarkCurve = (mode_pre === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate) : null;
+  const alpha = benchmarkCurve ? (curve.totalReturnPct - benchmarkCurve.endReturn) : null;
+
   // KPI strip values
   const kpis = [
     { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: curve.dates[0] },
@@ -4328,14 +4337,9 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     `<button class="fbtn ${k === mode ? 'active' : ''}" onclick="setPerfChartMode('${k}')">${label}</button>`
   ).join('');
 
-  // Benchmark selector. Default STI. Compute the benchmark curve only when
-  // a benchmark is selected — getBenchmarkCurve returns null otherwise.
-  const benchmarkSel = state.perfBenchmark || 'STI';
-  const benchmarkCurve = (mode === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate) : null;
   const benchBtns = [['STI','STI'],['SPX','S&P 500'],['NONE','None']].map(([k,label]) =>
     `<button class="fbtn ${k === benchmarkSel ? 'active' : ''}" onclick="setPerfBenchmark('${k}')">${label}</button>`
   ).join('');
-  const alpha = benchmarkCurve ? (curve.totalReturnPct - benchmarkCurve.endReturn) : null;
 
   container.innerHTML = `
     <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
