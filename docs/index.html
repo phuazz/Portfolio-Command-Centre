@@ -657,26 +657,34 @@ function historyToFull(compact) {
 // (Yahoo's adjclose is split- and dividend-adjusted). Returns null when there
 // is not enough history to compute. `mode`: 'ytd' (vs last close of prior
 // calendar year) or '1m' (vs 21 trading days back).
-function periodReturn(historyFull, mode) {
+function periodReturn(historyFull, mode, snapshotPx) {
+  // Total-return on adjclose. When snapshotPx is fresher than the latest
+  // history bar, use it as today's adj (latest adj equals latest raw close
+  // by Yahoo convention). The YTD anchor is the LAST close of the prior
+  // calendar year; the 1M anchor is 21 trading bars back.
   if (!historyFull || historyFull.length < 2) return null;
   const last = historyFull[historyFull.length - 1];
   const lastAc = last.adjclose;
   if (lastAc == null || lastAc <= 0) return null;
+  const snapshotFresher = snapshotPx != null && Math.abs(snapshotPx - lastAc) > 1e-6;
+  const numerator = snapshotFresher ? snapshotPx : lastAc;
   let refIdx = -1;
   if (mode === 'ytd') {
-    // Find the latest bar whose calendar year is strictly less than the
-    // current bar's year — that bar's close is the YTD base.
     const yr = last.date.getFullYear();
     for (let i = historyFull.length - 2; i >= 0; i--) {
       if (historyFull[i].date.getFullYear() < yr) { refIdx = i; break; }
     }
   } else if (mode === '1m') {
-    refIdx = historyFull.length - 1 - 21;
+    // When snapshot is fresher, the implicit "today bar" sits at index n, so
+    // 21 bars back is history[n - 21]. Otherwise 21 bars back is history[n - 1 - 21].
+    refIdx = snapshotFresher
+      ? historyFull.length - 21
+      : historyFull.length - 1 - 21;
   }
   if (refIdx < 0) return null;
   const refAc = historyFull[refIdx].adjclose;
   if (refAc == null || refAc <= 0) return null;
-  return lastAc / refAc - 1;
+  return numerator / refAc - 1;
 }
 
 function mergeHistory(cached, fresh) {
@@ -1438,14 +1446,18 @@ function enrichAll() {
 
     // Period total-returns from adjclose history (includes reinvested dividends).
     // Bonds are skipped — adjclose math is meaningless on par-value instruments.
-    const ytdRet = (p.type !== 'Bond' && history) ? periodReturn(history, 'ytd') : null;
-    const m1Ret  = (p.type !== 'Bond' && history) ? periodReturn(history, '1m')  : null;
+    const ytdRet = (p.type !== 'Bond' && history) ? periodReturn(history, 'ytd', mktPrice) : null;
+    const m1Ret  = (p.type !== 'Bond' && history) ? periodReturn(history, '1m',  mktPrice) : null;
 
     // Structured classification tags — additive; existing .theme stays untouched.
     const region     = REGION_BY_EXCHANGE[p.exchange] || 'Other';
     const sector     = SECTOR_BY_TICKER[p.ticker] || (p.type === 'Bond' ? 'Government' : 'Other');
     const assetClass = deriveAssetClass(p);
-    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost, region, sector, assetClass };
+    // Stale-data flag: true when the live fetch did not return a usable
+    // price for this position and we are falling back to the baked mktPriceSnap
+    // (or another offline source). Used by the Positions tab to badge the row.
+    const isStale = !(live && live.price);
+    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost, region, sector, assetClass, isStale };
   });
 
   state.totalValueSGD = state.positions.reduce((s,p) => s + p.mktValueSGD, 0);
@@ -1764,29 +1776,47 @@ function renderDate() {
   document.getElementById('dateDisp').textContent = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
 }
 
+// Shared helper for return calculations across the dashboard.
+// Returns { closeNow, closeThen, snapshotFresher } using adjusted-close for
+// total return (so dividends are included). Treats the live snapshot
+// p.mktPrice as today's virtual bar when it differs from the latest history
+// bar — at the latest bar adjclose equals raw close by Yahoo convention, so
+// the snapshot can stand in as today's adj price.
+//
+// `lookbackBars` is the number of trading bars back for closeThen
+//   (1 = 1-day return, 5 = 1-week, 21 = 1-month).
+// Returns null when there is not enough history to compute.
+function effectiveReturn(p, lookbackBars) {
+  if (!p || !p.history || p.history.length < 2) return null;
+  const n = p.history.length;
+  const lastBar = p.history[n - 1];
+  const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
+  if (!isFinite(lastAdj) || lastAdj <= 0) return null;
+  const snapshotFresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6;
+  const closeNow = snapshotFresher ? p.mktPrice : lastAdj;
+  const refIdx = snapshotFresher
+    ? Math.max(0, n - lookbackBars)
+    : Math.max(0, n - 1 - lookbackBars);
+  if (refIdx < 0) return null;
+  const refBar = p.history[refIdx];
+  const closeThen = refBar.adjclose != null ? refBar.adjclose : refBar.close;
+  if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
+  return { closeNow, closeThen, snapshotFresher };
+}
+
 // Compute portfolio-level period P&L from position histories
 function calcPortfolioPeriodPnL(ps, tradingDaysBack) {
-  // Snapshot-aware: when p.mktPrice differs from history[last].close, the
-  // live snapshot represents today (a virtual bar at index n). closeNow uses
-  // the snapshot and closeThen shifts back tradingDaysBack periods to
-  // history[n - tradingDaysBack]. Without this shift the 1D card would read
-  // yesterday-vs-day-before whenever the pipeline updated the snapshot
-  // without appending today's bar to history. Mirrors the same fix applied
-  // in calcAttribution so landing cards and Attribution reconcile.
+  // Returns total-return P&L over `tradingDaysBack` trading days, in SGD.
+  // Uses effectiveReturn() so adjclose (dividends included) and snapshot-
+  // aware closeNow are honoured uniformly. Bonds and Cash without
+  // sufficient history are excluded (they would drag a zero-vol return).
   let totalNow = 0, totalThen = 0, count = 0;
   for (const p of ps) {
-    if (!p.history || p.history.length < tradingDaysBack + 1) continue;
-    const n = p.history.length;
-    const lastBarClose = p.history[n - 1].close;
-    const snapshotFresher_kpi = p.mktPrice != null && Math.abs(p.mktPrice - lastBarClose) > 1e-6;
-    const closeNow  = snapshotFresher_kpi ? p.mktPrice : lastBarClose;
-    const closeThen = snapshotFresher_kpi
-      ? p.history[Math.max(0, n - tradingDaysBack)].close
-      : p.history[Math.max(0, n - 1 - tradingDaysBack)].close;
-    const valueSGDNow  = closeNow  * p.qty * (p.fxRate || 1);
-    const valueSGDThen = closeThen * p.qty * (p.fxRate || 1);
-    totalNow  += valueSGDNow;
-    totalThen += valueSGDThen;
+    const r = effectiveReturn(p, tradingDaysBack);
+    if (!r) continue;
+    const fx = p.fxRate || 1;
+    totalNow  += r.closeNow  * p.qty * fx;
+    totalThen += r.closeThen * p.qty * fx;
     count++;
   }
   if (count === 0 || totalThen === 0) return { pnl: 0, pct: 0, count: 0 };
@@ -1930,7 +1960,7 @@ function renderPositions(el) {
 
     return `<tr id="pos-row-${safeId}" class="${clickable?'clickable':''}" ${clickable?`onclick="toggleChart('${p.ticker}')"`:''}  title="${hoverTitle}">
       <td><span class="tag ${exchTags[p.exchange]}">${p.exchange}</span><span style="font-size:8px;color:var(--t4);display:block">${acct}</span></td>
-      <td><strong>${p.ticker}</strong>${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
+      <td><strong>${p.ticker}</strong>${p.isStale?'<span style="display:inline-block;font-size:8px;font-weight:700;color:#fff;background:#b45309;padding:1px 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Live data unavailable — displayed price is the baked snapshot, may be stale">STALE</span>':''}${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${ytdTxt?`<br>${ytdTxt}`:''}${m1Txt?`<br>${m1Txt}`:''}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>
@@ -2106,7 +2136,7 @@ function calcAllocationRisk(ps, trades, pivot) {
   // Priced subset only — bonds/cash/unpriced have no daily-return history.
   const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
 
-  // Unified date axis from YTD start onward
+  // Unified date axis from YTD start onward, snapshot-extended with today.
   const allDates = new Set();
   for (const p of priced) {
     for (const bar of p.history) {
@@ -2114,23 +2144,28 @@ function calcAllocationRisk(ps, trades, pivot) {
       if (ds >= startDateStr) allDates.add(ds);
     }
   }
-  const dates = [...allDates].sort();
+  let dates = [...allDates].sort();
+  dates = _maybeAppendTodayDate(dates, priced);
 
-  // closeMatrix with seed-from-last-close-before-window (same convention
-  // as getEquityCurve, so staggered market openings do not produce
-  // first-day return artifacts).
+  // Adjclose-based closeMatrix with seed-from-last-bar-before-window so
+  // staggered market openings do not produce first-day return artifacts.
+  // Snapshot-aware: today gets populated from p.mktPrice.
   const closeMatrix = {};
+  const todayISO_alloc = new Date().toISOString().slice(0, 10);
   for (const p of priced) {
     closeMatrix[p.ticker] = {};
     let seed = null;
     for (let i = p.history.length - 1; i >= 0; i--) {
       const bar = p.history[i];
       const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
-      if (ds < startDateStr) { seed = bar.close; break; }
+      if (ds < startDateStr) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
     }
     for (const bar of p.history) {
       const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
-      closeMatrix[p.ticker][ds] = bar.close;
+      closeMatrix[p.ticker][ds] = bar.adjclose != null ? bar.adjclose : bar.close;
+    }
+    if (dates.length > 0 && dates[dates.length - 1] === todayISO_alloc && p.mktPrice != null) {
+      closeMatrix[p.ticker][todayISO_alloc] = p.mktPrice;
     }
     let last = seed;
     for (const ds of dates) {
@@ -3484,34 +3519,24 @@ const ATTR_HORIZONS = [
 ];
 
 function calcAttribution(ps, bars) {
+  // Total-return attribution. effectiveReturn() handles both the
+  // adjclose-vs-raw choice (use adjclose, includes dividends) and the
+  // snapshot-aware closeNow shift so 1D / 1W / 1M reflect today's move
+  // even when the pipeline has not yet appended today's bar to history.
   const rows = [];
   let totalStart = 0;
   for (const p of ps) {
-    if (!p.history || p.history.length < bars + 1) continue;
-    const n = p.history.length;
-    const lastBarClose = p.history[n - 1].close;
-    // Snapshot-aware: when the live snapshot price differs from the latest
-    // history bar, treat the snapshot as a virtual bar at index n. closeNow
-    // becomes the snapshot; closeThen shifts back `bars` periods to
-    // history[n - bars]. This catches the case where the price pipeline
-    // captures today's snapshot but has not yet extended the daily history
-    // array — without this fix the 1D return reads yesterday-vs-day-before
-    // instead of today-vs-yesterday.
-    const snapshotFresher = p.mktPrice != null && Math.abs(p.mktPrice - lastBarClose) > 1e-6;
-    const closeNow  = snapshotFresher ? p.mktPrice : lastBarClose;
-    const closeThen = snapshotFresher
-      ? p.history[Math.max(0, n - bars)].close
-      : p.history[Math.max(0, n - 1 - bars)].close;
-    if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen === 0) continue;
+    const r = effectiveReturn(p, bars);
+    if (!r) continue;
     const fx        = p.fxRate || 1;
-    const startSGD  = closeThen * p.qty * fx;
-    const endSGD    = closeNow  * p.qty * fx;
+    const startSGD  = r.closeThen * p.qty * fx;
+    const endSGD    = r.closeNow  * p.qty * fx;
     const dollar    = endSGD - startSGD;
     if (!isFinite(startSGD) || startSGD === 0) continue;
     rows.push({
       pos: p,
       startSGD, endSGD, dollar,
-      retPct: ((closeNow - closeThen) / closeThen) * 100,
+      retPct: ((r.closeNow - r.closeThen) / r.closeThen) * 100,
     });
     totalStart += startSGD;
   }
@@ -3752,6 +3777,26 @@ function calcYtdAttribution(ps, trades) {
 //
 // Returns:
 //   { equityTwrr, days, flowCount, flowTotalSGD, bmv, emv, error?, dates[] }
+// Returns the date axis (ISO YYYY-MM-DD strings, sorted ascending) extended
+// with today's date if any priced position has a snapshot price fresher than
+// its last history bar — i.e. today's bar has not yet been baked into the
+// pipeline output. Caller is responsible for populating closeMatrix at the
+// appended date with each position's snapshot price (or carry-forward).
+function _maybeAppendTodayDate(dates, priced) {
+  if (!dates || dates.length === 0) return dates || [];
+  const todayISO = new Date().toISOString().slice(0, 10);
+  if (todayISO <= dates[dates.length - 1]) return dates;
+  for (const p of priced) {
+    if (!p.history || p.history.length === 0) continue;
+    const lastBar = p.history[p.history.length - 1];
+    const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
+    if (p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6) {
+      return [...dates, todayISO];
+    }
+  }
+  return dates;
+}
+
 function calcTwrr(ps, trades, startDateStr) {
   // 1. Priced equity universe: any position with usable history.
   const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
@@ -3766,7 +3811,11 @@ function calcTwrr(ps, trades, startDateStr) {
       if (ds >= startDateStr) allDates.add(ds);
     }
   }
-  const dates = [...allDates].sort();
+  let dates = [...allDates].sort();
+  // Extend dates with today's snapshot point when the pipeline has not yet
+  // appended today's bar. This ensures the right-edge TWRR reading reflects
+  // today's intraday move (closeMatrix below populates today from p.mktPrice).
+  dates = _maybeAppendTodayDate(dates, priced);
   if (dates.length < 2) return { equityTwrr: 0, days: dates.length, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'Not enough trading dates in window' };
 
   // 3. Index trades by ticker × date for the qty walk, and by date alone for cash-flow aggregation.
@@ -3799,7 +3848,11 @@ function calcTwrr(ps, trades, startDateStr) {
   // close BEFORE the window. Without the seed, staggered market openings make
   // NAV ramp up over the first few days and Modified Dietz mis-reads it as
   // organic return.
+  // Adjclose-based close matrix with seed-from-last-bar-before-window. Using
+  // adjclose makes the TWRR a total-return number (dividends rolled in via
+  // Yahoo's split- and dividend-adjusted series).
   const closeMatrix = {};
+  const todayISO_twrr = new Date().toISOString().slice(0, 10);
   for (const p of priced) {
     closeMatrix[p.ticker] = {};
     let lastCloseBeforeWindow_twrr = null;
@@ -3807,12 +3860,16 @@ function calcTwrr(ps, trades, startDateStr) {
       const bar = p.history[i];
       const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
       const ds = d.toISOString().slice(0, 10);
-      if (ds < startDateStr) { lastCloseBeforeWindow_twrr = bar.close; break; }
+      if (ds < startDateStr) { lastCloseBeforeWindow_twrr = bar.adjclose != null ? bar.adjclose : bar.close; break; }
     }
     for (const bar of p.history) {
       const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
       const ds = d.toISOString().slice(0, 10);
-      closeMatrix[p.ticker][ds] = bar.close;
+      closeMatrix[p.ticker][ds] = bar.adjclose != null ? bar.adjclose : bar.close;
+    }
+    // Snapshot-aware: populate today with the live snapshot price.
+    if (dates.length > 0 && dates[dates.length - 1] === todayISO_twrr && p.mktPrice != null) {
+      closeMatrix[p.ticker][todayISO_twrr] = p.mktPrice;
     }
     let last = lastCloseBeforeWindow_twrr;
     for (const ds of dates) {
@@ -3885,7 +3942,8 @@ function getEquityCurve(ps, trades, startDateStr) {
   const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
   if (priced.length === 0) return { dates: [], nav: [], error: 'No priced positions' };
 
-  // Build unified date axis from window-start onward
+  // Build unified date axis from window-start onward, then extend with
+  // today's snapshot point if the pipeline has not yet baked today's bar.
   const allDates = new Set();
   for (const p of priced) {
     for (const bar of p.history) {
@@ -3894,7 +3952,8 @@ function getEquityCurve(ps, trades, startDateStr) {
       if (ds >= startDateStr) allDates.add(ds);
     }
   }
-  const dates = [...allDates].sort();
+  let dates = [...allDates].sort();
+  dates = _maybeAppendTodayDate(dates, priced);
   if (dates.length < 2) return { dates, nav: [], error: 'Not enough trading days' };
 
   // Index trades
@@ -3933,24 +3992,28 @@ function getEquityCurve(ps, trades, startDateStr) {
   // JPN Jan 4, etc.) cause NAV to ramp up over the first few days as each
   // market reports its first window bar — Modified Dietz then mis-reads
   // that ramp as a sub-period return. Seeding fixes the first-day artifact.
+  // Adjclose-based close matrix with seed-from-last-bar-before-window.
+  // Snapshot-aware: today's date (if appended) gets populated with p.mktPrice.
   const closeMatrix = {};
+  const todayISO_ec = new Date().toISOString().slice(0, 10);
   for (const p of priced) {
     closeMatrix[p.ticker] = {};
-    // Find last close strictly before the window starts (so the day before
-    // dates[0] becomes our 'last known price'). Walk history backward.
     let lastCloseBeforeWindow = null;
     for (let i = p.history.length - 1; i >= 0; i--) {
       const bar = p.history[i];
       const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
       const ds = d.toISOString().slice(0, 10);
-      if (ds < startDateStr) { lastCloseBeforeWindow = bar.close; break; }
+      if (ds < startDateStr) { lastCloseBeforeWindow = bar.adjclose != null ? bar.adjclose : bar.close; break; }
     }
     for (const bar of p.history) {
       const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
       const ds = d.toISOString().slice(0, 10);
-      closeMatrix[p.ticker][ds] = bar.close;
+      closeMatrix[p.ticker][ds] = bar.adjclose != null ? bar.adjclose : bar.close;
     }
-    let last = lastCloseBeforeWindow;   // seed
+    if (dates.length > 0 && dates[dates.length - 1] === todayISO_ec && p.mktPrice != null) {
+      closeMatrix[p.ticker][todayISO_ec] = p.mktPrice;
+    }
+    let last = lastCloseBeforeWindow;
     for (const ds of dates) {
       if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
       else if (last != null) closeMatrix[p.ticker][ds] = last;
@@ -4077,6 +4140,27 @@ function getEquityCurve(ps, trades, startDateStr) {
   const denom = bmv0 + weightedCF;
   const mwrrPct = denom > 0 ? ((emv0 - bmv0 - netCF) / denom) * 100 : 0;
 
+  // ── Risk-adjusted return metrics ──
+  // Convention: SG risk-free proxy = 3.5% (rough SSB / 6m T-bill ballpark).
+  // Daily returns excluded from window start (i=0 = 0 by construction);
+  // annualisation factor = 252.
+  const rfAnnual = 0.035;
+  const dailyRets = dailyReturn.slice(1);  // drop the seeded 0
+  const meanDaily = dailyRets.length ? dailyRets.reduce((s, r) => s + r, 0) / dailyRets.length : 0;
+  const varDaily  = dailyRets.length ? dailyRets.reduce((s, r) => s + (r - meanDaily) * (r - meanDaily), 0) / dailyRets.length : 0;
+  const volAnnual = Math.sqrt(varDaily) * Math.sqrt(252);
+  // Downside semi-deviation: only negative returns contribute.
+  const downRets = dailyRets.filter(r => r < 0);
+  const downSqMean = dailyRets.length ? downRets.reduce((s, r) => s + r * r, 0) / dailyRets.length : 0;
+  const downVolAnnual = Math.sqrt(downSqMean) * Math.sqrt(252);
+  // Annualised return from compounded cumulative return over window.
+  const cumGross = 1 + (cumReturn[cumReturn.length - 1] || 0) / 100;
+  const yearsElapsed = Math.max(dailyRets.length / 252, 1 / 252);
+  const annReturn = cumGross > 0 ? Math.pow(cumGross, 1 / yearsElapsed) - 1 : 0;
+  const sharpeRatio  = volAnnual     > 0 ? (annReturn - rfAnnual) / volAnnual     : 0;
+  const sortinoRatio = downVolAnnual > 0 ? (annReturn - rfAnnual) / downVolAnnual : 0;
+  const calmarRatio  = maxDD.value   < 0 ? annReturn / (Math.abs(maxDD.value) / 100) : 0;
+
   return {
     dates, nav, cf, dailyReturn, cumReturn, drawdown,
     startNav: nav[0],
@@ -4087,6 +4171,13 @@ function getEquityCurve(ps, trades, startDateStr) {
     maxDrawdown: maxDD,
     bestDay: best,
     worstDay: worst,
+    annReturn: annReturn * 100,
+    annVol: volAnnual * 100,
+    annDownVol: downVolAnnual * 100,
+    sharpeRatio,
+    sortinoRatio,
+    calmarRatio,
+    rfAnnual: rfAnnual * 100,
   };
 }
 
@@ -4101,6 +4192,78 @@ function _perfWindowStart(windowKey) {
 }
 
 // Render the equity-curve + drawdown card. Called by renderPerformance.
+// Returns a benchmark cumulative-return series over the same window as the
+// equity curve, rebased to 0% at the bar BEFORE the window start (so the
+// benchmark and portfolio share the same anchor point). Uses adjclose for
+// total return, and snapshot-aware closeNow when today's bar is missing.
+//
+// sym: 'STI' (-> ES3.SI), 'SPX' (-> S27.SI). Both are existing portfolio
+// positions that double as benchmark proxies.
+const BENCHMARK_TICKERS = { STI: 'ES3', SPX: 'S27' };
+const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI)' };
+
+function getBenchmarkCurve(ps, sym, startDateStr) {
+  if (!sym || sym === 'NONE') return null;
+  const tk = BENCHMARK_TICKERS[sym];
+  if (!tk) return null;
+  const pos = ps.find(p => p.ticker === tk);
+  if (!pos || !pos.history || pos.history.length === 0) return null;
+
+  // Seed = last adjclose strictly before the window (so day-0 plots as 0%).
+  let seed = null;
+  for (let i = pos.history.length - 1; i >= 0; i--) {
+    const bar = pos.history[i];
+    const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+    const ds = d.toISOString().slice(0, 10);
+    if (ds < startDateStr) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
+  }
+  // Filter history bars at or after window start.
+  const window = [];
+  for (const bar of pos.history) {
+    const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+    const ds = d.toISOString().slice(0, 10);
+    if (ds >= startDateStr) window.push({ ds, adj: bar.adjclose != null ? bar.adjclose : bar.close });
+  }
+  if (window.length === 0) return null;
+  const base = seed != null ? seed : window[0].adj;
+  if (!isFinite(base) || base <= 0) return null;
+
+  const dates = [];
+  const cumReturn = [];
+  for (const w of window) {
+    dates.push(w.ds);
+    cumReturn.push((w.adj / base - 1) * 100);
+  }
+  // Snapshot-aware extension: append today if snapshot fresher than last bar.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const lastBar = pos.history[pos.history.length - 1];
+  const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
+  if (pos.mktPrice != null && Math.abs(pos.mktPrice - lastAdj) > 1e-6 && todayISO > dates[dates.length - 1]) {
+    dates.push(todayISO);
+    cumReturn.push((pos.mktPrice / base - 1) * 100);
+  }
+  return {
+    ticker: tk,
+    name: pos.name,
+    label: BENCHMARK_LABELS[sym] || sym,
+    dates,
+    cumReturn,
+    endReturn: cumReturn[cumReturn.length - 1],
+  };
+}
+
+window.setPerfBenchmark = (b) => {
+  state.perfBenchmark = b;
+  renderEquityCurve('equityCurveCard', state.positions, TRADES_YTD, state.perfWindow || 'YTD');
+};
+
+// Renders the elapsed-window label under Annualised Return.
+function yearsElapsed_label(daysCount) {
+  if (daysCount < 21) return daysCount + 'd window';
+  if (daysCount < 252) return (daysCount / 21).toFixed(1) + 'mo window';
+  return (daysCount / 252).toFixed(2) + 'y window';
+}
+
 function renderEquityCurve(elId, ps, trades, windowKey) {
   const startDate = _perfWindowStart(windowKey);
   const curve = getEquityCurve(ps, trades, startDate);
@@ -4111,12 +4274,47 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     return;
   }
 
+  // Risk-adjusted stat strip — sits above the standard KPI grid.
+  const fmtR = v => (v >= 0 ? '+' : '') + (isFinite(v) ? v.toFixed(2) : '—');
+  const sharpeColour  = curve.sharpeRatio  >= 1   ? 'var(--g)' : curve.sharpeRatio  >= 0.5 ? 'var(--t1)' : curve.sharpeRatio  >= 0 ? 'var(--a)' : 'var(--r)';
+  const sortinoColour = curve.sortinoRatio >= 1.4 ? 'var(--g)' : curve.sortinoRatio >= 0.7 ? 'var(--t1)' : curve.sortinoRatio >= 0 ? 'var(--a)' : 'var(--r)';
+  const calmarColour  = curve.calmarRatio  >= 1   ? 'var(--g)' : curve.calmarRatio  >= 0.5 ? 'var(--t1)' : curve.calmarRatio  >= 0 ? 'var(--a)' : 'var(--r)';
+  const riskAdjustedHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:14px;padding:12px 14px;background:var(--bg2);border-radius:6px">
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Annualised Return</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${curve.annReturn >= 0 ? 'var(--g)' : 'var(--r)'}">${fmtPct(curve.annReturn)}</div>
+        <div style="font-size:10px;color:var(--t3)">${yearsElapsed_label(curve.dailyReturn.length - 1)}</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Annualised Vol</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${fmt(curve.annVol, 1)}%</div>
+        <div style="font-size:10px;color:var(--t3)">total · downside ${fmt(curve.annDownVol, 1)}%</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Sharpe</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${sharpeColour}">${fmtR(curve.sharpeRatio)}</div>
+        <div style="font-size:10px;color:var(--t3)">(ann ret − ${fmt(curve.rfAnnual, 1)}%) / vol</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Sortino</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${sortinoColour}">${fmtR(curve.sortinoRatio)}</div>
+        <div style="font-size:10px;color:var(--t3)">vs downside vol only</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Calmar</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${calmarColour}">${fmtR(curve.calmarRatio)}</div>
+        <div style="font-size:10px;color:var(--t3)">ann ret / |max DD|</div>
+      </div>
+    </div>`;
+
   // KPI strip values
   const kpis = [
     { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: curve.dates[0] },
     { label: 'Current NAV',      value: fmtSGD(curve.currentNav), sub: curve.dates[curve.dates.length - 1] },
     { label: 'Total Return (TWRR)', value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length} trading days · Modified Dietz daily` },
     { label: 'MWRR (cross-check)',  value: fmtPct(curve.mwrrPct), cls: curve.mwrrPct >= 0 ? 'pos' : 'neg', sub: `Δ ${(curve.mwrrPct - curve.totalReturnPct).toFixed(2)} pp vs TWRR${Math.abs(curve.mwrrPct - curve.totalReturnPct) > 3 ? ' ⚠' : ''}` },
+    ...(benchmarkCurve ? [{ label: `vs ${benchmarkSel}`, value: (alpha >= 0 ? '+' : '') + alpha.toFixed(2) + ' pp', cls: alpha >= 0 ? 'pos' : 'neg', sub: `Bench ${fmtPct(benchmarkCurve.endReturn)} · You ${fmtPct(curve.totalReturnPct)}` }] : []),
     { label: 'Max Drawdown',     value: fmtPct(curve.maxDrawdown.value), cls: 'neg', sub: `${curve.maxDrawdown.from} → ${curve.maxDrawdown.date}` },
     { label: 'Best Day',         value: fmtPct(curve.bestDay.return),   cls: 'pos', sub: curve.bestDay.date },
     { label: 'Worst Day',        value: fmtPct(curve.worstDay.return),  cls: 'neg', sub: curve.worstDay.date },
@@ -4130,6 +4328,15 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     `<button class="fbtn ${k === mode ? 'active' : ''}" onclick="setPerfChartMode('${k}')">${label}</button>`
   ).join('');
 
+  // Benchmark selector. Default STI. Compute the benchmark curve only when
+  // a benchmark is selected — getBenchmarkCurve returns null otherwise.
+  const benchmarkSel = state.perfBenchmark || 'STI';
+  const benchmarkCurve = (mode === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate) : null;
+  const benchBtns = [['STI','STI'],['SPX','S&P 500'],['NONE','None']].map(([k,label]) =>
+    `<button class="fbtn ${k === benchmarkSel ? 'active' : ''}" onclick="setPerfBenchmark('${k}')">${label}</button>`
+  ).join('');
+  const alpha = benchmarkCurve ? (curve.totalReturnPct - benchmarkCurve.endReturn) : null;
+
   container.innerHTML = `
     <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div class="card-title"><span class="indicator" style="background:var(--g)"></span>Equity Curve — ${mode === 'pct' ? 'Rebased Return' : 'Daily NAV'} with Drawdown</div>
@@ -4137,9 +4344,12 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
         <div style="display:flex;gap:4px;align-items:center" title="Chart axis: rebased to 0% at window start, or absolute S$ NAV">${modeBtns}</div>
         <div style="width:1px;height:18px;background:var(--bd)"></div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${winBtns}</div>
+        <div style="width:1px;height:18px;background:var(--bd)"></div>
+        <div style="display:flex;gap:4px;align-items:center" title="Benchmark overlay (rebased mode only)">${benchBtns}</div>
       </div>
     </div>
     <div class="card-body" style="padding-top:8px">
+      ${riskAdjustedHTML}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:16px">
         ${kpis.map(k => `<div>
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">${k.label}</div>
@@ -4194,11 +4404,24 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       yaxis: 'y2',
     };
     if (!document.getElementById('equityCurveChart')) return;
-    Plotly.newPlot('equityCurveChart', [trace1, trace2], {
+    const traces = [trace1, trace2];
+    if (isPct && benchmarkCurve) {
+      const benchHover = benchmarkCurve.cumReturn.map(v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%');
+      traces.push({
+        type: 'scatter', mode: 'lines', name: benchmarkCurve.label,
+        x: benchmarkCurve.dates, y: benchmarkCurve.cumReturn,
+        line: { color: 'rgba(100,116,139,0.85)', width: 1.5, dash: 'dash' },
+        customdata: benchHover,
+        hovertemplate: '<b>%{x|%-d %b %Y}</b><br>' + benchmarkCurve.label + ': %{customdata}<extra></extra>',
+        yaxis: 'y1',
+      });
+    }
+    Plotly.newPlot('equityCurveChart', traces, {
       margin: { t: 10, b: 50, l: 70, r: 60 },
       paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
       font: { family: 'DM Sans', size: 11, color: '#5c5c56' },
-      showlegend: false,
+      showlegend: !!(isPct && benchmarkCurve),
+      legend: { x: 0, y: 1.05, orientation: 'h', font: { size: 10 } },
       hovermode: 'x unified',
       xaxis: { type: 'date', gridcolor: '#e2e0d8', tickfont: { size: 10 } },
       yaxis:  isPct
