@@ -2,16 +2,16 @@ name: Update Prices
 
 on:
   schedule:
-    # 21:00 UTC (05:00 SGT) Mon-Fri — immediate snapshot after the US close.
-    # Some European, HK and SG daily bars are still close=null at this point;
-    # build.js substitutes regularMarketPrice as a provisional last bar so
-    # the dashboard tracks the live chart price.
+    # 10:00 UTC (18:00 SGT) Mon-Fri — one hour after SGX close. Captures SG
+    # and HK end-of-day bars cleanly. Yahoo finalises SGX closes within
+    # ~30 minutes of 17:00 SGT, so this run reliably picks up today's bar.
+    - cron: '0 10 * * 1-5'
+    # 21:00 UTC (05:00 SGT next day) Mon-Fri — immediate snapshot after the
+    # US close. US bars finalise; SG/HK already finalised earlier today.
     - cron: '0 21 * * 1-5'
-    # 04:00 UTC (12:00 SGT) Tue-Sat — finalisation pass ~7 hours later.
-    # Picks up any lingering close=null bars that Yahoo has since finalised
-    # and adds a mid-day Asian intraday read. Each run does a fresh full
-    # Yahoo refetch, so the later build's history.json simply overwrites
-    # the earlier one with finalised closes where now available.
+    # 04:00 UTC (12:00 SGT) Tue-Sat — mid-Asian finalisation pass for any
+    # bars Yahoo finalised overnight. Each run is a fresh full refetch so
+    # the later history.json overwrites the earlier with finalised closes.
     - cron: '0 4 * * 2-6'
   workflow_dispatch:
 

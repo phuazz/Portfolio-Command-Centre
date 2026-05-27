@@ -89,12 +89,6 @@ async function fetchTicker(symbol, range = '10y') {
       const lows = quotes?.low || [];
 
       const price = meta.regularMarketPrice || closes.filter(c => c != null).pop();
-      // BUG FIX: meta.chartPreviousClose is the close BEFORE the chart range
-      // starts (~10 years ago for range=10y), not the previous trading day.
-      // Use the proper previous-close fields, fall back to last-2 close.
-      const prevClose = meta.regularMarketPreviousClose
-                     || meta.previousClose
-                     || closes.filter(c => c != null).slice(-2)[0];
 
       const history = [];
       const lastIdx = timestamps.length - 1;
@@ -110,6 +104,52 @@ async function fetchTicker(symbol, range = '10y') {
             l: +(lows[i] || closes[i]).toFixed(4)
           });
         }
+      }
+
+      // Provisional last bar — if the latest timestamp has close=null but
+      // Yahoo gave us a regularMarketPrice (market still open), append the
+      // live price as a provisional bar tagged p:true. The merge logic in
+      // template.html replaces provisional bars with finalised closes on
+      // the next bake. Without this substitution the daily history ends at
+      // yesterday during trading hours and the dashboard's snapshot-aware
+      // fallback has to paper over the gap.
+      if (lastIdx >= 0 && timestamps[lastIdx] != null && (closes[lastIdx] == null || isNaN(closes[lastIdx])) && meta.regularMarketPrice != null) {
+        const px = meta.regularMarketPrice;
+        const lastBarDate = new Date(timestamps[lastIdx] * 1000).toISOString().slice(0, 10);
+        // Skip if a finalised bar for the same calendar date is already in history.
+        const alreadyFinalised = history.some(b => new Date(b.d * 1000).toISOString().slice(0, 10) === lastBarDate);
+        if (!alreadyFinalised) {
+          history.push({
+            d: timestamps[lastIdx],
+            c: +px.toFixed(4),
+            ac: +px.toFixed(4),
+            o: +(opens[lastIdx] || px).toFixed(4),
+            h: +(highs[lastIdx] || px).toFixed(4),
+            l: +(lows[lastIdx] || px).toFixed(4),
+            p: true,
+          });
+        }
+      }
+
+      // prevClose: prefer the LAST FINALISED close in our history over
+      // Yahoo's regularMarketPreviousClose, which sometimes lags by one
+      // session when Yahoo has not yet finalised yesterday's bar (we
+      // observed this on ES3.SI returning Friday's close on Tuesday).
+      let prevClose = meta.regularMarketPreviousClose || meta.previousClose;
+      const finalisedBars = history.filter(b => !b.p);
+      if (finalisedBars.length >= 1) {
+        // If the most recent bar in history is a provisional (today's live)
+        // bar, use the bar before that as prevClose.
+        const lastBar = history[history.length - 1];
+        if (lastBar.p && finalisedBars.length >= 1) {
+          prevClose = finalisedBars[finalisedBars.length - 1].c;
+        } else if (finalisedBars.length >= 2) {
+          // Both bars are finalised — use the second-to-last as prevClose.
+          prevClose = finalisedBars[finalisedBars.length - 2].c;
+        }
+      }
+      if (prevClose == null) {
+        prevClose = closes.filter(c => c != null).slice(-2)[0] || price;
       }
 
       return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), history };
@@ -178,7 +218,7 @@ async function main() {
 
   // Fetch FX
   console.log(`💱 Fetching FX rates...`);
-  const fxData = await fetchAll(FX_SYMBOLS, '5d');
+  const fxData = await fetchAll(FX_SYMBOLS, '1y');
   const fxCount = Object.keys(fxData).length;
   console.log(`  ✅ ${fxCount}/${FX_SYMBOLS.length} FX rates fetched\n`);
 
