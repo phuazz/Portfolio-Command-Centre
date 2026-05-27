@@ -552,6 +552,58 @@ const SNAPSHOT = {
 };
 
 // FX (derived from screenshot SGD grand totals)
+// Historical FX series, populated at preload from fx.json's time-series
+// bars. Each entry is { date: 'YYYY-MM-DD', rate: <ccy_to_sgd> } sorted
+// ascending. Empty until the FX pipeline output extends beyond a single
+// day (currently the pipeline bakes ~1y of FX history per pair).
+const FX_HISTORY = {};   // { 'USD': [{date, rate}], 'HKD': [...], ... }
+
+// Populate FX_HISTORY from the merged fx.json payload (called from inside
+// preloadToResults after FX_SYMBOLS have been read into `results`).
+function _buildFxHistory(results) {
+  const map = { 'USDSGD=X': 'USD', 'HKDSGD=X': 'HKD', 'JPYSGD=X': 'JPY', 'AUDSGD=X': 'AUD', 'EURSGD=X': 'EUR' };
+  for (const [sym, ccy] of Object.entries(map)) {
+    const entry = results[sym];
+    if (!entry) continue;
+    const hist = entry.history;
+    if (!hist || hist.length === 0) { FX_HISTORY[ccy] = []; continue; }
+    // historyToFull has already converted bars into { date: Date, close, adjclose, ... }.
+    // Prefer adjclose (continuous), fall back to close.
+    const series = hist
+      .map(b => {
+        const d = b.date instanceof Date ? b.date : new Date(b.date);
+        const rate = b.adjclose != null && isFinite(b.adjclose) ? b.adjclose
+                  : (b.close    != null && isFinite(b.close)    ? b.close : null);
+        if (rate == null) return null;
+        return { date: d.toISOString().slice(0, 10), rate };
+      })
+      .filter(x => x !== null)
+      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    FX_HISTORY[ccy] = series;
+  }
+}
+
+// Lookup FX rate for a given currency on a given ISO date with forward-fill.
+// Returns the rate of the most recent FX_HISTORY entry whose date is <= isoDate.
+// If isoDate is before the earliest entry, uses the earliest. If FX_HISTORY
+// has no series for the currency (or is empty), falls back to the current
+// static FX[ccy] (which is overwritten at preload with today's rate).
+function fxAtDate(ccy, isoDate) {
+  if (!ccy || ccy === 'SGD') return 1;
+  const series = FX_HISTORY[ccy];
+  if (!series || series.length === 0) return FX[ccy] || 1;
+  if (isoDate <= series[0].date) return series[0].rate;
+  if (isoDate >= series[series.length - 1].date) return series[series.length - 1].rate;
+  // Binary search for last entry with date <= isoDate.
+  let lo = 0, hi = series.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (series[mid].date <= isoDate) lo = mid;
+    else hi = mid - 1;
+  }
+  return series[lo].rate;
+}
+
 const FX = { HKD:0.1624, JPY:0.008240, USD:1.2672, AUD:0.8986, EUR:1.4914, SGD:1 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -1801,7 +1853,9 @@ function effectiveReturn(p, lookbackBars) {
   const refBar = p.history[refIdx];
   const closeThen = refBar.adjclose != null ? refBar.adjclose : refBar.close;
   if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
-  return { closeNow, closeThen, snapshotFresher };
+  const refDateObj = refBar.date instanceof Date ? refBar.date : new Date(refBar.date);
+  const refDate = refDateObj.toISOString().slice(0, 10);
+  return { closeNow, closeThen, snapshotFresher, refDate };
 }
 
 // Compute portfolio-level period P&L from position histories
@@ -1814,9 +1868,10 @@ function calcPortfolioPeriodPnL(ps, tradingDaysBack) {
   for (const p of ps) {
     const r = effectiveReturn(p, tradingDaysBack);
     if (!r) continue;
-    const fx = p.fxRate || 1;
-    totalNow  += r.closeNow  * p.qty * fx;
-    totalThen += r.closeThen * p.qty * fx;
+    const fxThen = fxAtDate(p.ccy, r.refDate);
+    const fxNow  = p.fxRate || 1;
+    totalNow  += r.closeNow  * p.qty * fxNow;
+    totalThen += r.closeThen * p.qty * fxThen;
     count++;
   }
   if (count === 0 || totalThen === 0) return { pnl: 0, pct: 0, count: 0 };
@@ -2176,15 +2231,15 @@ function calcAllocationRisk(ps, trades, pivot) {
 
   // Per-bucket daily value series using CURRENT qty (fixed-weights convention
   // for vol decomposition — current allocation, historical price moves).
+  // FX-as-of-date: each bar's value uses the FX rate observed on that date.
   const bucketValueSeries = {};
   for (const [k, g] of Object.entries(groups)) {
     const series = new Array(dates.length).fill(0);
     for (const p of g.positions) {
       if (!closeMatrix[p.ticker]) continue;
-      const fx = p.fxRate || 1;
       for (let i = 0; i < dates.length; i++) {
         const px = closeMatrix[p.ticker][dates[i]];
-        if (px != null) series[i] += p.qty * px * fx;
+        if (px != null) series[i] += p.qty * px * fxAtDate(p.ccy, dates[i]);
       }
     }
     bucketValueSeries[k] = series;
@@ -3528,9 +3583,14 @@ function calcAttribution(ps, bars) {
   for (const p of ps) {
     const r = effectiveReturn(p, bars);
     if (!r) continue;
-    const fx        = p.fxRate || 1;
-    const startSGD  = r.closeThen * p.qty * fx;
-    const endSGD    = r.closeNow  * p.qty * fx;
+    // FX-as-of-date: closeThen converted at the historical FX rate; closeNow
+    // converted at today's rate. Captures both equity and FX components of
+    // return in the dollar number. Falls back to p.fxRate when FX_HISTORY
+    // does not cover the lookback date.
+    const fxThen    = fxAtDate(p.ccy, r.refDate);
+    const fxNow     = p.fxRate || 1;
+    const startSGD  = r.closeThen * p.qty * fxThen;
+    const endSGD    = r.closeNow  * p.qty * fxNow;
     const dollar    = endSGD - startSGD;
     if (!isFinite(startSGD) || startSGD === 0) continue;
     rows.push({
@@ -3880,6 +3940,8 @@ function calcTwrr(ps, trades, startDateStr) {
 
   // 6. Daily equity NAV + daily trade cash flow (SGD, sign-adjusted from equity-sub perspective).
   //    + flow = buy (cash INTO equity);  − flow = sell (cash OUT of equity into the cash bucket).
+  // FX-as-of-date: NAV bars use FX as of the bar's date; trade CFs use FX
+  // as of the trade date.
   const navByDate = {};
   const cfByDate = {};
   for (const ds of dates) {
@@ -3887,17 +3949,15 @@ function calcTwrr(ps, trades, startDateStr) {
     for (const p of priced) {
       const qty = qtyMatrix[p.ticker][ds];
       const px  = closeMatrix[p.ticker][ds];
-      if (qty > 0 && px != null) nav += qty * px * (p.fxRate || 1);
+      if (qty > 0 && px != null) nav += qty * px * fxAtDate(p.ccy, ds);
     }
     navByDate[ds] = nav;
 
     let cf = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
-      // CF must use the same priced-equity constituent set as NAV. Trades on
-      // unpriced tickers would create phantom Modified Dietz returns.
       if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
-      const fx = pos.fxRate || 1;
+      const fx = fxAtDate(pos.ccy, t.d);
       const usd = t.q * t.p * fx;
       cf += (t.a === 'B' ? usd : -usd);
     }
@@ -4023,21 +4083,25 @@ function getEquityCurve(ps, trades, startDateStr) {
   // CASH-INCLUDED-NAV: compute equity NAV per day, plus cash + bond/unpriced
   // constant, so total NAV reflects the full portfolio. Trades become
   // internal rotations between equity and cash buckets — no external CF.
+  // FX-as-of-date: each historical NAV bar uses the FX rate observed on
+  // that date (via fxAtDate), so FX drift no longer contaminates the
+  // equity-only return signal.
   const equityAll = [], cfAll = [];
   for (const ds of dates) {
     let n = 0;
     for (const p of priced) {
       const q = qtyMatrix[p.ticker][ds];
       const px = closeMatrix[p.ticker][ds];
-      if (q > 0 && px != null) n += q * px * (p.fxRate || 1);
+      if (q > 0 && px != null) n += q * px * fxAtDate(p.ccy, ds);
     }
     equityAll.push(n);
     let c = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
       if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
-      const fx = pos.fxRate || 1;
-      c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fx;
+      // Trade CF in SGD uses FX-as-of-trade-date (trade currency at the
+      // time of execution).
+      c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(pos.ccy, t.d);
     }
     cfAll.push(c);
   }
@@ -4908,6 +4972,9 @@ function loadPreloadedData() {
   if (results['USDSGD=X']) FX.USD = results['USDSGD=X'].price;
   if (results['AUDSGD=X']) FX.AUD = results['AUDSGD=X'].price;
   if (results['EURSGD=X']) FX.EUR = results['EURSGD=X'].price;
+  // Populate FX_HISTORY (sorted ASC, ISO date strings + rate). Used by
+  // fxAtDate() for time-varying FX in historical-NAV reconstruction.
+  _buildFxHistory(results);
   return results;
 }
 
