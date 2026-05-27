@@ -1766,16 +1766,26 @@ function renderDate() {
 
 // Compute portfolio-level period P&L from position histories
 function calcPortfolioPeriodPnL(ps, tradingDaysBack) {
-  // For each position with history, find close N trading days ago and compute SGD P&L change
+  // Snapshot-aware: when p.mktPrice differs from history[last].close, the
+  // live snapshot represents today (a virtual bar at index n). closeNow uses
+  // the snapshot and closeThen shifts back tradingDaysBack periods to
+  // history[n - tradingDaysBack]. Without this shift the 1D card would read
+  // yesterday-vs-day-before whenever the pipeline updated the snapshot
+  // without appending today's bar to history. Mirrors the same fix applied
+  // in calcAttribution so landing cards and Attribution reconcile.
   let totalNow = 0, totalThen = 0, count = 0;
   for (const p of ps) {
     if (!p.history || p.history.length < tradingDaysBack + 1) continue;
     const n = p.history.length;
-    const closeNow = p.history[n - 1].close;
-    const closeThen = p.history[Math.max(0, n - 1 - tradingDaysBack)].close;
-    const valueSGDNow = closeNow * p.qty * (p.fxRate || 1);
+    const lastBarClose = p.history[n - 1].close;
+    const snapshotFresher_kpi = p.mktPrice != null && Math.abs(p.mktPrice - lastBarClose) > 1e-6;
+    const closeNow  = snapshotFresher_kpi ? p.mktPrice : lastBarClose;
+    const closeThen = snapshotFresher_kpi
+      ? p.history[Math.max(0, n - tradingDaysBack)].close
+      : p.history[Math.max(0, n - 1 - tradingDaysBack)].close;
+    const valueSGDNow  = closeNow  * p.qty * (p.fxRate || 1);
     const valueSGDThen = closeThen * p.qty * (p.fxRate || 1);
-    totalNow += valueSGDNow;
+    totalNow  += valueSGDNow;
     totalThen += valueSGDThen;
     count++;
   }
