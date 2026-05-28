@@ -367,11 +367,8 @@ const POSITIONS = [
   { ticker:'3173.HK', yf:'3173.HK', name:'PP CN New Economy ETF', exchange:'HKG', ccy:'HKD', avgPrice:7.4000, qty:11750, invested:86950.00, fee:0, availLTV:0, theme:'China New Economy', type:'ETF' },
   { ticker:'3750.HK', yf:'3750.HK', name:'CATL H', exchange:'HKG', ccy:'HKD', avgPrice:653.7001, qty:100, invested:65370.01, fee:0, availLTV:40, theme:'China EV Batteries', type:'Stock' },
   { ticker:'981.HK', yf:'0981.HK', name:'SMIC', exchange:'HKG', ccy:'HKD', avgPrice:77.1000, qty:1000, invested:77100.00, fee:0, availLTV:60, theme:'China Semis', type:'Stock' },
-  { ticker:'992.HK', yf:'0992.HK', name:'Lenovo Group', exchange:'HKG', ccy:'HKD', avgPrice:12.9000, qty:4000, invested:51600.00, fee:0, availLTV:60, theme:'China Tech', type:'Stock' },
-  { ticker:'9961.HK', yf:'9961.HK', name:'Trip.com', exchange:'HKG', ccy:'HKD', avgPrice:318.9063, qty:150, invested:47835.95, fee:0, availLTV:60, theme:'China Travel', type:'Stock' },
 
   { ticker:'1615.JP', yf:'1615.T', name:'TOPIX Banks ETF', exchange:'TSE', ccy:'JPY', avgPrice:383.6613, qty:3000, invested:1150983.90, fee:0, availLTV:70, theme:'Japan Financials', type:'ETF' },
-  { ticker:'4004.JP', yf:'4004.T', name:'Resonac Holdings', exchange:'TSE', ccy:'JPY', avgPrice:10402.6300, qty:100, invested:1040263.00, fee:0, availLTV:50, theme:'Japan Chemicals', type:'Stock' },
 
   { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.2402, qty:110, invested:8496.31, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
   { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:81.5767, qty:330, invested:26920.32, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
@@ -395,6 +392,8 @@ const POSITIONS = [
 
   // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
   { ticker:'USD.CASH', yf:null, name:'USD Cash (post-27-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:9966.00, invested:9966.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'HKD.CASH', yf:null, name:'HKD Cash (post-28-May sells, awaiting entry)', exchange:'HKG', ccy:'HKD', avgPrice:1.00, qty:131200.00, invested:131200.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'JPY.CASH', yf:null, name:'JPY Cash (post-28-May sells, awaiting entry)', exchange:'TSE', ccy:'JPY', avgPrice:1.00, qty:1904000.00, invested:1904000.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
 
   { ticker:'BNY.US', yf:'BNY', name:'Bank of NY Mellon', exchange:'NYS', ccy:'USD', avgPrice:140.1200, qty:65, invested:9107.80, fee:0, availLTV:60, theme:'US Financials', type:'Stock' },
   { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1066.9300, qty:8, invested:8535.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
@@ -536,6 +535,9 @@ const TRADES_YTD = [
   {d:'2026-05-26',t:'GRID.US',a:'B',q:45,p:196.7000,ccy:'USD',yf:'GRID',th:'Clean Energy'},
   {d:'2026-05-26',t:'LLY.US',a:'B',q:8,p:1066.9300,ccy:'USD',yf:'LLY',th:'US Pharma'},
   {d:'2026-05-27',t:'MOO.US',a:'B',q:100,p:80.4500,ccy:'USD',yf:'MOO',th:'Agribusiness'},
+  {d:'2026-05-28',t:'9961.HK',a:'S',q:150,p:362.4000,ccy:'HKD',yf:'9961.HK',th:'China Travel'},
+  {d:'2026-05-28',t:'992.HK',a:'S',q:4000,p:19.2700,ccy:'HKD',yf:'0992.HK',th:'China Tech'},
+  {d:'2026-05-28',t:'4004.JP',a:'S',q:100,p:19070.0000,ccy:'JPY',yf:'4004.T',th:'Japan Chemicals'},
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
@@ -1423,6 +1425,7 @@ const PRE_YTD_BASIS = {
   'SXLE.GB':   36.0175,
   '9988.HK':  142.80,
   'GE.US':    308.03,
+  '9961.HK':  554.00,    // Dec 31 2025 close — 250 shares of pre-YTD lot
 };
 
 function deriveAssetClass(p) {
