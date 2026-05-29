@@ -373,7 +373,6 @@ const POSITIONS = [
   { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.2402, qty:110, invested:8496.31, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
   { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:81.5767, qty:330, invested:26920.32, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
   { ticker:'GDX.US', yf:'GDX', name:'VanEck Gold Miners', exchange:'ARCA', ccy:'USD', avgPrice:82.8803, qty:100, invested:8288.03, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
-  { ticker:'IEZ.US', yf:'IEZ', name:'iShares US Oil Equip Services', exchange:'ARCA', ccy:'USD', avgPrice:31.9400, qty:250, invested:7985.00, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
   { ticker:'MOO.US', yf:'MOO', name:'VanEck Agribusiness', exchange:'ARCA', ccy:'USD', avgPrice:80.4500, qty:100, invested:8045.00, fee:0, availLTV:50, theme:'Agribusiness', type:'ETF' },
   { ticker:'NASA.US', yf:'NASA', name:'Tema Space Innovators', exchange:'ARCA', ccy:'USD', avgPrice:28.0811, qty:280, invested:7862.71, fee:0, availLTV:0, theme:'Space/Aerospace', type:'ETF' },
   { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:68.9099, qty:150, invested:10336.48, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
@@ -385,25 +384,23 @@ const POSITIONS = [
   { ticker:'GRID.US', yf:'GRID', name:'First Trust NASDAQ Clean Edge', exchange:'NMS', ccy:'USD', avgPrice:196.7000, qty:45, invested:8851.50, fee:0, availLTV:50, theme:'Clean Energy', type:'ETF' },
   { ticker:'IGV.US', yf:'IGV', name:'iShares Expanded Tech-Software', exchange:'NMS', ccy:'USD', avgPrice:93.7900, qty:100, invested:9379.00, fee:0, availLTV:50, theme:'US Tech', type:'ETF' },
   { ticker:'INTC.US', yf:'INTC', name:'Intel', exchange:'NMS', ccy:'USD', avgPrice:46.9923, qty:100, invested:4699.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
-  { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:85.8046, qty:100, invested:8580.46, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
+  { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:85.8046, qty:50, invested:4290.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
   { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:249.6421, qty:30, invested:7489.26, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
-  { ticker:'MU.US', yf:'MU', name:'Micron Technology', exchange:'NMS', ccy:'USD', avgPrice:424.7240, qty:10, invested:4247.24, fee:0, availLTV:60, theme:'US Semis', type:'Stock' },
   { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
   // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
-  { ticker:'USD.CASH', yf:null, name:'USD Cash (post-27-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:9966.00, invested:9966.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'USD.CASH', yf:null, name:'USD Cash (post-29-May, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:61721.00, invested:61721.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'HKD.CASH', yf:null, name:'HKD Cash (post-28-May sells, awaiting entry)', exchange:'HKG', ccy:'HKD', avgPrice:1.00, qty:131200.00, invested:131200.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'JPY.CASH', yf:null, name:'JPY Cash (post-28-May sells, awaiting entry)', exchange:'TSE', ccy:'JPY', avgPrice:1.00, qty:1904000.00, invested:1904000.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'EUR.CASH', yf:null, name:'EUR Cash (post-29-May sell, awaiting entry)', exchange:'PAR', ccy:'EUR', avgPrice:1.00, qty:6390.00, invested:6390.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
 
   { ticker:'BNY.US', yf:'BNY', name:'Bank of NY Mellon', exchange:'NYS', ccy:'USD', avgPrice:140.1200, qty:65, invested:9107.80, fee:0, availLTV:60, theme:'US Financials', type:'Stock' },
   { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1066.9300, qty:8, invested:8535.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
-  { ticker:'NOK.US', yf:'NOK', name:'Nokia ADR', exchange:'NYS', ccy:'USD', avgPrice:8.5586, qty:900, invested:7702.74, fee:0, availLTV:60, theme:'Telecom Infra', type:'Stock' },
-  { ticker:'SKM.US', yf:'SKM', name:'SK Telecom ADR', exchange:'NYS', ccy:'USD', avgPrice:28.8111, qty:300, invested:8643.33, fee:0, availLTV:60, theme:'Korea Telecom', type:'Stock' },
   { ticker:'SPHR.US', yf:'SPHR', name:'Sphere Entertainment', exchange:'NYS', ccy:'USD', avgPrice:129.3012, qty:60, invested:7758.07, fee:0, availLTV:60, theme:'US Entertainment', type:'Stock' },
 
   { ticker:'GDX.GB', yf:'GDX', name:'VanEck Gold Miners UCITS', exchange:'LSE', ccy:'USD', avgPrice:59.2868, qty:130, invested:7707.28, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
 
-  { ticker:'SOI.FR', yf:'SOI.PA', name:'Soitec', exchange:'PAR', ccy:'EUR', avgPrice:58.2230, qty:110, invested:6404.53, fee:0, availLTV:50, theme:'Europe Semis', type:'Stock' },
+  { ticker:'SOI.FR', yf:'SOI.PA', name:'Soitec', exchange:'PAR', ccy:'EUR', avgPrice:58.2230, qty:75, invested:4366.72, fee:0, availLTV:50, theme:'Europe Semis', type:'Stock' },
 
   // ═══ Central Depository ═══ (Account 1681-1926-6351, statement 18 Apr 2026)
   // SGD-denominated equities & ETFs
@@ -538,6 +535,12 @@ const TRADES_YTD = [
   {d:'2026-05-28',t:'9961.HK',a:'S',q:150,p:362.4000,ccy:'HKD',yf:'9961.HK',th:'China Travel'},
   {d:'2026-05-28',t:'992.HK',a:'S',q:4000,p:19.2700,ccy:'HKD',yf:'0992.HK',th:'China Tech'},
   {d:'2026-05-28',t:'4004.JP',a:'S',q:100,p:19070.0000,ccy:'JPY',yf:'4004.T',th:'Japan Chemicals'},
+  {d:'2026-05-28',t:'NOK.US',a:'S',q:900,p:15.4500,ccy:'USD',yf:'NOK',th:'Telecom Infra'},
+  {d:'2026-05-28',t:'MRVL.US',a:'S',q:50,p:200.3080,ccy:'USD',yf:'MRVL',th:'US Semis'},
+  {d:'2026-05-28',t:'MU.US',a:'S',q:10,p:922.5200,ccy:'USD',yf:'MU',th:'US Semis'},
+  {d:'2026-05-29',t:'IEZ.US',a:'S',q:250,p:30.1500,ccy:'USD',yf:'IEZ',th:'US Energy'},
+  {d:'2026-05-29',t:'SKM.US',a:'S',q:300,p:37.2395,ccy:'USD',yf:'SKM',th:'Korea Telecom'},
+  {d:'2026-05-29',t:'SOI.FR',a:'S',q:35,p:182.8500,ccy:'EUR',yf:'SOI.PA',th:'Europe Semis'},
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
