@@ -1892,14 +1892,16 @@ function renderKPIs() {
   const scPs = ps.filter(p=>p.account!=='CDP');
   const cdpValue = cdpPs.reduce((s,p)=>s+p.mktValueSGD,0);
   const scValue = scPs.reduce((s,p)=>s+p.mktValueSGD,0);
-  const votePs = ps.filter(p=>p.trendSignals && p.trendSignals.details && p.trendSignals.details.votes != null && p.type!=='Bond');
-  const voteFull = votePs.filter(p=>p.trendSignals.details.votes>=2).length;
-  const voteOut = votePs.filter(p=>p.trendSignals.details.votes<2).length;
-
   // Period P&L: 1D ≈ 1 bar, 1W ≈ 5 bars, 1M ≈ 21 bars
   const d1 = calcPortfolioPeriodPnL(ps, 1);
   const w1 = calcPortfolioPeriodPnL(ps, 5);
   const m1 = calcPortfolioPeriodPnL(ps, 21);
+  // YTD P&L: trade-aware FIFO total return (realised + unrealised) — the same
+  // figure as the Attribution tab headline. Unlike the fixed-bar cards above, a
+  // YTD mark-to-market would mishandle this year's heavy intra-year trading, so
+  // this uses the lot-accounting engine instead.
+  let ytd = { totalDollar: 0, portfolioRetPct: 0 };
+  try { ytd = calcYtdAttribution(ps, TRADES_YTD); } catch (e) { console.error('YTD KPI calc failed:', e); }
 
   const pnlKpi = (label, data) => ({
     label, value: fmtPL(data.pnl), sub: fmtPct(data.pct), cls: data.pnl >= 0 ? 'pos' : 'neg'
@@ -1910,7 +1912,7 @@ function renderKPIs() {
     pnlKpi('1-Day P&L', d1),
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
-    { label:'Monthly Vote', value:`${voteFull}/${votePs.length} OK`, sub:`${voteFull} hold · ${voteOut} exit (<2/3)`, cls:voteOut>0?'neg':'pos' },
+    { label:'YTD P&L', value:fmtPL(ytd.totalDollar), sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg' },
     { label:'Positions', value:`${ps.length}`, sub:`${scPs.length} Brokerage · ${cdpPs.length} CDP` },
   ];
 
