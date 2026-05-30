@@ -1459,7 +1459,7 @@ let state = {
   tab: 'positions',
   sort: { col:'weight', dir:'desc' },
   filter: 'ALL',
-  attrHorizon: '1M',
+  attrHorizon: 'YTD',
   perfWindow: 'YTD',
   perfChartMode: 'pct',  // 'pct' rebased to 0% | 'nav' absolute S$
   totalValueSGD: 0,
@@ -3680,6 +3680,41 @@ function calcYtdAttribution(ps, trades) {
     return (jan1Cache[yf] = null);
   };
 
+  // Dividend uplift factor u(d) = close(d) / adjclose(d) for the history bar on
+  // or before isoDate. Yahoo normalises adjclose to equal close at the most
+  // recent bar, so u >= 1 and rises the further back you look — it encodes the
+  // cumulative dividend stream from date d forward. Total-return value over a
+  // hold from entry e to exit x equals the price-return value times u(e)/u(x);
+  // at today u = 1, so a still-held lot's total mark is simply price * u(entry).
+  // Returns 1 when history or adjclose is missing, degrading to price return.
+  const uFactorAt = (pos, isoDate) => {
+    if (!pos || !pos.history || pos.history.length === 0) return 1;
+    let chosen = null;
+    for (const bar of pos.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const ds = d.toISOString().slice(0, 10);
+      if (ds <= isoDate) chosen = bar; else break;   // history is ascending
+    }
+    if (!chosen) chosen = pos.history[0];
+    const c = chosen.close, a = chosen.adjclose;
+    return (c != null && a != null && a !== 0) ? c / a : 1;
+  };
+
+  // u at the seeded pre-YTD lot's basis bar (the first 2026 bar — the same bar
+  // getJan1Px reads its raw close from), so the Jan-1 lot's dividends are
+  // captured on a basis consistent with its cost.
+  const getJan1U = (pos) => {
+    if (!pos || !pos.history) return 1;
+    for (const bar of pos.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      if (d.getFullYear() === 2026) {
+        const c = bar.close, a = bar.adjclose;
+        return (c != null && a != null && a !== 0) ? c / a : 1;
+      }
+    }
+    return 1;
+  };
+
   const rows = [];
   const flags = [];
   let totalStart = 0;
@@ -3724,20 +3759,24 @@ function calcYtdAttribution(ps, trades) {
           flags.push({ ticker, reason: 'pre-YTD lot — cost basis unavailable, sell price used' });
         }
       }
-      lots.push({ qty: jan1Qty, cost: jan1Px });
+      lots.push({ qty: jan1Qty, cost: jan1Px, u: getJan1U(pos) });
     }
 
     // Replay trades FIFO
     let realised = 0;
     for (const tr of trades) {
       if (tr.a === 'B') {
-        lots.push({ qty: tr.q, cost: tr.p });
+        lots.push({ qty: tr.q, cost: tr.p, u: uFactorAt(pos, tr.d) });
       } else {
+        const uSell = uFactorAt(pos, tr.d);
         let remaining = tr.q;
         while (remaining > 0 && lots.length > 0) {
           const lot = lots[0];
           const take = Math.min(lot.qty, remaining);
-          realised += (tr.p - lot.cost) * take;
+          // Total-return realised: sale proceeds dividend-uplifted from the
+          // lot's entry date to the sale date (u_entry / u_sell), less the raw
+          // cash cost of the lot.
+          realised += (tr.p * ((lot.u || 1) / uSell) - lot.cost) * take;
           lot.qty -= take;
           remaining -= take;
           if (lot.qty <= 1e-9) lots.shift();
@@ -3751,7 +3790,9 @@ function calcYtdAttribution(ps, trades) {
     let endQty = 0;
     const currentPx = pos ? pos.mktPrice : (lots.length && trades.length ? trades[trades.length-1].p : 0);
     for (const lot of lots) {
-      unrealised += (currentPx - lot.cost) * lot.qty;
+      // Total-return unrealised: current price dividend-uplifted from the lot's
+      // entry date to today (u_today = 1), less the raw cash cost.
+      unrealised += (currentPx * (lot.u || 1) - lot.cost) * lot.qty;
       endQty += lot.qty;
     }
 
@@ -4094,7 +4135,7 @@ function getEquityCurve(ps, trades, startDateStr) {
   // FX-as-of-date: each historical NAV bar uses the FX rate observed on
   // that date (via fxAtDate), so FX drift no longer contaminates the
   // equity-only return signal.
-  const equityAll = [], cfAll = [];
+  const equityAll = [], cfAll = [], untrackedNetAll = [];
   for (const ds of dates) {
     let n = 0;
     for (const p of priced) {
@@ -4103,30 +4144,58 @@ function getEquityCurve(ps, trades, startDateStr) {
       if (q > 0 && px != null) n += q * px * fxAtDate(p.ccy, ds);
     }
     equityAll.push(n);
-    let c = 0;
+    let c = 0, untracked = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
-      if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
-      // Trade CF in SGD uses FX-as-of-trade-date (trade currency at the
-      // time of execution).
-      c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(pos.ccy, t.d);
+      const isPricedEquity = pos && pos.history && pos.history.length >= 50 && pos.type !== 'Bond' && pos.type !== 'Cash';
+      if (isPricedEquity) {
+        // Tracked position: the trade is an internal rotation between this curve's
+        // equity sleeve and its cash pool. FX-as-of-trade-date (trade currency at
+        // the time of execution).
+        c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(pos.ccy, t.d);
+      } else {
+        // Closed-out (untracked) position: its equity history is not in this curve,
+        // so the trade cannot be a rotation. A sale enters the cash pool as an
+        // EXTERNAL INFLOW; an in-year buy that was later fully closed is an EXTERNAL
+        // OUTFLOW (cash left the curve into an untracked asset). The net is stripped
+        // from the return — the round-trip P&L lives in the FIFO attribution, so
+        // counting it here would double-count.
+        untracked += (t.a === 'S' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
+      }
     }
     cfAll.push(c);
+    untrackedNetAll.push(untracked);
   }
 
-  // Current cash NAV in SGD (USD.CASH position if it exists, else 0).
-  const cashPos = ps.find(p => p.type === 'Cash');
-  const cashToday = cashPos ? (cashPos.qty * (cashPos.fxRate || 1)) : 0;
-
-  // Cumulative cf summed forward — gives "cash deployed into equity so far".
-  // cash(t) = cash_today + Σ cf from (t+1 .. end), i.e. add back future deployments.
-  // Equivalently cash(Jan-1) = cash_today + Σ cf over the whole window.
+  // Honest cash trajectory, reconstructed FORWARD from a near-zero 1 January
+  // base. The book carried no material idle cash into the year — today's cash is
+  // entirely tactical proceeds from recent sells awaiting redeployment. cfAll[i]
+  // already holds each day's net equity trade flow in SGD (positive = bought, so
+  // cash leaves the bucket; negative = sold, so cash enters it). We walk this
+  // forward: sells add to cash, buys draw it down. When a purchase would drive
+  // cash below zero, the shortfall was funded by an EXTERNAL DEPOSIT — not a
+  // pre-existing cash pile — so we floor cash at zero and record the deposit as
+  // a portfolio cash flow (it must not read as return). This replaces the old
+  // back-walk, which set cash(Jan-1) = cashToday + Σ flows and thereby invented
+  // a large phantom Jan-1 cash balance whenever net deployment was positive,
+  // dragging the entire period against cash that never existed.
+  const seedCash = 0;                        // 1 January idle cash (see note above)
   const cashSeries = new Array(equityAll.length);
-  // Compute backward: cashSeries[last] = cashToday; cashSeries[t] = cashSeries[t+1] + cfAll[t+1].
-  cashSeries[equityAll.length - 1] = cashToday;
-  for (let i = equityAll.length - 2; i >= 0; i--) {
-    cashSeries[i] = cashSeries[i + 1] + cfAll[i + 1];
+  const depositSeries = new Array(equityAll.length).fill(0);
+  let runningCash = seedCash;
+  for (let i = 0; i < equityAll.length; i++) {
+    // All sells add cash, all buys draw it down: tracked via −cfAll, closed-out
+    // positions via the netted untracked term.
+    runningCash += untrackedNetAll[i] - cfAll[i];
+    if (runningCash < 0) { depositSeries[i] = -runningCash; runningCash = 0; }
+    cashSeries[i] = runningCash;
   }
+
+  // External portfolio cash flows per day = detected deposits (external funding of
+  // purchases beyond available cash) plus the net closed-position flow (sale
+  // proceeds in, in-year closed-out buys out). All raise or lower NAV without
+  // being return, so Modified Dietz strips them out below.
+  const externalFlowAll = depositSeries.map((d, i) => d + untrackedNetAll[i]);
 
   // Bonds + other unpriced positions are held at constant current value
   // (zero price movement assumed for bonds; V7AB Astrea has no Yahoo feed).
@@ -4147,8 +4216,12 @@ function getEquityCurve(ps, trades, startDateStr) {
   while (firstReal < navAll.length && navAll[firstReal] <= 0) firstReal++;
   const trimmedDates = dates.slice(firstReal);
   const nav        = navAll.slice(firstReal);
-  // Internal-rotation accounting: CF from the portfolio perspective is zero.
-  const cf         = new Array(nav.length).fill(0);
+  // Portfolio-level external cash flows (see externalFlowAll above): detected
+  // deposits funding purchases, plus the net closed-position flow. Genuine equity
+  // rotations net to zero across equity and cash and do not appear here. Modified
+  // Dietz uses these to strip external funding from the return so flow-driven NAV
+  // jumps do not read as performance.
+  const cf         = externalFlowAll.slice(firstReal);
   dates.length = 0;
   trimmedDates.forEach(d => dates.push(d));
 
@@ -4389,6 +4462,45 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
   const benchmarkCurve = (mode_pre === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate) : null;
   const alpha = benchmarkCurve ? (curve.totalReturnPct - benchmarkCurve.endReturn) : null;
 
+  // YTD return reconciliation. A reader meets three different YTD percentages
+  // across the dashboard. The two TWRR figures (this curve's whole-portfolio
+  // number and the Attribution tab's equity-sleeve number) share one
+  // methodology — daily Modified Dietz on dividend-adjusted closes, FX as of
+  // each date — and differ only by scope, so equity-sleeve TWRR minus the idle
+  // cash drag equals this curve's all-in TWRR by construction. The Attribution
+  // FIFO "Portfolio Return" is a different lens and is shown as context, not
+  // forced into the subtraction. YTD only, since that is the window where all
+  // three figures are defined.
+  let reconcileHTML = '';
+  if (windowKey === 'YTD') {
+    let twrrR = null, ytdR = null;
+    try { twrrR = calcTwrr(ps, trades, startDate); } catch (e) { console.error('reconcile TWRR failed:', e); }
+    try { ytdR  = calcYtdAttribution(ps, trades); }  catch (e) { console.error('reconcile YTD failed:', e); }
+    if (twrrR && !twrrR.error && ytdR) {
+      const eqTwrr   = twrrR.equityTwrr;       // equity sleeve only
+      const allTwrr  = curve.totalReturnPct;   // whole portfolio including cash
+      const cashDrag = eqTwrr - allTwrr;        // ties by construction
+      const fifo     = ytdR.portfolioRetPct;    // FIFO P&L over the 1-Jan basis
+      reconcileHTML = `
+      <div style="margin-top:10px;padding:12px 14px;background:var(--bg2);border-radius:6px;font-size:11px;color:var(--t3);line-height:1.6">
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;margin-bottom:8px">Reconciling the three YTD return figures</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;font-family:var(--mono);font-variant-numeric:tabular-nums;margin-bottom:8px">
+          <span style="color:var(--t2)">Equity sleeve (TWRR, total return)</span>
+          <span style="color:var(--g);font-weight:700">${fmtPct(eqTwrr)}</span>
+          <span style="color:var(--t3)">${cashDrag >= 0 ? '−' : '+'}</span>
+          <span style="color:var(--t2)">cash drag</span>
+          <span style="color:var(--r);font-weight:700">${Math.abs(cashDrag).toFixed(2)} pp</span>
+          <span style="color:var(--t3)">=</span>
+          <span style="color:var(--t2)">whole portfolio (this curve)</span>
+          <span style="color:var(--g);font-weight:700">${fmtPct(allTwrr)}</span>
+        </div>
+        <div>
+          The two figures above share one method — daily Modified Dietz on dividend-adjusted closes — and differ only by scope, so the equity-sleeve return less the idle-cash drag equals this curve exactly. The Attribution tab additionally shows a <strong style="color:var(--t2)">Portfolio Return of ${fmtPct(fifo)}</strong>. That is also a total-return figure (dividends are now rolled in via dividend-adjusted closes), but computed differently: simple realised-plus-unrealised P&amp;L over the 1 January cost basis, at current FX. It does not tie to this curve by subtraction because it is money-weighted rather than time-weighted and uses current FX rather than the rate observed on each date — the cash-drag bridge above applies only between the two TWRR figures.
+        </div>
+      </div>`;
+    }
+  }
+
   // KPI strip values
   const kpis = [
     { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: curve.dates[0] },
@@ -4437,8 +4549,9 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       <!-- NAV-scope-note -->
       <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;font-size:11px;color:var(--t3);line-height:1.55">
         <strong style="color:var(--t2)">Performance scope.</strong>
-        Curve covers the equity sub-portfolio <em>plus</em> USD cash (intentional defensive holding). <strong>Singapore Savings Bonds and the V7AB PE bond are excluded</strong> — they generate no equity-style return and would just dilute the volatility signal. Trades during the window are <strong>internal rotations</strong> between equity and cash buckets — they do not register as external cash flows, so daily returns reflect pure price movement of held assets. The landing-page <strong>Total Market Value of ${fmtSGD(state.totalValueSGD || 0)}</strong> additionally includes the bonds (~S\$260k) that this chart does not display.
+        Curve covers the equity sub-portfolio <em>plus</em> the cash actually held over time. Cash is rebuilt forward from a near-zero 1 January base — sells add to it, buys draw it down — so each tactical cash tranche drags only for the days it is genuinely held, not the whole year. Purchases funded from outside the book are detected as <strong>external deposits</strong> and stripped from the return; genuine equity-to-cash rotations net to zero. <strong>Singapore Savings Bonds and the V7AB PE bond are excluded</strong> — they generate no equity-style return and would just dilute the volatility signal. The landing-page <strong>Total Market Value of ${fmtSGD(state.totalValueSGD || 0)}</strong> additionally includes the bonds (~S\$260k) that this chart does not display.
       </div>
+      ${reconcileHTML}
     </div>`;
 
   // Render Plotly chart
