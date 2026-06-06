@@ -371,11 +371,10 @@ const POSITIONS = [
   { ticker:'1615.JP', yf:'1615.T', name:'TOPIX Banks ETF', exchange:'TSE', ccy:'JPY', avgPrice:383.6613, qty:3000, invested:1150983.90, fee:0, availLTV:70, theme:'Japan Financials', type:'ETF' },
 
   { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.2402, qty:110, invested:8496.31, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
-  { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:84.1060, qty:420, invested:35324.52, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
+  { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:84.1060, qty:330, invested:27754.98, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
   { ticker:'GDX.US', yf:'GDX', name:'VanEck Gold Miners', exchange:'ARCA', ccy:'USD', avgPrice:82.8803, qty:100, invested:8288.03, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
   { ticker:'MOO.US', yf:'MOO', name:'VanEck Agribusiness', exchange:'ARCA', ccy:'USD', avgPrice:80.4500, qty:100, invested:8045.00, fee:0, availLTV:50, theme:'Agribusiness', type:'ETF' },
   { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:68.9099, qty:150, invested:10336.48, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
-  { ticker:'SLV.US', yf:'SLV', name:'iShares Silver Trust', exchange:'ARCA', ccy:'USD', avgPrice:69.1704, qty:120, invested:8300.45, fee:0, availLTV:50, theme:'Silver/Precious Metals', type:'ETF' },
   { ticker:'TAN.US', yf:'TAN', name:'Invesco Solar ETF', exchange:'ARCA', ccy:'USD', avgPrice:48.8964, qty:200, invested:9779.28, fee:0, availLTV:70, theme:'Clean Energy', type:'ETF' },
   { ticker:'XLE.US', yf:'XLE', name:'Energy Select SPDR', exchange:'ARCA', ccy:'USD', avgPrice:51.1463, qty:180, invested:9206.34, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
 
@@ -384,13 +383,12 @@ const POSITIONS = [
   { ticker:'IGV.US', yf:'IGV', name:'iShares Expanded Tech-Software', exchange:'NMS', ccy:'USD', avgPrice:93.7900, qty:100, invested:9379.00, fee:0, availLTV:50, theme:'US Tech', type:'ETF' },
   { ticker:'INTC.US', yf:'INTC', name:'Intel', exchange:'NMS', ccy:'USD', avgPrice:46.9923, qty:100, invested:4699.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
   { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:85.8046, qty:50, invested:4290.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
-  { ticker:'NVDA.US', yf:'NVDA', name:'NVIDIA', exchange:'NMS', ccy:'USD', avgPrice:220.2600, qty:40, invested:8810.40, fee:0, availLTV:50, theme:'US Semis', type:'Stock', mktPriceSnap:220.2600 },
   { ticker:'OXY.US', yf:'OXY', name:'Occidental Petroleum', exchange:'NYS', ccy:'USD', avgPrice:59.7500, qty:140, invested:8365.00, fee:0, availLTV:50, theme:'US Energy', type:'Stock', mktPriceSnap:59.7500 },
   { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:249.6421, qty:30, invested:7489.26, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
   { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
   // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
-  { ticker:'USD.CASH', yf:null, name:'USD Cash (after 01-02 Jun buys, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:46929.40, invested:46929.40, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'USD.CASH', yf:null, name:'USD Cash (after 05-Jun COPX/NVDA/SLV sells, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:70115.40, invested:70115.40, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'HKD.CASH', yf:null, name:'HKD Cash (post-28-May sells, awaiting entry)', exchange:'HKG', ccy:'HKD', avgPrice:1.00, qty:131200.00, invested:131200.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'JPY.CASH', yf:null, name:'JPY Cash (post-28-May sells, awaiting entry)', exchange:'TSE', ccy:'JPY', avgPrice:1.00, qty:1904000.00, invested:1904000.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'EUR.CASH', yf:null, name:'EUR Cash (post-29-May sell, awaiting entry)', exchange:'PAR', ccy:'EUR', avgPrice:1.00, qty:6390.00, invested:6390.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
@@ -548,6 +546,9 @@ const TRADES_YTD = [
   {d:'2026-06-01',t:'OXY.US',a:'B',q:140,p:59.7500,ccy:'USD',yf:'OXY',th:'US Energy'},
   {d:'2026-06-01',t:'NVDA.US',a:'B',q:40,p:220.2600,ccy:'USD',yf:'NVDA',th:'US Semis'},
   {d:'2026-06-02',t:'COPX.US',a:'B',q:90,p:93.3800,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
+  {d:'2026-06-05',t:'COPX.US',a:'S',q:90,p:82.4000,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
+  {d:'2026-06-05',t:'NVDA.US',a:'S',q:40,p:207.8000,ccy:'USD',yf:'NVDA',th:'US Semis'},
+  {d:'2026-06-05',t:'SLV.US',a:'S',q:120,p:62.1500,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
@@ -1436,6 +1437,7 @@ const PRE_YTD_BASIS = {
   '9988.HK':  142.80,
   'GE.US':    308.03,
   '9961.HK':  554.00,    // Dec 31 2025 close — 250 shares of pre-YTD lot
+  'SLV.US':    64.42,    // Dec 31 2025 close — 220 shares of pre-YTD lot, closed out 05 Jun
 };
 
 function deriveAssetClass(p) {
@@ -1873,24 +1875,100 @@ function effectiveReturn(p, lookbackBars) {
   return { closeNow, closeThen, snapshotFresher, refDate };
 }
 
-// Compute portfolio-level period P&L from position histories
-function calcPortfolioPeriodPnL(ps, tradingDaysBack) {
-  // Returns total-return P&L over `tradingDaysBack` trading days, in SGD.
-  // Uses effectiveReturn() so adjclose (dividends included) and snapshot-
-  // aware closeNow are honoured uniformly. Bonds and Cash without
-  // sufficient history are excluded (they would drag a zero-vol return).
-  let totalNow = 0, totalThen = 0, count = 0;
-  for (const p of ps) {
-    const r = effectiveReturn(p, tradingDaysBack);
-    if (!r) continue;
-    const fxThen = fxAtDate(p.ccy, r.refDate);
-    const fxNow  = p.fxRate || 1;
-    totalNow  += r.closeNow  * p.qty * fxNow;
-    totalThen += r.closeThen * p.qty * fxThen;
+// Trade-aware portfolio-level period P&L.
+//
+// Marks every ticker that was held at the window start OR traded within the
+// window — so positions CLOSED mid-window (their qty is now zero and they have
+// left POSITIONS) are still captured. For each ticker the market gain is the
+// mark-to-market identity P&L = (endValue − startValue) − netCashInvested,
+// summed in SGD with FX-as-of-date on adjclose (total return). Bonds and cash
+// carry no market P&L. This fixes the earlier engine, which marked only current
+// holdings and so dropped the in-window move of anything sold during the period
+// (e.g. a stock closed out on the day would silently vanish from the 1-Day P&L).
+//
+// The % is the equity+cash book return via the rotation-conserving denominator
+// (nonBondNow − pnl); equityPct uses the same numerator over the equity-only
+// denominator, so (pct − equityPct) isolates the cash cushion.
+function calcPortfolioPeriodPnL(ps, trades, barsBack) {
+  const liveData = state.liveData || {};
+  const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
+
+  // Universe = current priced equities + every traded ticker (so closed names in).
+  const meta = {};
+  const add = (tk, yf, ccy) => { if (tk && !meta[tk]) meta[tk] = { yf, ccy }; };
+  ps.forEach(p => { if (p.type !== 'Bond' && p.type !== 'Cash') add(p.ticker, p.yf, p.ccy); });
+  trades.forEach(t => add(t.t, t.yf, t.ccy));
+  const tickers = Object.keys(meta);
+
+  // Union trading-date axis across all relevant histories.
+  const dateSet = new Set();
+  for (const tk of tickers) {
+    const h = histOf(meta[tk].yf);
+    if (!h) continue;
+    for (const bar of h) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      dateSet.add(d.toISOString().slice(0, 10));
+    }
+  }
+  let dates = [...dateSet].sort();
+  if (dates.length === 0) return { pnl: 0, pct: 0, equityPct: 0, count: 0 };
+  // Snapshot-aware: append today when any held position's live price is fresher
+  // than its last baked bar (post-Refresh), so the window end aligns to "now".
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const anyFresher = ps.some(p => {
+    if (p.type === 'Bond' || p.type === 'Cash') return false;
+    const h = histOf(p.yf); if (!h || !h.length) return false;
+    const lc = h[h.length - 1].adjclose != null ? h[h.length - 1].adjclose : h[h.length - 1].close;
+    return p.mktPrice != null && Math.abs(p.mktPrice - lc) > 1e-6;
+  });
+  if (anyFresher && todayISO > dates[dates.length - 1]) dates.push(todayISO);
+  if (dates.length < barsBack + 1) return { pnl: 0, pct: 0, equityPct: 0, count: 0 };
+  const startDate = dates[dates.length - 1 - barsBack];
+
+  const closeAtDate = (h, ds) => {
+    let chosen = null;
+    for (const bar of h) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      const bd = d.toISOString().slice(0, 10);
+      if (bd <= ds) chosen = bar; else break;
+    }
+    return chosen ? (chosen.adjclose != null ? chosen.adjclose : chosen.close) : null;
+  };
+
+  let pnl = 0, count = 0;
+  for (const tk of tickers) {
+    const { yf, ccy } = meta[tk];
+    const h = histOf(yf);
+    if (!h || h.length < 2) continue;
+    const pos = ps.find(p => p.ticker === tk);
+    const qtyNow = pos ? pos.qty : 0;
+    const wTrades = trades.filter(t => t.t === tk && t.d > startDate);   // trades after the start mark
+    const buysW  = wTrades.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
+    const sellsW = wTrades.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
+    const qtyStart = qtyNow - buysW + sellsW;
+    if (qtyStart === 0 && wTrades.length === 0) continue;               // not held at start, not traded in window
+    const pStart = closeAtDate(h, startDate);
+    const pNow = pos ? pos.mktPrice : (liveData[yf] ? liveData[yf].price : closeAtDate(h, dates[dates.length - 1]));
+    if (pStart == null || pNow == null) continue;
+    const fxNow = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
+    const startVal = qtyStart * pStart * fxAtDate(ccy, startDate);
+    const endVal   = qtyNow   * pNow   * fxNow;
+    let netFlow = 0;
+    for (const t of wTrades) netFlow += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d);
+    pnl += endVal - startVal - netFlow;
     count++;
   }
-  if (count === 0 || totalThen === 0) return { pnl: 0, pct: 0, count: 0 };
-  return { pnl: totalNow - totalThen, pct: ((totalNow - totalThen) / totalThen) * 100, count };
+
+  const nonBondNow = ps.filter(p => p.type !== 'Bond').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const equityNow  = ps.filter(p => p.type !== 'Bond' && p.type !== 'Cash').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const bookDenom = nonBondNow - pnl;
+  const eqDenom   = equityNow  - pnl;
+  return {
+    pnl,
+    pct:       bookDenom > 0 ? (pnl / bookDenom) * 100 : 0,
+    equityPct: eqDenom   > 0 ? (pnl / eqDenom)   * 100 : 0,
+    count,
+  };
 }
 
 function renderKPIs() {
@@ -1899,10 +1977,11 @@ function renderKPIs() {
   const scPs = ps.filter(p=>p.account!=='CDP');
   const cdpValue = cdpPs.reduce((s,p)=>s+p.mktValueSGD,0);
   const scValue = scPs.reduce((s,p)=>s+p.mktValueSGD,0);
-  // Period P&L: 1D ≈ 1 bar, 1W ≈ 5 bars, 1M ≈ 21 bars
-  const d1 = calcPortfolioPeriodPnL(ps, 1);
-  const w1 = calcPortfolioPeriodPnL(ps, 5);
-  const m1 = calcPortfolioPeriodPnL(ps, 21);
+  // Period P&L: trade-aware over 1 / 5 / 21 trading days — captures positions
+  // closed within the window, not just current holdings.
+  const d1 = calcPortfolioPeriodPnL(ps, TRADES_YTD, 1);
+  const w1 = calcPortfolioPeriodPnL(ps, TRADES_YTD, 5);
+  const m1 = calcPortfolioPeriodPnL(ps, TRADES_YTD, 21);
   // YTD P&L: trade-aware FIFO total return (realised + unrealised) — the same
   // figure as the Attribution tab headline. Unlike the fixed-bar cards above, a
   // YTD mark-to-market would mishandle this year's heavy intra-year trading, so
@@ -1910,8 +1989,12 @@ function renderKPIs() {
   let ytd = { totalDollar: 0, portfolioRetPct: 0 };
   try { ytd = calcYtdAttribution(ps, TRADES_YTD); } catch (e) { console.error('YTD KPI calc failed:', e); }
 
+  // Hero P&L cards report the equity + cash book return (bonds excluded, matching
+  // the Performance curve), with the equity sleeve in the tooltip. Both percentages
+  // come straight from the trade-aware period engine.
   const pnlKpi = (label, data) => ({
-    label, value: fmtPL(data.pnl), sub: fmtPct(data.pct), cls: data.pnl >= 0 ? 'pos' : 'neg'
+    label, value: fmtPL(data.pnl), sub: fmtPct(data.pct), cls: data.pnl >= 0 ? 'pos' : 'neg',
+    title: `Equity + cash basis (bonds excluded). Equity sleeve alone: ${fmtPct(data.equityPct)}`,
   });
 
   const kpis = [
@@ -1919,12 +2002,12 @@ function renderKPIs() {
     pnlKpi('1-Day P&L', d1),
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
-    { label:'YTD P&L', value:fmtPL(ytd.totalDollar), sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg' },
+    { label:'YTD P&L', value:fmtPL(ytd.totalDollar), sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
     { label:'Positions', value:`${ps.length}`, sub:`${scPs.length} Brokerage · ${cdpPs.length} CDP` },
   ];
 
   document.getElementById('kpiStrip').innerHTML = kpis.map(k=>`
-    <div class="kpi">
+    <div class="kpi"${k.title ? ` title="${k.title}"` : ''}>
       <div class="kpi-label">${k.label}</div>
       <div class="kpi-val ${k.cls||''}">${k.value}</div>
       <div class="kpi-sub">${k.sub}</div>
@@ -4743,6 +4826,27 @@ function renderAttribution(el) {
   };
   const cellFg = v => (v == null) ? 'var(--t4)' : (Math.abs(v) / heatMaxAbs > 0.5 ? '#fff' : 'var(--t1)');
 
+  // Book return = equity + cash, bonds excluded — the same basis as the hero
+  // P&L cards and the Performance curve. The headline "Portfolio Return" tile
+  // reports this. The theme decomposition (contributions, waterfall, heatmap)
+  // stays on the EQUITY denominator — that is what the contributions sum to, so
+  // those totals are labelled "Equity sleeve". For period horizons the start-of-
+  // period book NAV is recovered via the rotation-conserving identity (book NAV
+  // moves only by P&L over a flow-free window): denom = nonBondNow − equity P&L.
+  // For YTD, cash was ~zero at 1 Jan, so the book basis collapses to the equity
+  // basis and bookRetPct equals equityRetPct.
+  // Portfolio Return headline = trade-aware equity+cash book return, identical to
+  // the hero P&L cards. For period horizons it comes from the trade-aware engine
+  // (captures positions closed within the window); for YTD it is the FIFO total
+  // return (already trade-aware). The theme decomposition below stays on CURRENT
+  // HOLDINGS, so it reconciles to the held-equity return — for period horizons
+  // that differs from the headline by the realised P&L of positions closed in the
+  // window plus the cash effect.
+  const heldEquityRetPct = A.portfolioRetPct;             // what the theme contributions sum to (held equity)
+  const periodTA = isYtd ? null : calcPortfolioPeriodPnL(ps, TRADES_YTD, horizonDef.bars);
+  const bookRetPct = isYtd ? heldEquityRetPct : (periodTA ? periodTA.pct : 0);
+  const headlineDollar = isYtd ? A.totalDollar : (periodTA ? periodTA.pnl : 0);
+
   // Build HTML in chunks to keep template literals small and readable
   const headerCard = `
     <div class="card mb">
@@ -4752,10 +4856,10 @@ function renderAttribution(el) {
       </div>
       <div class="card-body" style="padding-top:8px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
-          <div>
+          <div title="Equity + cash book return (bonds excluded), trade-aware and identical to the hero P&L cards. The theme decomposition below covers current holdings; for period horizons it reconciles to the held-equity return, which differs from this headline by the realised P&L of positions closed in the window plus the cash effect.">
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Portfolio Return · ${horizonDef.label}</div>
-            <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${A.portfolioRetPct>=0?'var(--g)':'var(--r)'}">${fmtPct(A.portfolioRetPct)}</div>
-            <div style="font-size:12px;color:var(--t2)">${fmtPL(A.totalDollar)} on ${fmtSGD(A.totalStart)} start value</div>
+            <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${bookRetPct>=0?'var(--g)':'var(--r)'}">${fmtPct(bookRetPct)}</div>
+            <div style="font-size:12px;color:var(--t2)">${fmtPL(headlineDollar)} · equity + cash basis${isYtd ? '' : ' · trade-aware'}</div>
           </div>
           ${isYtd && twrr && !twrr.error ? `
           <div title="Modified Dietz time-weighted return on the equity sub-portfolio. Removes the effect of when capital was deployed during the year; treats each trade as an external cash flow into/out of the equity bucket. The CFA / GIPS standard for performance reporting.">
@@ -4781,7 +4885,7 @@ function renderAttribution(el) {
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Reconciliation</div>
             <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${reconciles?'var(--g)':'var(--r)'}">${fmtPct(sumContrib)}</div>
-            <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(A.portfolioRetPct)} portfolio</div>
+            <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(heldEquityRetPct)} held-equity return</div>
           </div>
           ${isYtd ? `
           <div>
@@ -4845,7 +4949,7 @@ function renderAttribution(el) {
               }).join('')}
             </tr>`).join('')}
             <tr style="background:var(--bg3);font-weight:700;border-top:2px solid var(--bd)">
-              <td style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--t1);position:sticky;left:0;background:var(--bg3)">Portfolio</td>
+              <td style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--t1);position:sticky;left:0;background:var(--bg3)">Equity sleeve</td>
               ${ATTR_HORIZONS.map(h => {
                 const v = byHorizon[h.key].portfolioRetPct;
                 return `<td style="padding:14px 16px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:14px;color:${v>=0?'var(--g)':'var(--r)'};font-weight:700">${fmtPct(v)}</td>`;
@@ -4959,8 +5063,8 @@ function renderAttribution(el) {
             </tr>
           </tbody>
         </table>
-        ${A.skipped > 0 ? `<div style="padding:10px 14px;font-size:10px;color:var(--t3);background:var(--bg3);border-top:1px solid var(--bd);line-height:1.5">
-          ${A.skipped} position${A.skipped>1?'s':''} excluded from the ${horizonDef.label} attribution — insufficient price history (typically savings bonds and recent listings). The Σ-contribution figure reconciles to portfolio return computed over the priced subset, matching the basis used by the landing-page ${horizonDef.label} P&amp;L card.
+        ${(A.skipped > 0 || !isYtd) ? `<div style="padding:10px 14px;font-size:10px;color:var(--t3);background:var(--bg3);border-top:1px solid var(--bd);line-height:1.5">
+          ${A.skipped > 0 ? `${A.skipped} position${A.skipped>1?'s':''} excluded from the ${horizonDef.label} theme decomposition — insufficient price history (typically savings bonds and recent listings). ` : ''}The Σ-contribution figure reconciles to the <strong>held-equity</strong> return over current holdings.${!isYtd ? ` The headline <strong>Portfolio Return</strong> above is trade-aware — equity + cash, and it includes the realised P&amp;L of positions <em>closed</em> within the window — so it differs from this decomposition total, which by construction only covers names still held. The headline matches the landing-page ${horizonDef.label} P&amp;L card exactly.` : ''}
         </div>` : ''}
       </div>
     </div>`;
@@ -4971,7 +5075,7 @@ function renderAttribution(el) {
   setTimeout(() => {
     if (!document.getElementById('attrWaterfall')) return;
     const wf = themesByContrib;
-    const labels = [...wf.map(t => t.theme), 'Portfolio'];
+    const labels = [...wf.map(t => t.theme), 'Equity sleeve'];
     const measures = [...wf.map(() => 'relative'), 'total'];
     const values = [...wf.map(t => t.contribPp), A.portfolioRetPct];
     const textArr = [...wf.map(t => fmtPct(t.contribPp)), fmtPct(A.portfolioRetPct)];
