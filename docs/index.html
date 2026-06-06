@@ -1900,58 +1900,43 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
   trades.forEach(t => add(t.t, t.yf, t.ccy));
   const tickers = Object.keys(meta);
 
-  // Union trading-date axis across all relevant histories.
-  const dateSet = new Set();
-  for (const tk of tickers) {
-    const h = histOf(meta[tk].yf);
-    if (!h) continue;
-    for (const bar of h) {
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      dateSet.add(d.toISOString().slice(0, 10));
-    }
-  }
-  let dates = [...dateSet].sort();
-  if (dates.length === 0) return { pnl: 0, pct: 0, equityPct: 0, count: 0 };
-  // Snapshot-aware: append today when any held position's live price is fresher
-  // than its last baked bar (post-Refresh), so the window end aligns to "now".
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const anyFresher = ps.some(p => {
-    if (p.type === 'Bond' || p.type === 'Cash') return false;
-    const h = histOf(p.yf); if (!h || !h.length) return false;
-    const lc = h[h.length - 1].adjclose != null ? h[h.length - 1].adjclose : h[h.length - 1].close;
-    return p.mktPrice != null && Math.abs(p.mktPrice - lc) > 1e-6;
-  });
-  if (anyFresher && todayISO > dates[dates.length - 1]) dates.push(todayISO);
-  if (dates.length < barsBack + 1) return { pnl: 0, pct: 0, equityPct: 0, count: 0 };
-  const startDate = dates[dates.length - 1 - barsBack];
-
-  const closeAtDate = (h, ds) => {
-    let chosen = null;
-    for (const bar of h) {
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const bd = d.toISOString().slice(0, 10);
-      if (bd <= ds) chosen = bar; else break;
-    }
-    return chosen ? (chosen.adjclose != null ? chosen.adjclose : chosen.close) : null;
-  };
-
   let pnl = 0, count = 0;
   for (const tk of tickers) {
     const { yf, ccy } = meta[tk];
     const h = histOf(yf);
     if (!h || h.length < 2) continue;
+    const n = h.length;
+    const lastBar = h[n - 1];
+    const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
+    if (!isFinite(lastAdj) || lastAdj <= 0) continue;
     const pos = ps.find(p => p.ticker === tk);
+
+    // Per-ticker window, identical to effectiveReturn(): the live snapshot stands
+    // in as a virtual "today" bar ONLY when it genuinely differs from the last
+    // baked bar, and the lookback is counted in THIS ticker's own bars. Deciding
+    // this per ticker — rather than once on a shared date axis — is essential:
+    // the earlier global axis appended a synthetic "today" whenever any single
+    // symbol looked fresher (or carried a weekend bar), which shifted every
+    // ticker's window to (last close, today] and collapsed the 1-Day move to ~0.
+    const curPrice = pos ? pos.mktPrice : (liveData[yf] ? liveData[yf].price : lastAdj);
+    const snapshotFresher = curPrice != null && Math.abs(curPrice - lastAdj) > 1e-6;
+    const pNow = snapshotFresher ? curPrice : lastAdj;
+    const refIdx = snapshotFresher ? Math.max(0, n - barsBack) : Math.max(0, n - 1 - barsBack);
+    const startBar = h[refIdx];
+    const pStart = startBar.adjclose != null ? startBar.adjclose : startBar.close;
+    if (!isFinite(pStart) || pStart <= 0) continue;
+    const sd = startBar.date instanceof Date ? startBar.date : new Date(startBar.date);
+    const startDateTk = sd.toISOString().slice(0, 10);
+
     const qtyNow = pos ? pos.qty : 0;
-    const wTrades = trades.filter(t => t.t === tk && t.d > startDate);   // trades after the start mark
+    const wTrades = trades.filter(t => t.t === tk && t.d > startDateTk);   // trades after the start mark
     const buysW  = wTrades.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
     const sellsW = wTrades.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
     const qtyStart = qtyNow - buysW + sellsW;
-    if (qtyStart === 0 && wTrades.length === 0) continue;               // not held at start, not traded in window
-    const pStart = closeAtDate(h, startDate);
-    const pNow = pos ? pos.mktPrice : (liveData[yf] ? liveData[yf].price : closeAtDate(h, dates[dates.length - 1]));
-    if (pStart == null || pNow == null) continue;
+    if (qtyStart === 0 && wTrades.length === 0) continue;                  // not held at start, not traded in window
+
     const fxNow = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
-    const startVal = qtyStart * pStart * fxAtDate(ccy, startDate);
+    const startVal = qtyStart * pStart * fxAtDate(ccy, startDateTk);
     const endVal   = qtyNow   * pNow   * fxNow;
     let netFlow = 0;
     for (const t of wTrades) netFlow += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d);
