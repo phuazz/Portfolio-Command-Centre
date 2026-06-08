@@ -1881,8 +1881,9 @@ function effectiveReturn(p, lookbackBars) {
 // window — so positions CLOSED mid-window (their qty is now zero and they have
 // left POSITIONS) are still captured. For each ticker the market gain is the
 // mark-to-market identity P&L = (endValue − startValue) − netCashInvested,
-// summed in SGD with FX-as-of-date on adjclose (total return). Bonds and cash
-// carry no market P&L. This fixes the earlier engine, which marked only current
+// summed in SGD with FX-as-of-date on adjclose (total return). Bonds carry no
+// market P&L; foreign cash contributes its FX move only (added after the equity
+// loop). This fixes the earlier engine, which marked only current
 // holdings and so dropped the in-window move of anything sold during the period
 // (e.g. a stock closed out on the day would silently vanish from the 1-Day P&L).
 //
@@ -1900,7 +1901,7 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
   trades.forEach(t => add(t.t, t.yf, t.ccy));
   const tickers = Object.keys(meta);
 
-  let pnl = 0, count = 0;
+  let equityPnl = 0, count = 0;
   for (const tk of tickers) {
     const { yf, ccy } = meta[tk];
     const h = histOf(yf);
@@ -1940,18 +1941,36 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
     const endVal   = qtyNow   * pNow   * fxNow;
     let netFlow = 0;
     for (const t of wTrades) netFlow += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d);
-    pnl += endVal - startVal - netFlow;
+    equityPnl += endVal - startVal - netFlow;
     count++;
   }
 
+  // Cash buckets carry no price, but foreign cash is an open FX position against
+  // the SGD base, so its only P&L is the FX move. Mark each non-SGD bucket over
+  // the same bar count via FX_HISTORY (current rate vs barsBack trading days
+  // back). When the FX series is too short (e.g. a thin JPY series) fxThen falls
+  // back to fxNow, so the contribution is zero rather than wrong. Approximation:
+  // the current balance is treated as held across the window; for a tactical
+  // tranche raised mid-window this slightly overstates the exposure period, which
+  // is immaterial over 1D–1M.
+  let cashFxPnl = 0;
+  for (const p of ps) {
+    if (p.type !== 'Cash' || p.ccy === 'SGD') continue;
+    const fxNow = p.fxRate || FX[p.ccy] || 1;
+    const ser = (typeof FX_HISTORY !== 'undefined') ? FX_HISTORY[p.ccy] : null;
+    const fxThen = (ser && ser.length >= barsBack + 1) ? ser[ser.length - 1 - barsBack].rate : fxNow;
+    cashFxPnl += p.qty * (fxNow - fxThen);
+  }
+  const totalPnl = equityPnl + cashFxPnl;
+
   const nonBondNow = ps.filter(p => p.type !== 'Bond').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
   const equityNow  = ps.filter(p => p.type !== 'Bond' && p.type !== 'Cash').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
-  const bookDenom = nonBondNow - pnl;
-  const eqDenom   = equityNow  - pnl;
+  const bookDenom = nonBondNow - totalPnl;
+  const eqDenom   = equityNow  - equityPnl;
   return {
-    pnl,
-    pct:       bookDenom > 0 ? (pnl / bookDenom) * 100 : 0,
-    equityPct: eqDenom   > 0 ? (pnl / eqDenom)   * 100 : 0,
+    pnl: totalPnl,                                                        // total book P&L (equity price+FX, plus cash FX)
+    pct:       bookDenom > 0 ? (totalPnl  / bookDenom) * 100 : 0,         // equity + cash book return
+    equityPct: eqDenom   > 0 ? (equityPnl / eqDenom)   * 100 : 0,         // equity sleeve only (tooltip)
     count,
   };
 }
@@ -5174,7 +5193,10 @@ function loadPreloadedData() {
     if (!entry) continue;
     // FX entries (symbol contains '=')
     if (sym.includes('=')) {
-      results[sym] = { price: entry.price, prevClose: entry.prevClose, dayChange: 0, dayChangePct: 0, history: [] };
+      // FX symbols: keep the daily series so _buildFxHistory can populate
+      // FX_HISTORY and fxAtDate() can convert at the rate observed on each date.
+      // (Previously hardcoded to [], which silently disabled FX-as-of-date.)
+      results[sym] = { price: entry.price, prevClose: entry.prevClose, dayChange: 0, dayChangePct: 0, history: historyToFull(entry.history || []) };
       continue;
     }
     results[sym] = {
