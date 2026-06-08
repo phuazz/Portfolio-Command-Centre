@@ -5297,8 +5297,11 @@ window.refreshPrices = async function(silent) {
       renderKPIs();
       invalidateAllPanes();
       const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
+      // Stamp the refresh time on the header pill (runtime clock — display of
+      // "now", not date arithmetic). Singapore locale, 24-hour.
+      const refreshedAt = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
       pill.className = 'pill pill-live';
-      pill.textContent = `● ${sigCount} LIVE`;
+      pill.textContent = `● ${sigCount} LIVE · ${refreshedAt}`;
       renderLiveStatusBar({ live: true });
     } else {
       pill.className = 'pill pill-date';
