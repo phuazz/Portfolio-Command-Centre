@@ -5235,8 +5235,10 @@ function renderLiveStatusBar(opts) {
   const auto = localStorage.getItem('pccAutoRefresh') !== 'off';
   // toLocaleTimeString on the runtime clock — a display of "now", not date math.
   const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  const status = opts.failed
-    ? `<span style="color:var(--r)">◌ Live fetch unavailable — showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''}</span>`
+  const status = opts.updating
+    ? `<span style="color:var(--b);display:inline-flex;align-items:center;gap:7px"><span class="loading-spinner" style="width:12px;height:12px;border-width:2px;margin:0;flex-shrink:0"></span>Updating live prices…</span>`
+    : opts.failed
+    ? `<span style="color:var(--t3)">📊 Showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''} · live unavailable</span>`
     : opts.live
       ? `<span style="color:var(--g)">● Live · updated ${time}</span>`
       : `<span style="color:var(--t2)">📊 Showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''}</span>`;
@@ -5245,7 +5247,7 @@ function renderLiveStatusBar(opts) {
     <div style="font-size:12px;font-weight:600">${status}</div>
     <div style="display:flex;align-items:center;gap:14px">
       <span onclick="toggleAutoRefresh()" style="font-size:11px;color:var(--t3);cursor:pointer;user-select:none" title="Fetch live prices automatically when the page loads">Auto-refresh on load: <strong style="color:${auto ? 'var(--g)' : 'var(--t3)'}">${auto ? 'on' : 'off'}</strong></span>
-      <button onclick="refreshPrices()" style="padding:6px 16px;border-radius:20px;border:1px solid var(--b);background:var(--b-bg);color:var(--b);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:32px">↻ Refresh</button>
+      <button onclick="refreshPrices(true)" style="padding:6px 16px;border-radius:20px;border:1px solid var(--b);background:var(--b-bg);color:var(--b);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:32px">↻ Refresh</button>
     </div>
   </div>`;
 }
@@ -5256,14 +5258,19 @@ window.toggleAutoRefresh = function() {
   renderLiveStatusBar({ live: state.dataSource === 'live' });
 };
 
-window.refreshPrices = async function() {
+window.refreshPrices = async function(silent) {
   const pill = document.getElementById('statusPill');
   pill.className = 'pill pill-loading';
-  pill.textContent = '◌ REFRESHING';
+  pill.textContent = silent ? '◌ updating' : '◌ REFRESHING';
 
-  // Restore the progress bar UI (init() may have overwritten it with the prompt banner)
+  // Silent mode (auto-refresh on load): keep the baked dashboard on screen with
+  // a subtle "updating" line — no big crawling progress bar. fetchAllPrices below
+  // writes its progress into #fetchBar/#fetchCount, which simply do not exist in
+  // this compact layout, so its updates are harmless no-ops.
   const prog = document.getElementById('fetchProgress');
-  if (prog) {
+  if (silent) {
+    renderLiveStatusBar({ updating: true });
+  } else if (prog) {
     prog.innerHTML = `<div style="padding:12px 18px;display:flex;align-items:center;gap:14px">
       <div class="loading-spinner" style="width:18px;height:18px;border-width:2px;margin:0;flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
@@ -5332,7 +5339,7 @@ async function init() {
     // backbone — this is a best-effort live overlay, fetched once per load (no
     // periodic polling, to stay light on the public CORS proxies).
     if (localStorage.getItem('pccAutoRefresh') !== 'off') {
-      refreshPrices();              // fire-and-forget; sets up its own progress UI
+      refreshPrices(true);          // silent: subtle "updating" line, no big progress bar
     } else {
       renderLiveStatusBar({ live: false });
     }
