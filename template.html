@@ -815,7 +815,10 @@ async function fetchAllPrices() {
   }
 
   // Show progress bar
-  if (progEl) progEl.style.display = 'block';
+  // Pill-only refresh: keep the legacy progress container hidden. Progress is
+  // conveyed by the header pill ("◌ updating" → "● N LIVE · HH:MM"), and the
+  // headline values tween to live when the fetch lands.
+  if (progEl) progEl.style.display = 'none';
 
   // DEV MODE: use cached data only, skip all network requests
   if (DEV_MODE) {
@@ -2001,26 +2004,68 @@ function renderKPIs() {
   // the Performance curve), with the equity sleeve in the tooltip. Both percentages
   // come straight from the trade-aware period engine.
   const pnlKpi = (label, data) => ({
-    label, value: fmtPL(data.pnl), sub: fmtPct(data.pct), cls: data.pnl >= 0 ? 'pos' : 'neg',
+    label, value: fmtPL(data.pnl), num: data.pnl, fmt: fmtPL, sub: fmtPct(data.pct), cls: data.pnl >= 0 ? 'pos' : 'neg',
     title: `Equity + cash basis (bonds excluded). Equity sleeve alone: ${fmtPct(data.equityPct)}`,
   });
 
   const kpis = [
-    { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), sub:`Brokerage ${fmtSGD(scValue)} · CDP ${fmtSGD(cdpValue)}` },
+    { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} · CDP ${fmtSGD(cdpValue)}` },
     pnlKpi('1-Day P&L', d1),
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
-    { label:'YTD P&L', value:fmtPL(ytd.totalDollar), sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
+    { label:'YTD P&L', value:fmtPL(ytd.totalDollar), num: ytd.totalDollar, fmt: fmtPL, sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
     { label:'Positions', value:`${ps.length}`, sub:`${scPs.length} Brokerage · ${cdpPs.length} CDP` },
   ];
 
-  document.getElementById('kpiStrip').innerHTML = kpis.map(k=>`
+  const strip = document.getElementById('kpiStrip');
+  strip.innerHTML = kpis.map(k=>`
     <div class="kpi"${k.title ? ` title="${k.title}"` : ''}>
       <div class="kpi-label">${k.label}</div>
       <div class="kpi-val ${k.cls||''}">${k.value}</div>
       <div class="kpi-sub">${k.sub}</div>
     </div>
   `).join('');
+
+  // Animate numeric headline values from their previously-shown figure to the
+  // new one, so the portfolio value and P&L tween smoothly when prices update —
+  // the "live" feel. Only animates when the value actually changed (a price
+  // update), not on plain re-renders such as tab switches.
+  if (!window._kpiPrev) window._kpiPrev = {};
+  const cards = strip.querySelectorAll('.kpi');
+  kpis.forEach((k, i) => {
+    if (k.num == null || !isFinite(k.num) || !k.fmt) return;
+    const el = cards[i] && cards[i].querySelector('.kpi-val');
+    if (!el) return;
+    const prev = window._kpiPrev[k.label];
+    if (prev != null && isFinite(prev) && Math.abs(prev - k.num) > 0.5) {
+      tweenNumber(el, prev, k.num, k.fmt, 650);
+    }
+    window._kpiPrev[k.label] = k.num;
+  });
+}
+
+// Animate a DOM element's numeric text from `from` to `to` over `dur` ms with an
+// ease-out, formatting each frame via `fmt`. Sets the start value synchronously
+// so there is no flash of the final number before the animation begins.
+function tweenNumber(el, from, to, fmt, dur) {
+  if (!el) return;
+  dur = dur || 650;
+  el.dataset.tweenTo = String(to);   // guards against overlapping tweens (latest wins)
+  el.textContent = fmt(from);
+  const start = performance.now();
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  function frame(now) {
+    if (el.dataset.tweenTo !== String(to)) return;   // a newer tween superseded this one
+    const t = Math.min(1, (now - start) / dur);
+    el.textContent = fmt(from + (to - from) * ease(t));
+    if (t < 1) requestAnimationFrame(frame);
+    else el.textContent = fmt(to);
+  }
+  requestAnimationFrame(frame);
+  // Safety net: requestAnimationFrame is throttled when the tab is not painting,
+  // which could leave the number frozen mid-animation. Force the final value
+  // after the duration so the displayed figure is always correct.
+  setTimeout(() => { if (el.dataset.tweenTo === String(to)) el.textContent = fmt(to); }, dur + 80);
 }
 
 // ─── TAB: POSITIONS ──────────────────────
@@ -5223,70 +5268,20 @@ function loadPreloadedData() {
   return results;
 }
 
-// Manual refresh — triggered by user clicking "Refresh" button
-// Compact, persistent status bar shown in #fetchProgress: live/preloaded state,
-// last-updated time, a manual Refresh, and the auto-refresh toggle. Replaces the
-// old behaviour of hiding the banner after a refresh (which also removed the only
-// Refresh button), so controls stay reachable.
-function renderLiveStatusBar(opts) {
-  opts = opts || {};
-  const prog = document.getElementById('fetchProgress');
-  if (!prog) return;
-  const auto = localStorage.getItem('pccAutoRefresh') !== 'off';
-  // toLocaleTimeString on the runtime clock — a display of "now", not date math.
-  const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  const status = opts.updating
-    ? `<span style="color:var(--b);display:inline-flex;align-items:center;gap:7px"><span class="loading-spinner" style="width:12px;height:12px;border-width:2px;margin:0;flex-shrink:0"></span>Updating live prices…</span>`
-    : opts.failed
-    ? `<span style="color:var(--t3)">📊 Showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''} · live unavailable</span>`
-    : opts.live
-      ? `<span style="color:var(--g)">● Live · updated ${time}</span>`
-      : `<span style="color:var(--t2)">📊 Showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''}</span>`;
-  prog.style.display = 'block';
-  prog.innerHTML = `<div style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-    <div style="font-size:12px;font-weight:600">${status}</div>
-    <div style="display:flex;align-items:center;gap:14px">
-      <span onclick="toggleAutoRefresh()" style="font-size:11px;color:var(--t3);cursor:pointer;user-select:none" title="Fetch live prices automatically when the page loads">Auto-refresh on load: <strong style="color:${auto ? 'var(--g)' : 'var(--t3)'}">${auto ? 'on' : 'off'}</strong></span>
-      <button onclick="refreshPrices(true)" style="padding:6px 16px;border-radius:20px;border:1px solid var(--b);background:var(--b-bg);color:var(--b);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:32px">↻ Refresh</button>
-    </div>
-  </div>`;
-}
-
-window.toggleAutoRefresh = function() {
-  const on = localStorage.getItem('pccAutoRefresh') !== 'off';
-  localStorage.setItem('pccAutoRefresh', on ? 'off' : 'on');
-  renderLiveStatusBar({ live: state.dataSource === 'live' });
-};
-
-window.refreshPrices = async function(silent) {
+// Quiet, pill-only live refresh. The dashboard stays on baked data while the
+// fetch runs in the background; on completion the headline values tween to live
+// (renderKPIs) and the header pill stamps the time. Auto-refresh on load is
+// controlled by the pccAutoRefresh localStorage flag (default on) in init().
+window.refreshPrices = async function() {
   const pill = document.getElementById('statusPill');
   pill.className = 'pill pill-loading';
-  pill.textContent = silent ? '◌ updating' : '◌ REFRESHING';
+  pill.textContent = '◌ updating';
+  const _prog = document.getElementById('fetchProgress');
+  if (_prog) _prog.style.display = 'none';   // pill-only — no progress bar
 
-  // Silent mode (auto-refresh on load): keep the baked dashboard on screen with
-  // a subtle "updating" line — no big crawling progress bar. fetchAllPrices below
-  // writes its progress into #fetchBar/#fetchCount, which simply do not exist in
-  // this compact layout, so its updates are harmless no-ops.
-  const prog = document.getElementById('fetchProgress');
-  if (silent) {
-    renderLiveStatusBar({ updating: true });
-  } else if (prog) {
-    prog.innerHTML = `<div style="padding:12px 18px;display:flex;align-items:center;gap:14px">
-      <div class="loading-spinner" style="width:18px;height:18px;border-width:2px;margin:0;flex-shrink:0"></div>
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:12px;font-weight:600;color:var(--t1)" id="fetchLabel">Refreshing live prices...</span>
-          <span style="font-size:11px;font-weight:600;color:var(--b);font-family:var(--mono)" id="fetchCount">0 / 0</span>
-        </div>
-        <div style="height:6px;border-radius:3px;background:var(--bg4);overflow:hidden">
-          <div id="fetchBar" style="height:100%;border-radius:3px;background:var(--b);transition:width 0.3s ease;width:0%"></div>
-        </div>
-        <div style="font-size:10px;color:var(--t3);margin-top:4px" id="fetchDetail">Preparing fetch queue...</div>
-      </div>
-    </div>`;
-    prog.style.display = 'block';
-  }
-
+  // Quiet, pill-only refresh: the dashboard stays on baked data while fetching,
+  // and the headline values tween to live when the fetch lands (renderKPIs). No
+  // progress bar — the header pill is the only indicator.
   try {
     const liveData = await fetchAllPrices();
     const liveCount = Object.keys(liveData).filter(k => !k.includes('=')).length;
@@ -5302,16 +5297,13 @@ window.refreshPrices = async function(silent) {
       const refreshedAt = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
       pill.className = 'pill pill-live';
       pill.textContent = `● ${sigCount} LIVE · ${refreshedAt}`;
-      renderLiveStatusBar({ live: true });
     } else {
       pill.className = 'pill pill-date';
-      pill.textContent = '◌ NO DATA';
-      renderLiveStatusBar({ failed: true });
+      pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : '📊 baked';
     }
   } catch(e) {
     pill.className = 'pill pill-date';
-    pill.textContent = '◌ REFRESH FAILED';
-    renderLiveStatusBar({ failed: true });
+    pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : '📊 baked';
   }
 };
 
@@ -5342,9 +5334,7 @@ async function init() {
     // backbone — this is a best-effort live overlay, fetched once per load (no
     // periodic polling, to stay light on the public CORS proxies).
     if (localStorage.getItem('pccAutoRefresh') !== 'off') {
-      refreshPrices(true);          // silent: subtle "updating" line, no big progress bar
-    } else {
-      renderLiveStatusBar({ live: false });
+      refreshPrices();              // pill-only; values tween to live when the fetch lands
     }
     return;
   }
