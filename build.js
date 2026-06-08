@@ -41,7 +41,10 @@ const NOJEKYLL_FILE = path.join(DOCS_DIR, '.nojekyll');
 const CONCURRENCY = 5;
 const DELAY_MS = 150;       // Polite delay between requests
 const RANGE = '10y';        // 10 years for full backtest support
-const FX_SYMBOLS = ['HKDSGD=X', 'JPYSGD=X', 'USDSGD=X', 'AUDSGD=X', 'EURSGD=X'];
+// JPYSGD=X is illiquid/erratic on Yahoo (frequently a single, imprecise bar),
+// so we fetch the liquid SGDJPY=X cross instead and invert it to JPYSGD=X after
+// the fetch (see deriveJpySgd below).
+const FX_SYMBOLS = ['HKDSGD=X', 'SGDJPY=X', 'USDSGD=X', 'AUDSGD=X', 'EURSGD=X'];
 
 // ── Extract YF symbols from HTML ──
 function extractSymbols(html) {
@@ -189,6 +192,21 @@ async function fetchAll(symbols, range) {
   return results;
 }
 
+// ── Derive JPYSGD=X from the liquid SGDJPY=X cross by inverting it bar by bar.
+// JPYSGD is ~0.008, so we keep 7 decimals (the usual 4-dp rounding would round
+// it to ~2 significant figures). On inversion high and low swap (1/low > 1/high).
+function deriveJpySgd(sgdjpy) {
+  if (!sgdjpy || !sgdjpy.history || sgdjpy.history.length < 2) return null;
+  const inv = v => (v != null && isFinite(v) && v !== 0) ? +(1 / v).toFixed(7) : null;
+  const history = sgdjpy.history.map(b => {
+    const o = { d: b.d, c: inv(b.c), ac: inv(b.ac), o: inv(b.o), h: inv(b.l), l: inv(b.h) };
+    if (b.p) o.p = true;
+    return o;
+  }).filter(b => b.c != null);
+  if (history.length < 2) return null;
+  return { price: inv(sgdjpy.price), prevClose: inv(sgdjpy.prevClose), history };
+}
+
 // ── Main ──
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
@@ -219,8 +237,18 @@ async function main() {
   // Fetch FX
   console.log(`💱 Fetching FX rates...`);
   const fxData = await fetchAll(FX_SYMBOLS, '1y');
+  // Convert the SGDJPY=X cross into a proper JPYSGD=X series (full history,
+  // accurate level) and drop the raw cross so the output keys are unchanged.
+  const jpy = deriveJpySgd(fxData['SGDJPY=X']);
+  if (jpy) {
+    fxData['JPYSGD=X'] = jpy;
+    console.log(`  ↳ derived JPYSGD=X from SGDJPY=X (${jpy.history.length} bars, level ${jpy.price})`);
+  } else {
+    console.log(`  ⚠️  could not derive JPYSGD=X from SGDJPY=X — JPY FX history will be unavailable`);
+  }
+  delete fxData['SGDJPY=X'];
   const fxCount = Object.keys(fxData).length;
-  console.log(`  ✅ ${fxCount}/${FX_SYMBOLS.length} FX rates fetched\n`);
+  console.log(`  ✅ ${fxCount} FX rates ready\n`);
 
   // Merge
   const allData = { ...stockData, ...fxData };
