@@ -856,7 +856,11 @@ async function fetchAllPrices() {
 
   const results = {};
   const symbols = [...new Set(POSITIONS.map(p => p.yf).filter(Boolean))];
-  const fxSymbols = ['HKDSGD=X','JPYSGD=X','USDSGD=X'];
+  // JPYSGD=X is intentionally omitted: Yahoo's direct cross is unreliable (often
+  // a single imprecise bar). The accurate JPY rate is derived from SGDJPY=X at
+  // bake time (see build.js) and loaded into FX/FX_HISTORY; a live refresh leaves
+  // that baked value untouched rather than overwriting it with the bad symbol.
+  const fxSymbols = ['HKDSGD=X','USDSGD=X'];
 
   // Load cache
   const cache = loadCache();
@@ -5220,6 +5224,38 @@ function loadPreloadedData() {
 }
 
 // Manual refresh — triggered by user clicking "Refresh" button
+// Compact, persistent status bar shown in #fetchProgress: live/preloaded state,
+// last-updated time, a manual Refresh, and the auto-refresh toggle. Replaces the
+// old behaviour of hiding the banner after a refresh (which also removed the only
+// Refresh button), so controls stay reachable.
+function renderLiveStatusBar(opts) {
+  opts = opts || {};
+  const prog = document.getElementById('fetchProgress');
+  if (!prog) return;
+  const auto = localStorage.getItem('pccAutoRefresh') !== 'off';
+  // toLocaleTimeString on the runtime clock — a display of "now", not date math.
+  const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const status = opts.failed
+    ? `<span style="color:var(--r)">◌ Live fetch unavailable — showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''}</span>`
+    : opts.live
+      ? `<span style="color:var(--g)">● Live · updated ${time}</span>`
+      : `<span style="color:var(--t2)">📊 Showing baked data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''}</span>`;
+  prog.style.display = 'block';
+  prog.innerHTML = `<div style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div style="font-size:12px;font-weight:600">${status}</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span onclick="toggleAutoRefresh()" style="font-size:11px;color:var(--t3);cursor:pointer;user-select:none" title="Fetch live prices automatically when the page loads">Auto-refresh on load: <strong style="color:${auto ? 'var(--g)' : 'var(--t3)'}">${auto ? 'on' : 'off'}</strong></span>
+      <button onclick="refreshPrices()" style="padding:6px 16px;border-radius:20px;border:1px solid var(--b);background:var(--b-bg);color:var(--b);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:32px">↻ Refresh</button>
+    </div>
+  </div>`;
+}
+
+window.toggleAutoRefresh = function() {
+  const on = localStorage.getItem('pccAutoRefresh') !== 'off';
+  localStorage.setItem('pccAutoRefresh', on ? 'off' : 'on');
+  renderLiveStatusBar({ live: state.dataSource === 'live' });
+};
+
 window.refreshPrices = async function() {
   const pill = document.getElementById('statusPill');
   pill.className = 'pill pill-loading';
@@ -5256,16 +5292,16 @@ window.refreshPrices = async function() {
       const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
       pill.className = 'pill pill-live';
       pill.textContent = `● ${sigCount} LIVE`;
+      renderLiveStatusBar({ live: true });
     } else {
       pill.className = 'pill pill-date';
       pill.textContent = '◌ NO DATA';
+      renderLiveStatusBar({ failed: true });
     }
-    // Hide progress bar on completion
-    if (prog) prog.style.display = 'none';
   } catch(e) {
     pill.className = 'pill pill-date';
     pill.textContent = '◌ REFRESH FAILED';
-    if (prog) prog.style.display = 'none';
+    renderLiveStatusBar({ failed: true });
   }
 };
 
@@ -5290,22 +5326,17 @@ async function init() {
     pill.className = 'pill pill-live';
     pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : `📊 ${sigCount} PRELOADED`;
 
-    // Show a subtle refresh prompt
-    const prog = document.getElementById('fetchProgress');
-    if (prog) {
-      prog.style.display = 'block';
-      prog.innerHTML = `<div style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:15px">📊</span>
-          <div>
-            <span style="font-size:12px;font-weight:600;color:var(--t1)">Showing preloaded data${PRELOADED_DATE ? ' from '+PRELOADED_DATE : ''} — ${sigCount} signals computed</span>
-            <div style="font-size:10px;color:var(--t3);margin-top:2px">Charts, signals, and backtest are fully interactive. Refresh to fetch latest prices.</div>
-          </div>
-        </div>
-        <button onclick="refreshPrices()" style="padding:7px 18px;border-radius:20px;border:1px solid var(--b);background:var(--b-bg);color:var(--b);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:36px">↻ Refresh Prices</button>
-      </div>`;
+    // Auto-upgrade to live prices on load (one-shot), unless turned off. The
+    // instant baked render above stays on screen until the live fetch lands; on
+    // failure it silently remains on baked data. Baked EOD is the reliable
+    // backbone — this is a best-effort live overlay, fetched once per load (no
+    // periodic polling, to stay light on the public CORS proxies).
+    if (localStorage.getItem('pccAutoRefresh') !== 'off') {
+      refreshPrices();              // fire-and-forget; sets up its own progress UI
+    } else {
+      renderLiveStatusBar({ live: false });
     }
-    return; // Done — no auto-fetch
+    return;
   }
 
   // ── FETCH PATH: No preloaded data — render from SNAPSHOT, then
