@@ -640,12 +640,15 @@ let PRELOADED_DATE = '';
 const CACHE_KEY = 'pcc_cache_v5';
 const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours before incremental stale
 
+// CORS proxies, fastest-first. corsproxy.io (current ?url= API) is the primary —
+// browser-origin requests succeed in ~0.3s and a 20-request burst returned 20/20.
+// allorigins is kept as a fallback (intermittently up). The previously-listed
+// codetabs (now HTTP 400), thingproxy and cors-anywhere are removed — they were
+// dead weight that each cost a timeout before failover. Verified from a browser
+// 2026-06-09; server-side (curl) is blocked by corsproxy's free tier, browser is not.
 const PROXIES = [
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
-  url => `https://cors-anywhere.herokuapp.com/${url}`,
 ];
 
 function loadCache() {
