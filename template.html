@@ -661,7 +661,7 @@ function saveCache(cache) {
   catch(e) { /* storage full — clear old entries */ try { localStorage.removeItem(CACHE_KEY); } catch(e2){} }
 }
 
-async function fetchWithRetry(url, timeoutMs=10000) {
+async function fetchWithRetry(url, timeoutMs=7000) {
   for (let pi = 0; pi < PROXIES.length; pi++) {
     try {
       const proxyUrl = PROXIES[pi](url);
@@ -870,18 +870,18 @@ async function fetchAllPrices() {
   const now = Date.now();
   let fullFetchCount = 0, incrementalCount = 0, cacheHitCount = 0;
 
-  // Determine fetch strategy per symbol
-  const fetchPlan = symbols.map(sym => {
-    const entry = cache[sym];
-    if (!entry || !entry.history || entry.history.length < 10) {
-      return { sym, mode: 'full' }; // No cache — full 3Y fetch
-    }
-    const age = now - (entry.ts || 0);
-    if (age < CACHE_MAX_AGE_MS) {
-      return { sym, mode: 'cached' }; // Fresh enough — use cache
-    }
-    return { sym, mode: 'incremental' }; // Stale — fetch last 7d and merge
-  });
+  // Determine fetch strategy per symbol. The daily pipeline already bakes full
+  // history into PRELOADED_HISTORY, so a live refresh only needs the last few
+  // bars: we use the baked history as the merge base and fetch a short 7-day
+  // window ('incremental'), never a 10-year pull. Genuinely new tickers not yet
+  // in the bake fall back to a one-off full fetch.
+  const baseHistOf = sym => {
+    const pre = (typeof PRELOADED_HISTORY !== 'undefined') ? PRELOADED_HISTORY[sym] : null;
+    if (pre && pre.history && pre.history.length >= 10) return pre.history;
+    const c = cache[sym];
+    return (c && c.history && c.history.length >= 10) ? c.history : null;
+  };
+  const fetchPlan = symbols.map(sym => ({ sym, mode: baseHistOf(sym) ? 'incremental' : 'full' }));
 
   const fullFetches = fetchPlan.filter(f => f.mode === 'full');
   const incrementals = fetchPlan.filter(f => f.mode === 'incremental');
@@ -913,7 +913,7 @@ async function fetchAllPrices() {
   ];
 
   let done = 0, failed = 0;
-  const concurrency = 5;
+  const concurrency = 12;   // higher parallelism — fetches are tiny 7d windows now
   const workQueue = [...queue];
 
   const workers = [];
@@ -928,15 +928,17 @@ async function fetchAllPrices() {
         const data = await fetchLivePrice(item.sym, item.range);
         if (!data) {
           failed++;
-          // FALLBACK: if fetch fails but we have stale cache, use it (signals > nothing)
-          if (item.mode !== 'fx' && cache[item.sym] && cache[item.sym].history && cache[item.sym].history.length > 10) {
-            const entry = cache[item.sym];
-            results[item.sym] = {
-              price: entry.price, prevClose: entry.prevClose,
-              dayChange: entry.price - (entry.prevClose || entry.price),
-              dayChangePct: entry.prevClose ? ((entry.price - entry.prevClose) / entry.prevClose) * 100 : 0,
-              history: historyToFull(entry.history)
-            };
+          // FALLBACK: on a failed fetch keep the baked figures (baked > nothing).
+          if (item.mode !== 'fx') {
+            const pre = (typeof PRELOADED_HISTORY !== 'undefined' && PRELOADED_HISTORY[item.sym]) || cache[item.sym];
+            if (pre && pre.history && pre.history.length > 10) {
+              results[item.sym] = {
+                price: pre.price, prevClose: pre.prevClose,
+                dayChange: pre.price - (pre.prevClose || pre.price),
+                dayChangePct: pre.prevClose ? ((pre.price - pre.prevClose) / pre.prevClose) * 100 : 0,
+                history: historyToFull(pre.history)
+              };
+            }
           }
           continue;
         }
@@ -944,16 +946,15 @@ async function fetchAllPrices() {
         if (item.mode === 'fx') {
           results[item.sym] = data;
         } else if (item.mode === 'incremental') {
-          const entry = cache[item.sym];
-          // Check for stock split
-          if (detectSplit(entry.history, data.history)) {
-            // Split detected — need full re-fetch
+          // Merge the freshly-fetched short window into the baked full history.
+          const baseHist = baseHistOf(item.sym);
+          if (detectSplit(baseHist, data.history)) {
+            // Split detected — one-off full re-fetch to re-adjust the series.
             workQueue.push({ sym: item.sym, range: '10y', mode: 'full' });
             incrementalCount--;
             continue;
           }
-          const merged = mergeHistory(entry.history, data.history);
-          cache[item.sym] = { price: data.price, prevClose: data.prevClose, history: merged, ts: now };
+          const merged = mergeHistory(baseHist, data.history);
           results[item.sym] = {
             price: data.price, prevClose: data.prevClose,
             dayChange: data.price - data.prevClose,
@@ -962,8 +963,7 @@ async function fetchAllPrices() {
           };
           incrementalCount++;
         } else {
-          // Full fetch
-          cache[item.sym] = { price: data.price, prevClose: data.prevClose, history: data.history, ts: now };
+          // Full fetch (a new ticker not yet in the daily bake).
           results[item.sym] = {
             price: data.price, prevClose: data.prevClose,
             dayChange: data.price - data.prevClose,
@@ -978,8 +978,9 @@ async function fetchAllPrices() {
   }
   await Promise.all(workers);
 
-  // Save updated cache
-  saveCache(cache);
+  // No localStorage write: the baked PRELOADED_HISTORY is the persistent
+  // full-history source (refreshed daily by the pipeline). The live refresh only
+  // overlays the latest bars in memory, so there is no large cache to persist.
 
   // Update FX
   if (results['HKDSGD=X']) FX.HKD = results['HKDSGD=X'].price;
