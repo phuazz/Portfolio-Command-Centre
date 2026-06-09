@@ -5276,7 +5276,34 @@ function loadPreloadedData() {
 // fetch runs in the background; on completion the headline values tween to live
 // (renderKPIs) and the header pill stamps the time. Auto-refresh on load is
 // controlled by the pccAutoRefresh localStorage flag (default on) in init().
+let _refreshing = false;
+
+// Periodic live polling: re-fetch prices on a timer so values keep updating
+// while the page is open (continuous "real-time" feel), not just once on load.
+// Only runs when the tab is visible and auto-refresh is on, to stay light on the
+// CORS proxy; also refreshes immediately when the tab regains focus so returning
+// to it shows fresh prices without waiting for the next tick.
+const LIVE_POLL_MS = 10000;   // 10s — aggressive; if corsproxy free tier rate-limits
+                              // (429), polls fall back to last-good. A dedicated
+                              // proxy (Cloudflare Worker) removes that ceiling.
+let _livePollTimer = null;
+function startLivePolling() {
+  if (_livePollTimer) return;
+  _livePollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && localStorage.getItem('pccAutoRefresh') !== 'off') {
+      refreshPrices();
+    }
+  }, LIVE_POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && localStorage.getItem('pccAutoRefresh') !== 'off') {
+      refreshPrices();
+    }
+  });
+}
+
 window.refreshPrices = async function() {
+  if (_refreshing) return;          // a refresh is already in flight — do not stack
+  _refreshing = true;
   const pill = document.getElementById('statusPill');
   pill.className = 'pill pill-loading';
   pill.textContent = '◌ updating';
@@ -5308,6 +5335,8 @@ window.refreshPrices = async function() {
   } catch(e) {
     pill.className = 'pill pill-date';
     pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : '📊 baked';
+  } finally {
+    _refreshing = false;
   }
 };
 
@@ -5332,13 +5361,14 @@ async function init() {
     pill.className = 'pill pill-live';
     pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : `📊 ${sigCount} PRELOADED`;
 
-    // Auto-upgrade to live prices on load (one-shot), unless turned off. The
-    // instant baked render above stays on screen until the live fetch lands; on
-    // failure it silently remains on baked data. Baked EOD is the reliable
-    // backbone — this is a best-effort live overlay, fetched once per load (no
-    // periodic polling, to stay light on the public CORS proxies).
+    // Auto-upgrade to live prices on load, then keep polling on a timer so values
+    // update continuously while the page is open (not just once). The instant
+    // baked render stays on screen and the figures tween to live as each fetch
+    // lands; on failure it silently keeps the baked data. Polling is visible-tab
+    // gated to stay light on the proxy.
     if (localStorage.getItem('pccAutoRefresh') !== 'off') {
-      refreshPrices();              // pill-only; values tween to live when the fetch lands
+      refreshPrices();              // initial upgrade; values tween to live
+      startLivePolling();           // then refresh every 60s while the tab is visible
     }
     return;
   }
