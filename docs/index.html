@@ -357,203 +357,18 @@ const voteCol = v => v>=3?'var(--g)':v>=2?'#22a366':v>=1?'#b45309':'var(--r)';
 const voteLabel = v => v>=3?'3/3':v>=2?'2/3':v>=1?'1/3':'0/3';
 
 // ═══════════════════════════════════════════════════════════════
-//  STATIC PORTFOLIO DATA — Parsed from SC statement (18 Apr 2026)
+//  PORTFOLIO DATA — ledger-first (REFACTOR_PLAN_V2 Phase A)
+//  The single manual input is trades.json at the repository root (one
+//  appended row per fill). book.json carries the opening book at the
+//  2026-01-01 epoch, static per-ticker metadata, cash reconciliation
+//  anchors and named ledger overrides. Positions, average costs, cash
+//  buckets and pre-YTD bases are all DERIVED at boot by replayLedger()
+//  below — never hand-edited here.
+//  Trade row: d=ISO date · t=ticker · a='B'|'S' · q=qty ·
+//             p=price (native ccy) · ccy · yf=Yahoo symbol · th=theme
 // ═══════════════════════════════════════════════════════════════
-const POSITIONS = [
-  { ticker:'SGM.AU', yf:'SGM.AX', name:'Sims Ltd', exchange:'ASX', ccy:'AUD', avgPrice:18.6806, qty:600, invested:11208.36, fee:0, availLTV:60, theme:'Australia Metals Recycling', type:'Stock' },
-
-  { ticker:'2338.HK', yf:'2338.HK', name:'Weichai Power H', exchange:'HKG', ccy:'HKD', avgPrice:32.6499, qty:2000, invested:65299.80, fee:0, availLTV:60, theme:'China Heavy Industry', type:'Stock' },
-  { ticker:'3010.HK', yf:'3010.HK', name:'iShares AXJ ETF', exchange:'HKG', ccy:'HKD', avgPrice:60.7377, qty:1600, invested:97180.32, fee:0, availLTV:70, theme:'Asia ex-Japan Equity', type:'ETF' },
-  { ticker:'3173.HK', yf:'3173.HK', name:'PP CN New Economy ETF', exchange:'HKG', ccy:'HKD', avgPrice:7.4000, qty:11750, invested:86950.00, fee:0, availLTV:0, theme:'China New Economy', type:'ETF' },
-  { ticker:'3750.HK', yf:'3750.HK', name:'CATL H', exchange:'HKG', ccy:'HKD', avgPrice:653.7001, qty:100, invested:65370.01, fee:0, availLTV:40, theme:'China EV Batteries', type:'Stock' },
-  { ticker:'981.HK', yf:'0981.HK', name:'SMIC', exchange:'HKG', ccy:'HKD', avgPrice:77.1000, qty:1000, invested:77100.00, fee:0, availLTV:60, theme:'China Semis', type:'Stock' },
-
-  { ticker:'1615.JP', yf:'1615.T', name:'TOPIX Banks ETF', exchange:'TSE', ccy:'JPY', avgPrice:383.6613, qty:3000, invested:1150983.90, fee:0, availLTV:70, theme:'Japan Financials', type:'ETF' },
-
-  { ticker:'ARGT.US', yf:'ARGT', name:'Global X MSCI Argentina', exchange:'ARCA', ccy:'USD', avgPrice:77.2402, qty:110, invested:8496.31, fee:0, availLTV:0, theme:'Argentina Equity', type:'ETF' },
-  { ticker:'COPX.US', yf:'COPX', name:'Global X Copper Miners', exchange:'ARCA', ccy:'USD', avgPrice:84.1060, qty:330, invested:27754.98, fee:0, availLTV:60, theme:'Copper/Commodities', type:'ETF' },
-  { ticker:'GDX.US', yf:'GDX', name:'VanEck Gold Miners', exchange:'ARCA', ccy:'USD', avgPrice:82.8803, qty:100, invested:8288.03, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
-  { ticker:'MOO.US', yf:'MOO', name:'VanEck Agribusiness', exchange:'ARCA', ccy:'USD', avgPrice:80.4500, qty:100, invested:8045.00, fee:0, availLTV:50, theme:'Agribusiness', type:'ETF' },
-  { ticker:'REMX.US', yf:'REMX', name:'VanEck Rare Earth/Metals', exchange:'ARCA', ccy:'USD', avgPrice:68.9099, qty:150, invested:10336.48, fee:0, availLTV:60, theme:'Rare Earth Minerals', type:'ETF' },
-  { ticker:'TAN.US', yf:'TAN', name:'Invesco Solar ETF', exchange:'ARCA', ccy:'USD', avgPrice:48.8964, qty:200, invested:9779.28, fee:0, availLTV:70, theme:'Clean Energy', type:'ETF' },
-  { ticker:'XLE.US', yf:'XLE', name:'Energy Select SPDR', exchange:'ARCA', ccy:'USD', avgPrice:51.1463, qty:180, invested:9206.34, fee:0, availLTV:70, theme:'US Energy', type:'ETF' },
-
-  { ticker:'CPRX.US', yf:'CPRX', name:'Catalyst Pharmaceuticals', exchange:'NMS', ccy:'USD', avgPrice:31.1300, qty:280, invested:8716.40, fee:0, availLTV:50, theme:'US Pharma', type:'Stock' },
-  { ticker:'GRID.US', yf:'GRID', name:'First Trust NASDAQ Clean Edge', exchange:'NMS', ccy:'USD', avgPrice:196.7000, qty:45, invested:8851.50, fee:0, availLTV:50, theme:'Clean Energy', type:'ETF' },
-  { ticker:'IGV.US', yf:'IGV', name:'iShares Expanded Tech-Software', exchange:'NMS', ccy:'USD', avgPrice:93.7900, qty:100, invested:9379.00, fee:0, availLTV:50, theme:'US Tech', type:'ETF' },
-  { ticker:'INTC.US', yf:'INTC', name:'Intel', exchange:'NMS', ccy:'USD', avgPrice:46.9923, qty:100, invested:4699.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
-  { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:180.0833, qty:100, invested:18008.33, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
-  { ticker:'DELL.US', yf:'DELL', name:'Dell Technologies', exchange:'NYS', ccy:'USD', avgPrice:387.8850, qty:25, invested:9697.13, fee:0, availLTV:50, theme:'US Tech', type:'Stock', mktPriceSnap:387.8850 },
-  { ticker:'OXY.US', yf:'OXY', name:'Occidental Petroleum', exchange:'NYS', ccy:'USD', avgPrice:59.7500, qty:140, invested:8365.00, fee:0, availLTV:50, theme:'US Energy', type:'Stock', mktPriceSnap:59.7500 },
-  { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:249.6421, qty:30, invested:7489.26, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
-  { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
-
-  // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
-  { ticker:'USD.CASH', yf:null, name:'USD Cash (after 11-Jun DELL/LLY/MRVL buys, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:37378.18, invested:37378.18, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
-  { ticker:'HKD.CASH', yf:null, name:'HKD Cash (post-28-May sells, awaiting entry)', exchange:'HKG', ccy:'HKD', avgPrice:1.00, qty:131200.00, invested:131200.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
-  { ticker:'JPY.CASH', yf:null, name:'JPY Cash (post-28-May sells, awaiting entry)', exchange:'TSE', ccy:'JPY', avgPrice:1.00, qty:1904000.00, invested:1904000.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
-  { ticker:'EUR.CASH', yf:null, name:'EUR Cash (post-29-May sell, awaiting entry)', exchange:'PAR', ccy:'EUR', avgPrice:1.00, qty:6390.00, invested:6390.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
-
-  { ticker:'BNY.US', yf:'BNY', name:'Bank of NY Mellon', exchange:'NYS', ccy:'USD', avgPrice:140.1200, qty:65, invested:9107.80, fee:0, availLTV:60, theme:'US Financials', type:'Stock' },
-  { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1116.0900, qty:16, invested:17857.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
-  { ticker:'SPHR.US', yf:'SPHR', name:'Sphere Entertainment', exchange:'NYS', ccy:'USD', avgPrice:129.3012, qty:60, invested:7758.07, fee:0, availLTV:60, theme:'US Entertainment', type:'Stock' },
-
-  { ticker:'GDX.GB', yf:'GDX', name:'VanEck Gold Miners UCITS', exchange:'LSE', ccy:'USD', avgPrice:59.2868, qty:130, invested:7707.28, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
-
-  { ticker:'SOI.FR', yf:'SOI.PA', name:'Soitec', exchange:'PAR', ccy:'EUR', avgPrice:58.2230, qty:75, invested:4366.72, fee:0, availLTV:50, theme:'Europe Semis', type:'Stock' },
-
-  // ═══ Central Depository ═══ (Account 1681-1926-6351, statement 18 Apr 2026)
-  // SGD-denominated equities & ETFs
-  { ticker:'GAB', yf:'GAB.SI', name:'AMOVA STI SGDA', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:4.705 },
-  { ticker:'G3B', yf:'G3B.SI', name:'AMOVA STI SGDD', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:5.130 },
-  { ticker:'V7AB', yf:'V7AB.SI', name:'Astrea 7A', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG PE Bond', type:'Bond', account:'CDP', mktPriceSnap:1.034 },
-  { ticker:'D05', yf:'D05.SI', name:'DBS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:57.250 },
-  { ticker:'J69U', yf:'J69U.SI', name:'Frasers CPT Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.290 },
-  { ticker:'BN4', yf:'BN4.SI', name:'Keppel', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:3000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:11.930 },
-  { ticker:'AJBU', yf:'AJBU.SI', name:'Keppel DC REIT', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:20300, invested:null, fee:0, availLTV:0, theme:'SG REITs', type:'REIT', account:'CDP', mktPriceSnap:2.350 },
-  { ticker:'YYY', yf:'YYY.SI', name:'LGI-OSPL China L', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:4000, invested:null, fee:0, availLTV:0, theme:'China Equity', type:'Stock', account:'CDP', mktPriceSnap:1.883 },
-  { ticker:'CJLU', yf:'CJLU.SI', name:'Netlink NBN Trust', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:15000, invested:null, fee:0, availLTV:0, theme:'SG Infrastructure', type:'Stock', account:'CDP', mktPriceSnap:1.010 },
-  { ticker:'O39', yf:'O39.SI', name:'OCBC Bank', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:1000, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:22.720 },
-  { ticker:'P52', yf:'P52.SI', name:'PanUnited', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:30000, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:1.640 },
-  { ticker:'S58', yf:'S58.SI', name:'SATS', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:6442, invested:null, fee:0, availLTV:0, theme:'SG Aviation', type:'Stock', account:'CDP', mktPriceSnap:3.550 },
-  { ticker:'5E2', yf:'5E2.SI', name:'Seatrium', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:5625, invested:null, fee:0, availLTV:0, theme:'SG Industrials', type:'Stock', account:'CDP', mktPriceSnap:2.420 },
-  { ticker:'ES3', yf:'ES3.SI', name:'STI ETF', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:46000, invested:null, fee:0, availLTV:0, theme:'SG Broad Market', type:'ETF', account:'CDP', mktPriceSnap:5.023 },
-  { ticker:'U11', yf:'U11.SI', name:'UOB', exchange:'SGX', ccy:'SGD', avgPrice:null, qty:500, invested:null, fee:0, availLTV:0, theme:'SG Banks', type:'Stock', account:'CDP', mktPriceSnap:37.400 },
-  // USD-denominated
-  { ticker:'ICU', yf:'ICU.SI', name:'AXJ Climate ETF', exchange:'SGX', ccy:'USD', avgPrice:null, qty:12000, invested:null, fee:0, availLTV:0, theme:'Asia Climate/ESG', type:'ETF', account:'CDP', mktPriceSnap:1.427 },
-  { ticker:'D07', yf:'D07.SI', name:'SS SPDR DJIA USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:20, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:487.980 },
-  { ticker:'S27', yf:'S27.SI', name:'SS SPDR S&P500 USD', exchange:'SGX', ccy:'USD', avgPrice:null, qty:22, invested:null, fee:0, availLTV:0, theme:'US Broad Market', type:'ETF', account:'CDP', mktPriceSnap:703.240 },
-  // Savings Bonds
-  { ticker:'SBAUG22', yf:null, name:'SB Aug 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:9000, invested:9000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBDEC22', yf:null, name:'SB Dec 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'BS26102F', yf:null, name:'Bond 26102F', exchange:'SGX', ccy:'SGD', avgPrice:100.00, qty:500, invested:50000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:100.00 },
-  { ticker:'SBFEB26', yf:null, name:'SB Feb 2026', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:61500, invested:61500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUL18', yf:null, name:'SB Jul 2018', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:12500, invested:12500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUL22', yf:null, name:'SB Jul 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:18000, invested:18000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUL24', yf:null, name:'SB Jul 2024', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUL25', yf:null, name:'SB Jul 2025', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBJUN22', yf:null, name:'SB Jun 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:15500, invested:15500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBNOV22', yf:null, name:'SB Nov 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:10000, invested:10000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBNOV23', yf:null, name:'SB Nov 2023', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:20000, invested:20000, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-  { ticker:'SBSEP22', yf:null, name:'SB Sep 2022', exchange:'SGX', ccy:'SGD', avgPrice:1.00, qty:13500, invested:13500, fee:0, availLTV:0, theme:'SG Govt Bond', type:'Bond', account:'CDP', mktPriceSnap:1.00 },
-];
-
-// ═══════════════════════════════════════════════════════════════
-//  TRADES_YTD — SCB executed trades, Jan-May 2026, chronological
-//  Used by calcYtdAttribution for FIFO lot accounting on the YTD horizon.
-//  Each entry: d=ISO date · t=POSITIONS ticker (or closed-out ticker) ·
-//              a='B' buy or 'S' sell · q=qty · p=trade price (native ccy) ·
-//              ccy · yf=YF symbol (for Jan-1 close lookup) · th=theme label
-// ═══════════════════════════════════════════════════════════════
-const TRADES_YTD = [
-  // ── January ──
-  {d:'2026-01-05',t:'SLV.US',a:'S',q:90,p:68.9000,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-01-05',t:'UBER.US',a:'S',q:100,p:81.6170,ccy:'USD',yf:'UBER',th:'US Mobility'},
-  {d:'2026-01-05',t:'XPEV.US',a:'S',q:400,p:19.5725,ccy:'USD',yf:'XPEV',th:'China EV'},
-  {d:'2026-01-13',t:'KWEB.US',a:'B',q:250,p:36.9800,ccy:'USD',yf:'KWEB',th:'China Tech'},
-  {d:'2026-01-13',t:'XLE.US',a:'B',q:180,p:47.0200,ccy:'USD',yf:'XLE',th:'US Energy'},
-  {d:'2026-01-14',t:'SLV.US',a:'S',q:90,p:83.6000,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-01-22',t:'ARGT.US',a:'B',q:100,p:96.9000,ccy:'USD',yf:'ARGT',th:'Argentina Equity'},
-  {d:'2026-01-22',t:'TBF.US',a:'B',q:365,p:24.1700,ccy:'USD',yf:'TBF',th:'US Treasury Hedge'},
-
-  // ── February ──
-  {d:'2026-02-13',t:'KWEB.US',a:'S',q:250,p:32.7500,ccy:'USD',yf:'KWEB',th:'China Tech'},
-  {d:'2026-02-13',t:'TBF.US',a:'S',q:365,p:23.5050,ccy:'USD',yf:'TBF',th:'US Treasury Hedge'},
-  {d:'2026-02-19',t:'BIDU.US',a:'S',q:60,p:137.8500,ccy:'USD',yf:'BIDU',th:'China Tech'},
-  {d:'2026-02-19',t:'GREK.US',a:'S',q:150,p:71.1500,ccy:'USD',yf:'GREK',th:'Greece Equity'},
-  {d:'2026-02-20',t:'9961.HK',a:'S',q:100,p:418.0000,ccy:'HKD',yf:'9961.HK',th:'China Travel'},
-  {d:'2026-02-20',t:'XHB.US',a:'B',q:80,p:118.4500,ccy:'USD',yf:'XHB',th:'US Housing'},
-  {d:'2026-02-20',t:'XLE.US',a:'B',q:180,p:55.0500,ccy:'USD',yf:'XLE',th:'US Energy'},
-  {d:'2026-02-23',t:'2525.HK',a:'B',q:240,p:220.6000,ccy:'HKD',yf:'2525.HK',th:'China AI/Robotics'},
-  {d:'2026-02-23',t:'OXY.US',a:'B',q:150,p:52.6741,ccy:'USD',yf:'OXY',th:'US Energy'},
-  {d:'2026-02-23',t:'SLV.US',a:'B',q:90,p:79.1000,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-02-25',t:'COPX.US',a:'B',q:80,p:96.1900,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
-  {d:'2026-02-25',t:'PHAG.GB',a:'B',q:100,p:82.7000,ccy:'USD',yf:'PHAG.L',th:'Silver/Precious Metals'},
-  {d:'2026-02-26',t:'SLV.US',a:'S',q:90,p:77.7000,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-02-27',t:'SLV.US',a:'B',q:80,p:82.7200,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-
-  // ── March ──
-  {d:'2026-03-09',t:'COPX.US',a:'S',q:100,p:76.4600,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
-  {d:'2026-03-09',t:'IBIT.US',a:'B',q:235,p:39.2300,ccy:'USD',yf:'IBIT',th:'Crypto/Bitcoin'},
-  {d:'2026-03-09',t:'MRVL.US',a:'B',q:100,p:85.6180,ccy:'USD',yf:'MRVL',th:'US Semis'},
-  {d:'2026-03-10',t:'INTC.US',a:'B',q:200,p:46.8900,ccy:'USD',yf:'INTC',th:'US Semis'},
-  {d:'2026-03-10',t:'OXY.US',a:'S',q:300,p:52.8200,ccy:'USD',yf:'OXY',th:'US Energy'},
-  {d:'2026-03-10',t:'SLV.US',a:'B',q:100,p:80.6400,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-03-12',t:'700.HK',a:'B',q:100,p:550.0000,ccy:'HKD',yf:'0700.HK',th:'China Tech'},
-  {d:'2026-03-13',t:'GDX.GB',a:'S',q:70,p:108.8300,ccy:'USD',yf:'GDX',th:'Gold Miners'},
-  {d:'2026-03-13',t:'MU.US',a:'B',q:20,p:423.8000,ccy:'USD',yf:'MU',th:'US Semis'},
-  {d:'2026-03-13',t:'NOK.US',a:'B',q:900,p:8.5400,ccy:'USD',yf:'NOK',th:'Telecom Infra'},
-  {d:'2026-03-13',t:'SLV.US',a:'S',q:110,p:74.7400,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-03-13',t:'SOI.FR',a:'B',q:110,p:58.0964,ccy:'EUR',yf:'SOI.PA',th:'Europe Semis'},
-  {d:'2026-03-16',t:'EWY.US',a:'B',q:60,p:131.8000,ccy:'USD',yf:'EWY',th:'Korea Equity'},
-  {d:'2026-03-16',t:'SKM.US',a:'B',q:300,p:28.7484,ccy:'USD',yf:'SKM',th:'Korea Telecom'},
-  {d:'2026-03-17',t:'3750.HK',a:'B',q:100,p:651.5000,ccy:'HKD',yf:'3750.HK',th:'China EV Batteries'},
-  {d:'2026-03-20',t:'EWY.US',a:'S',q:60,p:129.1100,ccy:'USD',yf:'EWY',th:'Korea Equity'},
-  {d:'2026-03-20',t:'SLV.US',a:'S',q:110,p:63.9400,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-03-23',t:'GDX.US',a:'B',q:100,p:82.7000,ccy:'USD',yf:'GDX',th:'Gold Miners'},
-  {d:'2026-03-23',t:'PLTR.US',a:'B',q:55,p:158.7500,ccy:'USD',yf:'PLTR',th:'US Tech'},
-  {d:'2026-03-25',t:'2525.HK',a:'S',q:240,p:164.0000,ccy:'HKD',yf:'2525.HK',th:'China AI/Robotics'},
-
-  // ── April ──
-  {d:'2026-04-01',t:'4004.JP',a:'B',q:100,p:10380.0000,ccy:'JPY',yf:'4004.T',th:'Japan Chemicals'},
-  {d:'2026-04-01',t:'SGM.AU',a:'B',q:600,p:18.6400,ccy:'AUD',yf:'SGM.AX',th:'Australia Metals Recycling'},
-  {d:'2026-04-06',t:'AKAM.US',a:'B',q:80,p:116.3300,ccy:'USD',yf:'AKAM',th:'US Tech'},
-  {d:'2026-04-06',t:'NASA.US',a:'B',q:280,p:28.0200,ccy:'USD',yf:'NASA',th:'Space/Aerospace'},
-  {d:'2026-04-09',t:'EWZ.US',a:'B',q:220,p:40.0000,ccy:'USD',yf:'EWZ',th:'Brazil Equity'},
-  {d:'2026-04-09',t:'PLTR.US',a:'S',q:55,p:130.1100,ccy:'USD',yf:'PLTR',th:'US Tech'},
-  {d:'2026-04-09',t:'SPHR.US',a:'B',q:60,p:129.0200,ccy:'USD',yf:'SPHR',th:'US Entertainment'},
-  {d:'2026-04-10',t:'2338.HK',a:'B',q:2000,p:32.5400,ccy:'HKD',yf:'2338.HK',th:'China Heavy Industry'},
-  {d:'2026-04-10',t:'AKAM.US',a:'S',q:80,p:103.6900,ccy:'USD',yf:'AKAM',th:'US Tech'},
-  {d:'2026-04-10',t:'SLV.US',a:'B',q:120,p:69.0200,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-04-17',t:'SXLE.GB',a:'S',q:150,p:43.7050,ccy:'USD',yf:'SXLE.L',th:'US Energy'},
-  {d:'2026-04-28',t:'700.HK',a:'S',q:100,p:474.4000,ccy:'HKD',yf:'0700.HK',th:'China Tech'},
-  {d:'2026-04-28',t:'9988.HK',a:'S',q:700,p:127.0000,ccy:'HKD',yf:'9988.HK',th:'China Tech'},
-  {d:'2026-04-28',t:'IEZ.US',a:'B',q:250,p:31.9400,ccy:'USD',yf:'IEZ',th:'US Energy'},
-
-  // ── May ──
-  {d:'2026-05-07',t:'COPX.US',a:'B',q:120,p:85.2500,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
-  {d:'2026-05-07',t:'CPRX.US',a:'B',q:280,p:31.1300,ccy:'USD',yf:'CPRX',th:'US Pharma'},
-  {d:'2026-05-07',t:'EWZ.US',a:'S',q:220,p:38.9800,ccy:'USD',yf:'EWZ',th:'Brazil Equity'},
-  {d:'2026-05-07',t:'IBIT.US',a:'S',q:235,p:45.5600,ccy:'USD',yf:'IBIT',th:'Crypto/Bitcoin'},
-  {d:'2026-05-07',t:'SIL.US',a:'B',q:96,p:98.4000,ccy:'USD',yf:'SIL',th:'Silver/Precious Metals'},
-  {d:'2026-05-07',t:'XHB.US',a:'S',q:80,p:106.1600,ccy:'USD',yf:'XHB',th:'US Housing'},
-  {d:'2026-05-07',t:'XLE.US',a:'S',q:180,p:55.3300,ccy:'USD',yf:'XLE',th:'US Energy'},
-  {d:'2026-05-08',t:'LIFE.US',a:'B',q:300,p:30.7000,ccy:'USD',yf:'LIFE',th:'US Tech'},
-  {d:'2026-05-11',t:'981.HK',a:'B',q:1000,p:77.1000,ccy:'HKD',yf:'0981.HK',th:'China Semis'},
-  {d:'2026-05-12',t:'992.HK',a:'B',q:4000,p:12.9000,ccy:'HKD',yf:'0992.HK',th:'China Tech'},
-  {d:'2026-05-18',t:'ARGT.US',a:'S',q:115,p:87.7660,ccy:'USD',yf:'ARGT',th:'Argentina Equity'},
-  {d:'2026-05-18',t:'GE.US',a:'S',q:40,p:284.4900,ccy:'USD',yf:'GE',th:'US Aerospace'},
-  {d:'2026-05-18',t:'INTC.US',a:'S',q:100,p:109.9700,ccy:'USD',yf:'INTC',th:'US Semis'},
-  {d:'2026-05-18',t:'MU.US',a:'S',q:10,p:745.1200,ccy:'USD',yf:'MU',th:'US Semis'},
-  {d:'2026-05-19',t:'SIL.US',a:'S',q:96,p:86.5000,ccy:'USD',yf:'SIL',th:'Silver/Precious Metals'},
-  {d:'2026-05-19',t:'LIFE.US',a:'S',q:300,p:19.6600,ccy:'USD',yf:'LIFE',th:'US Tech'},
-  {d:'2026-05-22',t:'IGV.US',a:'B',q:100,p:93.7900,ccy:'USD',yf:'IGV',th:'US Tech'},
-  {d:'2026-05-22',t:'BNY.US',a:'B',q:65,p:140.1200,ccy:'USD',yf:'BNY',th:'US Financials'},
-  {d:'2026-05-26',t:'GRID.US',a:'B',q:45,p:196.7000,ccy:'USD',yf:'GRID',th:'Clean Energy'},
-  {d:'2026-05-26',t:'LLY.US',a:'B',q:8,p:1066.9300,ccy:'USD',yf:'LLY',th:'US Pharma'},
-  {d:'2026-05-27',t:'MOO.US',a:'B',q:100,p:80.4500,ccy:'USD',yf:'MOO',th:'Agribusiness'},
-  {d:'2026-05-28',t:'9961.HK',a:'S',q:150,p:362.4000,ccy:'HKD',yf:'9961.HK',th:'China Travel'},
-  {d:'2026-05-28',t:'992.HK',a:'S',q:4000,p:19.2700,ccy:'HKD',yf:'0992.HK',th:'China Tech'},
-  {d:'2026-05-28',t:'4004.JP',a:'S',q:100,p:19070.0000,ccy:'JPY',yf:'4004.T',th:'Japan Chemicals'},
-  {d:'2026-05-28',t:'NOK.US',a:'S',q:900,p:15.4500,ccy:'USD',yf:'NOK',th:'Telecom Infra'},
-  {d:'2026-05-28',t:'MRVL.US',a:'S',q:50,p:200.3080,ccy:'USD',yf:'MRVL',th:'US Semis'},
-  {d:'2026-05-28',t:'MU.US',a:'S',q:10,p:922.5200,ccy:'USD',yf:'MU',th:'US Semis'},
-  {d:'2026-05-29',t:'IEZ.US',a:'S',q:250,p:30.1500,ccy:'USD',yf:'IEZ',th:'US Energy'},
-  {d:'2026-05-29',t:'SKM.US',a:'S',q:300,p:37.2395,ccy:'USD',yf:'SKM',th:'Korea Telecom'},
-  {d:'2026-05-29',t:'SOI.FR',a:'S',q:35,p:182.8500,ccy:'EUR',yf:'SOI.PA',th:'Europe Semis'},
-  {d:'2026-05-29',t:'NASA.US',a:'S',q:280,p:38.6000,ccy:'USD',yf:'NASA',th:'Space/Aerospace'},
-
-  // ── June ──
-  {d:'2026-06-01',t:'OXY.US',a:'B',q:140,p:59.7500,ccy:'USD',yf:'OXY',th:'US Energy'},
-  {d:'2026-06-01',t:'NVDA.US',a:'B',q:40,p:220.2600,ccy:'USD',yf:'NVDA',th:'US Semis'},
-  {d:'2026-06-02',t:'COPX.US',a:'B',q:90,p:93.3800,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
-  {d:'2026-06-05',t:'COPX.US',a:'S',q:90,p:82.4000,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
-  {d:'2026-06-05',t:'NVDA.US',a:'S',q:40,p:207.8000,ccy:'USD',yf:'NVDA',th:'US Semis'},
-  {d:'2026-06-05',t:'SLV.US',a:'S',q:120,p:62.1500,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
-  {d:'2026-06-11',t:'DELL.US',a:'B',q:25,p:387.8850,ccy:'USD',yf:'DELL',th:'US Tech'},
-  {d:'2026-06-11',t:'LLY.US',a:'B',q:8,p:1165.2500,ccy:'USD',yf:'LLY',th:'US Pharma'},
-  {d:'2026-06-11',t:'MRVL.US',a:'B',q:50,p:274.3620,ccy:'USD',yf:'MRVL',th:'US Semis'},
-];
+let POSITIONS = [];   // Derived at boot: replayLedger() replays data/trades.json over data/book.json.
+let TRADES_YTD = [];  // Loaded at boot from data/trades.json (buy/sell rows only, chronological).
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
 const SNAPSHOT = {
@@ -1440,20 +1255,7 @@ const ASSET_CLASS_BY_TICKER = {
 // 'year-end-2025 mark' rather than the trade ledger fallback (which would be 0).
 // Sourced from history.json's last 2025 bar for each ticker (data retained
 // from earlier bakes when these were still in POSITIONS).
-const PRE_YTD_BASIS = {
-  // All 8 closed-out tickers with pre-YTD inventory, basis = Dec 31 2025 close
-  // (native ccy) sourced from history.json. Data retained from earlier bakes.
-  'UBER.US':   81.71,
-  'XPEV.US':   20.28,
-  'BIDU.US':  130.66,
-  'GREK.US':   65.91,
-  'OXY.US':    41.12,
-  'SXLE.GB':   36.0175,
-  '9988.HK':  142.80,
-  'GE.US':    308.03,
-  '9961.HK':  554.00,    // Dec 31 2025 close — 250 shares of pre-YTD lot
-  'SLV.US':    64.42,    // Dec 31 2025 close — 220 shares of pre-YTD lot, closed out 05 Jun
-};
+let PRE_YTD_BASIS = {};  // Loaded at boot from book.json epochCloses (Dec-31-2025 closes).
 
 function deriveAssetClass(p) {
   if (ASSET_CLASS_BY_TICKER[p.ticker]) return ASSET_CLASS_BY_TICKER[p.ticker];
@@ -5454,6 +5256,71 @@ async function fetchDataFile(name) {
   return resp.json();
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  LEDGER REPLAY (REFACTOR_PLAN_V2 Phase A)
+//  Derives current positions and cash buckets from the opening book plus
+//  the full trade ledger. Average-cost accounting on buys; sells reduce
+//  quantity at the running average; a zero-crossing resets the lot so a
+//  re-entered name starts a fresh basis. costAdjustments absorb broker
+//  fees baked into historical cost figures; ledgerOverrides are named,
+//  logged patches over known ledger gaps. Cash buckets are reconciled
+//  from cashAnchor (last verified brokerage balances) plus the net of
+//  trades dated strictly after the anchor date.
+// ═══════════════════════════════════════════════════════════════
+function replayLedger(book, trades) {
+  const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const byTicker = {};
+  for (const t of sorted) (byTicker[t.t] = byTicker[t.t] || []).push(t);
+  const adj = book.costAdjustments || {};
+  const overrides = book.ledgerOverrides || {};
+  const out = [];
+  const seen = new Set();
+  const replayOne = (openQty, openInv, tr) => {
+    let qty = openQty, inv = openInv;
+    for (const t of tr) {
+      if (t.a === 'B') { qty += t.q; inv += t.q * t.p; }
+      else { const avg = qty > 0 ? inv / qty : 0; inv -= t.q * avg; qty -= t.q; }
+      if (qty <= 1e-9) { qty = 0; inv = 0; }   // zero-crossing resets the lot
+    }
+    return { qty, inv };
+  };
+  for (const op of book.positions) {
+    seen.add(op.ticker);
+    const m = book.meta[op.ticker];
+    const tr = byTicker[op.ticker] || [];
+    if (tr.length === 0) {
+      if (m) out.push({ ...m, ticker: op.ticker, qty: op.qty, avgPrice: op.avgPrice, invested: op.invested });
+      continue;
+    }
+    const r = replayOne(op.qty, op.invested != null ? op.invested : 0, tr);
+    const inv = r.inv + (r.qty > 0 ? (adj[op.ticker] || 0) : 0);
+    if (r.qty > 0 && m) out.push({ ...m, ticker: op.ticker, qty: r.qty, avgPrice: inv / r.qty, invested: inv });
+  }
+  // Tickers opened during the period (no opening row in the book)
+  for (const tk of Object.keys(byTicker)) {
+    if (seen.has(tk)) continue;
+    if (overrides[tk] && overrides[tk].qty === 0) { console.warn('[replay] ledger override: ' + tk + ' forced to zero — ' + overrides[tk].reason); continue; }
+    const r = replayOne(0, 0, byTicker[tk]);
+    const inv = r.inv + (r.qty > 0 ? (adj[tk] || 0) : 0);
+    if (r.qty > 0) {
+      const t0 = byTicker[tk][0];
+      if (!book.meta[tk]) console.warn('[replay] no meta for new ticker ' + tk + ' — using trade-row fields; add a meta entry to book.json');
+      const m = book.meta[tk] || { yf: t0.yf, name: tk, exchange: '', ccy: t0.ccy, fee: 0, availLTV: 0, theme: t0.th, type: 'Stock' };
+      out.push({ ...m, ticker: tk, qty: r.qty, avgPrice: inv / r.qty, invested: inv });
+    }
+  }
+  // Cash buckets: anchor balance plus net of post-anchor trades per currency
+  for (const ccy of Object.keys(book.cashAnchor.balances)) {
+    let cash = book.cashAnchor.balances[ccy];
+    for (const t of sorted) if (t.ccy === ccy && t.d > book.cashAnchor.date) cash += (t.a === 'S' ? t.q * t.p : -(t.q * t.p));
+    if (cash < 0) { console.warn('[replay] ' + ccy + ' cash went negative — floored at zero (externally funded buy, or a deposit row is missing)'); cash = 0; }
+    const tk = ccy + '.CASH';
+    const m = book.meta[tk] || { yf: null, name: ccy + ' Cash', exchange: '', ccy, fee: 0, availLTV: 0, theme: 'Cash & Money Market', type: 'Cash', account: 'Brokerage', mktPriceSnap: 1.00 };
+    out.push({ ...m, ticker: tk, qty: cash, avgPrice: 1.00, invested: cash });
+  }
+  return out;
+}
+
 async function bootstrap() {
   const pill = document.getElementById('statusPill');
   if (pill) {
@@ -5462,17 +5329,24 @@ async function bootstrap() {
   }
 
   try {
-    const [hist, fx, meta] = await Promise.all([
+    const [hist, fx, meta, book, trades] = await Promise.all([
       fetchDataFile('history.json'),
       fetchDataFile('fx.json'),
       fetchDataFile('meta.json'),
+      fetchDataFile('book.json'),
+      fetchDataFile('trades.json'),
     ]);
     PRELOADED_HISTORY = Object.assign({}, hist, fx);
     PRELOADED_DATE = (meta && meta.date) ? meta.date : '';
+    // Ledger-first derivation: the engines consume only buy/sell rows, so
+    // future explicit cash-event rows (deposits/withdrawals) stay inert here.
+    TRADES_YTD = trades.filter(t => t.a === 'B' || t.a === 'S');
+    PRE_YTD_BASIS = book.epochCloses || {};
+    POSITIONS = replayLedger(book, trades);
   } catch (e) {
     console.warn('[bootstrap] data/*.json load failed:', e.message);
-    // Leave PRELOADED_HISTORY empty; init() will take the FETCH PATH,
-    // which is gated to localhost-only per the Phase 2 design.
+    // Leave PRELOADED_HISTORY/POSITIONS empty; init() will take the FETCH
+    // PATH, which is gated to localhost-only per the Phase 2 design.
   }
 
   await init();
