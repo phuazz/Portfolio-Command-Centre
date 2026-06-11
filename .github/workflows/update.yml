@@ -22,9 +22,12 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v5 of both actions run on Node 24. GitHub forces Node 24 for action
+      # runtimes from 16 June 2026 and removes Node 20 from runners on
+      # 16 September 2026, so the previous @v4 pins would break the daily bake.
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
 
