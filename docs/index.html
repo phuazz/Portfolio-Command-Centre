@@ -382,19 +382,20 @@ const POSITIONS = [
   { ticker:'GRID.US', yf:'GRID', name:'First Trust NASDAQ Clean Edge', exchange:'NMS', ccy:'USD', avgPrice:196.7000, qty:45, invested:8851.50, fee:0, availLTV:50, theme:'Clean Energy', type:'ETF' },
   { ticker:'IGV.US', yf:'IGV', name:'iShares Expanded Tech-Software', exchange:'NMS', ccy:'USD', avgPrice:93.7900, qty:100, invested:9379.00, fee:0, availLTV:50, theme:'US Tech', type:'ETF' },
   { ticker:'INTC.US', yf:'INTC', name:'Intel', exchange:'NMS', ccy:'USD', avgPrice:46.9923, qty:100, invested:4699.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
-  { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:85.8046, qty:50, invested:4290.23, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
+  { ticker:'MRVL.US', yf:'MRVL', name:'Marvell Technology', exchange:'NMS', ccy:'USD', avgPrice:180.0833, qty:100, invested:18008.33, fee:0, availLTV:50, theme:'US Semis', type:'Stock' },
+  { ticker:'DELL.US', yf:'DELL', name:'Dell Technologies', exchange:'NYS', ccy:'USD', avgPrice:387.8850, qty:25, invested:9697.13, fee:0, availLTV:50, theme:'US Tech', type:'Stock', mktPriceSnap:387.8850 },
   { ticker:'OXY.US', yf:'OXY', name:'Occidental Petroleum', exchange:'NYS', ccy:'USD', avgPrice:59.7500, qty:140, invested:8365.00, fee:0, availLTV:50, theme:'US Energy', type:'Stock', mktPriceSnap:59.7500 },
   { ticker:'MSFT.US', yf:'MSFT', name:'Microsoft', exchange:'NMS', ccy:'USD', avgPrice:249.6421, qty:30, invested:7489.26, fee:0, availLTV:70, theme:'US Tech', type:'Stock' },
   { ticker:'TSLA.US', yf:'TSLA', name:'Tesla', exchange:'NMS', ccy:'USD', avgPrice:343.2468, qty:22, invested:7551.43, fee:0, availLTV:50, theme:'US EV/Tech', type:'Stock' },
 
   // USD cash held in SCB Brokerage post-18-May trades (ARGT/GE/INTC/MU sale proceeds, awaiting re-entry).
-  { ticker:'USD.CASH', yf:null, name:'USD Cash (after 05-Jun COPX/NVDA/SLV sells, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:70115.40, invested:70115.40, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
+  { ticker:'USD.CASH', yf:null, name:'USD Cash (after 11-Jun DELL/LLY/MRVL buys, awaiting entry)', exchange:'NMS', ccy:'USD', avgPrice:1.00, qty:37378.18, invested:37378.18, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'HKD.CASH', yf:null, name:'HKD Cash (post-28-May sells, awaiting entry)', exchange:'HKG', ccy:'HKD', avgPrice:1.00, qty:131200.00, invested:131200.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'JPY.CASH', yf:null, name:'JPY Cash (post-28-May sells, awaiting entry)', exchange:'TSE', ccy:'JPY', avgPrice:1.00, qty:1904000.00, invested:1904000.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
   { ticker:'EUR.CASH', yf:null, name:'EUR Cash (post-29-May sell, awaiting entry)', exchange:'PAR', ccy:'EUR', avgPrice:1.00, qty:6390.00, invested:6390.00, fee:0, availLTV:0, theme:'Cash & Money Market', type:'Cash', account:'Brokerage', mktPriceSnap:1.00 },
 
   { ticker:'BNY.US', yf:'BNY', name:'Bank of NY Mellon', exchange:'NYS', ccy:'USD', avgPrice:140.1200, qty:65, invested:9107.80, fee:0, availLTV:60, theme:'US Financials', type:'Stock' },
-  { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1066.9300, qty:8, invested:8535.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
+  { ticker:'LLY.US', yf:'LLY', name:'Eli Lilly', exchange:'NYS', ccy:'USD', avgPrice:1116.0900, qty:16, invested:17857.44, fee:0, availLTV:70, theme:'US Pharma', type:'Stock' },
   { ticker:'SPHR.US', yf:'SPHR', name:'Sphere Entertainment', exchange:'NYS', ccy:'USD', avgPrice:129.3012, qty:60, invested:7758.07, fee:0, availLTV:60, theme:'US Entertainment', type:'Stock' },
 
   { ticker:'GDX.GB', yf:'GDX', name:'VanEck Gold Miners UCITS', exchange:'LSE', ccy:'USD', avgPrice:59.2868, qty:130, invested:7707.28, fee:0, availLTV:60, theme:'Gold Miners', type:'ETF' },
@@ -549,6 +550,9 @@ const TRADES_YTD = [
   {d:'2026-06-05',t:'COPX.US',a:'S',q:90,p:82.4000,ccy:'USD',yf:'COPX',th:'Copper/Commodities'},
   {d:'2026-06-05',t:'NVDA.US',a:'S',q:40,p:207.8000,ccy:'USD',yf:'NVDA',th:'US Semis'},
   {d:'2026-06-05',t:'SLV.US',a:'S',q:120,p:62.1500,ccy:'USD',yf:'SLV',th:'Silver/Precious Metals'},
+  {d:'2026-06-11',t:'DELL.US',a:'B',q:25,p:387.8850,ccy:'USD',yf:'DELL',th:'US Tech'},
+  {d:'2026-06-11',t:'LLY.US',a:'B',q:8,p:1165.2500,ccy:'USD',yf:'LLY',th:'US Pharma'},
+  {d:'2026-06-11',t:'MRVL.US',a:'B',q:50,p:274.3620,ccy:'USD',yf:'MRVL',th:'US Semis'},
 ];
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
