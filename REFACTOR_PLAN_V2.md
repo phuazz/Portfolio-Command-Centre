@@ -157,6 +157,42 @@ Rollback. Snapshot branch `snapshot/pre-v2-phase-a`.
 
 Dependencies. None. Entry point of v2.
 
+Post-flight note (2026-06-12). Completed. A one-off migration script (not
+committed; the outputs and this note are the durable artefacts) extracted
+`POSITIONS` (62 entries), `TRADES_YTD` (96 trades) and `PRE_YTD_BASIS` from
+the template, emitted `trades.json` and `book.json`, and self-verified the
+replay. Parity gate passed in full: all 62 positions reproduce (quantity
+exact, invested to the cent, average price within 0.005 — the hand-maintained
+`avgPrice` figures were independently cent-rounded and internally inconsistent
+with `invested` by up to 11 cents, so the derived figures are the more
+consistent ones), all four cash balances to the cent, and every engine number
+identical to four decimal places against the pre-change golden capture
+(Total MV 1,375,163.25; 1-Day, YTD FIFO, TWRR, equity curve, attribution all
+exact). Universe from ledger = 75 tickers, identical set to the old HTML
+regex scan. All six tabs render; the only console output is the expected
+override warning.
+
+Decisions taken during execution, per section 6. Cash reconciliation uses a
+`cashAnchor` (last verified brokerage balances, 2026-06-11) plus the net of
+strictly-later trades, rather than opening-cash inference — exact today and
+forward-correct, with periodic re-anchoring absorbing fees. Broker-fee
+residues baked into the old hand-maintained cost figures surfaced on nine
+tickers (S$9–220) and are carried as named `costAdjustments`. The replay also
+caught a genuine ledger gap: PHAG.GB was bought 100 @ 82.70 on 2026-02-25,
+the position was closed, but the sale was never recorded and the ticker never
+appeared in POSITIONS in any commit; it is carried as a documented
+`ledgerOverrides` entry pending broker records, after which the override
+should be replaced by the real sell row. Average-cost accounting (not FIFO)
+is the replay convention for position cost, matching the hand-maintained
+figures; FIFO remains the attribution engine's lot convention, unchanged.
+
+Follow-ups. First: supply the PHAG.GB sale details and delete the override.
+Second: the engines still consume the derived `TRADES_YTD`/`POSITIONS`
+globals exactly as before — Phase B replaces their internals, not their
+inputs. Third: future deposit/withdrawal rows (`"a": "D"`/`"W"`) are filtered
+out before the engines see them, so the row type can be introduced in
+Phase C without engine changes.
+
 ### Phase B — Unified valuation core (one to two sessions)
 
 Scope. One `buildDailyBook(book, trades, history, fxHistory)` producing the

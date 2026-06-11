@@ -46,14 +46,41 @@ const RANGE = '10y';        // 10 years for full backtest support
 // the fetch (see deriveJpySgd below).
 const FX_SYMBOLS = ['HKDSGD=X', 'SGDJPY=X', 'USDSGD=X', 'AUDSGD=X', 'EURSGD=X'];
 
-// ── Extract YF symbols from HTML ──
-function extractSymbols(html) {
-  const matches = html.matchAll(/yf:'([^']+)'/g);
+// ── Ledger-first universe (REFACTOR_PLAN_V2 Phase A) ──
+// The ticker universe is read from book.json metadata plus every trade row in
+// trades.json, replacing the old regex scan of the HTML. Closed-out tickers
+// stay in the universe via their trade rows, so attribution keeps its history.
+const TRADES_SRC = path.join(__dirname, 'trades.json');
+const BOOK_SRC = path.join(__dirname, 'book.json');
+
+function readLedger() {
+  const trades = JSON.parse(fs.readFileSync(TRADES_SRC, 'utf-8'));
+  const book = JSON.parse(fs.readFileSync(BOOK_SRC, 'utf-8'));
   const symbols = new Set();
-  for (const m of matches) {
-    if (m[1] && m[1] !== 'null') symbols.add(m[1]);
+  for (const m of Object.values(book.meta || {})) if (m.yf) symbols.add(m.yf);
+  for (const t of trades) if (t.yf) symbols.add(t.yf);
+  return { trades, book, symbols: [...symbols] };
+}
+
+// Replay validation: the ledger must never sell more than is held (opening
+// quantity plus prior buys), unless a named ledgerOverride covers the gap.
+// A hard failure here stops the bake — a red Actions run beats silently
+// publishing a dashboard built on inconsistent books.
+function validateLedger(book, trades) {
+  const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const qty = {};
+  for (const op of book.positions || []) qty[op.ticker] = op.qty;
+  const overrides = book.ledgerOverrides || {};
+  const errors = [];
+  for (const t of sorted) {
+    qty[t.t] = (qty[t.t] || 0) + (t.a === 'B' ? t.q : -t.q);
+    if (qty[t.t] < -1e-9 && !overrides[t.t]) errors.push(`${t.d} ${t.t}: sell of ${t.q} exceeds holdings (running qty ${qty[t.t]})`);
   }
-  return [...symbols];
+  for (const [tk, ov] of Object.entries(overrides)) console.log(`  ⚠️  ledger override active: ${tk} → qty ${ov.qty}`);
+  if (errors.length) {
+    console.error('❌ Ledger validation failed:\n  ' + errors.join('\n  '));
+    process.exit(1);
+  }
 }
 
 // ── Fetch one ticker from Yahoo Finance ──
@@ -222,9 +249,10 @@ async function main() {
   }
   const html = fs.readFileSync(TEMPLATE_FILE, 'utf-8');
 
-  // Extract symbols
-  const symbols = extractSymbols(html);
-  console.log(`📋 Found ${symbols.length} tickers: ${symbols.slice(0, 8).join(', ')}${symbols.length > 8 ? '...' : ''}`);
+  // Ledger-first universe + integrity gate
+  const { trades, book, symbols } = readLedger();
+  validateLedger(book, trades);
+  console.log(`📋 Universe from ledger: ${symbols.length} tickers (${trades.length} trades, ${(book.positions || []).length} opening positions)`);
   console.log(`💱 Plus ${FX_SYMBOLS.length} FX rates\n`);
 
   // Fetch stock data
@@ -287,6 +315,13 @@ async function main() {
 
   // Write docs/data/fx.json (FX rates only)
   fs.writeFileSync(FX_FILE, JSON.stringify(fxData), 'utf-8');
+
+  // Copy the user-authored ledger files into docs/data/ so the client can
+  // fetch them alongside history.json. The root copies remain the source of
+  // truth; the docs/ copies are pipeline-owned output like everything else
+  // under docs/.
+  fs.copyFileSync(TRADES_SRC, path.join(DATA_DIR, 'trades.json'));
+  fs.copyFileSync(BOOK_SRC, path.join(DATA_DIR, 'book.json'));
 
   // Write docs/data/meta.json (date, ticker list, generation timestamp)
   const meta = {

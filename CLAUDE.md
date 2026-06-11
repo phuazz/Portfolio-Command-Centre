@@ -4,15 +4,23 @@ This file is durable context for future sessions working on this repository. Rea
 
 ## What this project is
 
-A single-page, client-side portfolio dashboard deployed via GitHub Pages. The architecture is in transition — see `REFACTOR_PLAN.md` for the target shape and current phase. Treat that plan as load-bearing.
+A single-page, client-side portfolio dashboard deployed via GitHub Pages. The delivery architecture (template → `docs/data/*.json` → `docs/index.html`, scheduled bake) was migrated under `REFACTOR_PLAN.md`, which is complete. The domain architecture is migrating under `REFACTOR_PLAN_V2.md` — ledger-first data model (Phase A complete), unified valuation core, attribution v2. Treat both plans as load-bearing.
 
-## Size constraint
+## Data model (ledger-first, since v2 Phase A)
 
-`index.html` is currently around 4.6 MB because it contains a baked `PRELOADED_HISTORY` blob at roughly line 446. Never open this file fully — it will overwhelm the context window. The same caution applies to `template.html` once it exists, and to any built artefact under `docs/`.
+`trades.json` at the repository root is the single manual input: one appended JSON row per fill. `book.json` carries the opening book at the 2026-01-01 epoch, static per-ticker metadata, cash reconciliation anchors (`cashAnchor` holds the last verified brokerage balances; trades dated strictly after the anchor date adjust the buckets), `costAdjustments` (broker-fee residues baked into historical cost figures) and `ledgerOverrides` (named, logged patches over known ledger gaps). Positions, average costs, invested amounts, cash buckets and pre-YTD bases are all derived at boot by `replayLedger()` in `template.html` — never hand-edited. `build.js` reads its ticker universe from these two files, validates the replay (a failed validation stops the bake), and copies both into `docs/data/` for the client to fetch.
+
+## Trade entry workflow
+
+For a fill on an existing ticker: append one row to `trades.json`, commit, push, trigger the build. Nothing else. For a brand-new ticker: also add one `meta` entry to `book.json` (name, exchange, ccy, theme, type, availLTV). When closing a position bought before 2026, ensure `epochCloses` in `book.json` carries its Dec-31-2025 close. Periodically re-anchor `cashAnchor` to actual brokerage balances to absorb fees.
+
+## File sizes
+
+`template.html` is ~285 KB (~5,400 lines) and fetch-based — safe to read in line ranges, never in full. The genuinely large file is `docs/data/history.json` (~10 MB); never open it. `docs/index.html` is a straight copy of the template.
 
 ## Editing approach
 
-Work on the large HTML files via grep, line-range reads, and str-replace patches only. No full-file reads. No full-file rewrites. If a change feels like it wants a rewrite, stop and re-scope — the refactor plan exists precisely so that large changes are handled as phases rather than as ad-hoc sweeps.
+Work on the large HTML files via grep, line-range reads, and str-replace patches only. No full-file reads. No full-file rewrites. If a change feels like it wants a rewrite, stop and re-scope — the refactor plans exist precisely so that large changes are handled as phases rather than as ad-hoc sweeps.
 
 ## Per-session discipline
 
