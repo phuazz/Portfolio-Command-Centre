@@ -5163,7 +5163,9 @@ function replayLedger(book, trades) {
   const replayOne = (openQty, openInv, tr) => {
     let qty = openQty, inv = openInv;
     for (const t of tr) {
-      if (t.a === 'B') { qty += t.q; inv += t.q * t.p; }
+      // Fee-inclusive cost on buys — matches the broker's average-cost
+      // convention, verified against six month-end statements (Phase A.1).
+      if (t.a === 'B') { qty += t.q; inv += t.q * t.p + (t.fee || 0); }
       else { const avg = qty > 0 ? inv / qty : 0; inv -= t.q * avg; qty -= t.q; }
       if (qty <= 1e-9) { qty = 0; inv = 0; }   // zero-crossing resets the lot
     }
