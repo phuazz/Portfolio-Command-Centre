@@ -3620,11 +3620,42 @@ function renderRisk(el) {
 //    portfolio return        = Σ theme contributions   (reconciliation gate)
 // ═══════════════════════════════════════════════════════════════
 const ATTR_HORIZONS = [
-  { key:'1D',  label:'1 Day',   bars:1,    ytd:false },
-  { key:'1W',  label:'1 Week',  bars:5,    ytd:false },
-  { key:'1M',  label:'1 Month', bars:21,   ytd:false },
-  { key:'YTD', label:'YTD',     bars:null, ytd:true  },
+  { key:'ID',  label:'Intraday', bars:'ID', ytd:false },
+  { key:'1D',  label:'1 Day',    bars:'1D', ytd:false },
+  { key:'1W',  label:'1 Week',   bars:5,    ytd:false },
+  { key:'1M',  label:'1 Month',  bars:21,   ytd:false },
+  { key:'YTD', label:'YTD',      bars:null, ytd:true  },
 ];
+
+// Per-position returns on the GLOBAL trading day anchored at the US close —
+// the same windows as the hero Intraday / 1-Day cards (calcSplitDayPnL).
+//   mode 'ID': boundary close → now (live tick, or a completed post-boundary
+//              Asian session carried by the last bar).
+//   mode '1D': the prior complete global day — the bar before the boundary
+//              close → the boundary close. endFxDate tells the attribution
+//              engine to convert the end leg at the boundary date's FX rather
+//              than at today's spot.
+function _effectiveReturnGlobalDay(p, mode) {
+  if (!p || !p.history || p.history.length < 2) return null;
+  const h = p.history, n = h.length;
+  const iso = b => (b.date instanceof Date ? b.date : new Date(b.date)).toISOString().slice(0, 10);
+  const adj = b => b.adjclose != null ? b.adjclose : b.close;
+  const boundary = _usCloseBoundary();
+  let iU = n - 1;
+  while (iU >= 0 && iso(h[iU]) > boundary) iU--;
+  if (iU < 1) return null;
+  if (mode === 'ID') {
+    const lastAdj = adj(h[n - 1]);
+    const fresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6;
+    const closeNow = fresher ? p.mktPrice : lastAdj;
+    const closeThen = adj(h[iU]);
+    if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
+    return { closeNow, closeThen, snapshotFresher: fresher, refDate: iso(h[iU]), endFxDate: null };
+  }
+  const closeNow = adj(h[iU]), closeThen = adj(h[iU - 1]);
+  if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
+  return { closeNow, closeThen, snapshotFresher: false, refDate: iso(h[iU - 1]), endFxDate: iso(h[iU]) };
+}
 
 function calcAttribution(ps, bars) {
   // Total-return attribution. effectiveReturn() handles both the
@@ -3634,14 +3665,16 @@ function calcAttribution(ps, bars) {
   const rows = [];
   let totalStart = 0;
   for (const p of ps) {
-    const r = effectiveReturn(p, bars);
+    // 'ID' and '1D' run on the global trading day anchored at the US close
+    // (matching the hero cards); 1W/1M keep the per-ticker bar lookback.
+    const r = (bars === 'ID' || bars === '1D') ? _effectiveReturnGlobalDay(p, bars) : effectiveReturn(p, bars);
     if (!r) continue;
     // FX-as-of-date: closeThen converted at the historical FX rate; closeNow
-    // converted at today's rate. Captures both equity and FX components of
-    // return in the dollar number. Falls back to p.fxRate when FX_HISTORY
-    // does not cover the lookback date.
+    // converted at today's rate — unless the window ends at a historical
+    // close (endFxDate, the '1D' global-day case), which converts at that
+    // date's rate. Falls back to p.fxRate when FX_HISTORY lacks the date.
     const fxThen    = fxAtDate(p.ccy, r.refDate);
-    const fxNow     = p.fxRate || 1;
+    const fxNow     = r.endFxDate ? fxAtDate(p.ccy, r.endFxDate) : (p.fxRate || 1);
     const startSGD  = r.closeThen * p.qty * fxThen;
     const endSGD    = r.closeNow  * p.qty * fxNow;
     const dollar    = endSGD - startSGD;
@@ -4713,7 +4746,10 @@ function renderAttribution(el) {
   // that differs from the headline by the realised P&L of positions closed in the
   // window plus the cash effect.
   const heldEquityRetPct = A.portfolioRetPct;             // what the theme contributions sum to (held equity)
-  const periodTA = isYtd ? null : calcPortfolioPeriodPnL(ps, TRADES_YTD, horizonDef.bars);
+  const periodTA = isYtd ? null
+    : (horizonDef.bars === 'ID' || horizonDef.bars === '1D')
+      ? (horizonDef.bars === 'ID' ? calcSplitDayPnL(ps, TRADES_YTD).intraday : calcSplitDayPnL(ps, TRADES_YTD).prevDay)
+      : calcPortfolioPeriodPnL(ps, TRADES_YTD, horizonDef.bars);
   const bookRetPct = isYtd ? heldEquityRetPct : (periodTA ? periodTA.pct : 0);
   const headlineDollar = isYtd ? A.totalDollar : (periodTA ? periodTA.pnl : 0);
 
