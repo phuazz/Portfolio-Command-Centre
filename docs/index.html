@@ -1792,6 +1792,91 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
   };
 }
 
+// Split day P&L: the single "1-Day" figure mixed two different things on a
+// multi-timezone book — a live intraday tick for markets in session and a
+// completed close-to-close move for markets already baked — and its meaning
+// drifted through the day. This engine separates them per ticker:
+//   prevDay  — the last COMPLETED session (last baked bar vs the bar before
+//              it), stable once a session ends; dates differ per market,
+//              which is inherent to a global book.
+//   intraday — movement since the last completed close, only where the live
+//              snapshot is genuinely fresher than the last bar (markets in
+//              session or moved since the bake); zero otherwise.
+// The two sum to the move from two closes ago to now. Same universe,
+// trade-awareness and FX-as-of-date conventions as calcPortfolioPeriodPnL.
+function calcSplitDayPnL(ps, trades) {
+  const liveData = state.liveData || {};
+  const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
+  const meta = {};
+  const add = (tk, yf, ccy) => { if (tk && !meta[tk]) meta[tk] = { yf, ccy }; };
+  ps.forEach(p => { if (p.type !== 'Bond' && p.type !== 'Cash') add(p.ticker, p.yf, p.ccy); });
+  trades.forEach(t => add(t.t, t.yf, t.ccy));
+
+  const barISO = bar => (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+  const adj = bar => bar.adjclose != null ? bar.adjclose : bar.close;
+
+  let intradayEq = 0, prevEq = 0, liveCount = 0;
+  for (const tk of Object.keys(meta)) {
+    const { yf, ccy } = meta[tk];
+    const h = histOf(yf);
+    if (!h || h.length < 2) continue;
+    const n = h.length;
+    const lastAdj = adj(h[n - 1]), prevAdj = adj(h[n - 2]);
+    if (!isFinite(lastAdj) || lastAdj <= 0 || !isFinite(prevAdj) || prevAdj <= 0) continue;
+    const lastDate = barISO(h[n - 1]), prevDate = barISO(h[n - 2]);
+    const pos = ps.find(p => p.ticker === tk);
+    const qtyNow = pos ? pos.qty : 0;
+    const curPrice = pos ? pos.mktPrice : (liveData[yf] ? liveData[yf].price : lastAdj);
+    const fresher = curPrice != null && Math.abs(curPrice - lastAdj) > 1e-6;
+    const fxNow = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
+    const tradesOf = trades.filter(t => t.t === tk);
+    const net = arr => arr.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
+    const flow = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d), 0);
+
+    // Intraday: (lastDate, now] — live names only.
+    const wIntra = tradesOf.filter(t => t.d > lastDate);
+    if (fresher) {
+      const qtyAtLast = qtyNow - net(wIntra);
+      if (qtyAtLast !== 0 || wIntra.length > 0) {
+        intradayEq += qtyNow * curPrice * fxNow - qtyAtLast * lastAdj * fxAtDate(ccy, lastDate) - flow(wIntra);
+        liveCount++;
+      }
+    }
+    // Previous completed session: (prevDate, lastDate].
+    const qtyAtLast = qtyNow - net(wIntra);
+    const wPrev = tradesOf.filter(t => t.d > prevDate && t.d <= lastDate);
+    const qtyAtPrev = qtyAtLast - net(wPrev);
+    if (qtyAtPrev !== 0 || wPrev.length > 0) {
+      prevEq += qtyAtLast * lastAdj * fxAtDate(ccy, lastDate) - qtyAtPrev * prevAdj * fxAtDate(ccy, prevDate) - flow(wPrev);
+    }
+  }
+
+  // Cash buckets: FX move split the same way — last baked FX bar to live spot
+  // is intraday; the last two baked FX bars are the previous session.
+  let intradayCash = 0, prevCash = 0;
+  for (const p of ps) {
+    if (p.type !== 'Cash' || p.ccy === 'SGD') continue;
+    const fxNow = p.fxRate || FX[p.ccy] || 1;
+    const ser = (typeof FX_HISTORY !== 'undefined') ? FX_HISTORY[p.ccy] : null;
+    if (ser && ser.length >= 2) {
+      intradayCash += p.qty * (fxNow - ser[ser.length - 1].rate);
+      prevCash += p.qty * (ser[ser.length - 1].rate - ser[ser.length - 2].rate);
+    }
+  }
+
+  const nonBondNow = ps.filter(p => p.type !== 'Bond').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const equityNow  = ps.filter(p => p.type !== 'Bond' && p.type !== 'Cash').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const intraday = intradayEq + intradayCash;
+  const prevDay  = prevEq + prevCash;
+  // Chained denominators: book at the start of each window.
+  const dIntraBook = nonBondNow - intraday, dPrevBook = nonBondNow - intraday - prevDay;
+  const dIntraEq = equityNow - intradayEq, dPrevEq = equityNow - intradayEq - prevEq;
+  return {
+    intraday: { pnl: intraday, pct: dIntraBook > 0 ? (intraday / dIntraBook) * 100 : 0, equityPct: dIntraEq > 0 ? (intradayEq / dIntraEq) * 100 : 0, liveCount },
+    prevDay:  { pnl: prevDay,  pct: dPrevBook  > 0 ? (prevDay  / dPrevBook)  * 100 : 0, equityPct: dPrevEq  > 0 ? (prevEq  / dPrevEq)  * 100 : 0 },
+  };
+}
+
 function renderKPIs() {
   const ps = state.positions;
   const cdpPs = ps.filter(p=>p.account==='CDP');
@@ -1800,7 +1885,7 @@ function renderKPIs() {
   const scValue = scPs.reduce((s,p)=>s+p.mktValueSGD,0);
   // Period P&L: trade-aware over 1 / 5 / 21 trading days — captures positions
   // closed within the window, not just current holdings.
-  const d1 = calcPortfolioPeriodPnL(ps, TRADES_YTD, 1);
+  const split = calcSplitDayPnL(ps, TRADES_YTD);
   const w1 = calcPortfolioPeriodPnL(ps, TRADES_YTD, 5);
   const m1 = calcPortfolioPeriodPnL(ps, TRADES_YTD, 21);
   // YTD P&L: trade-aware FIFO total return (realised + unrealised) — the same
@@ -1820,7 +1905,14 @@ function renderKPIs() {
 
   const kpis = [
     { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} · CDP ${fmtSGD(cdpValue)}` },
-    pnlKpi('1-Day P&L', d1),
+    { label:'Intraday P&L', value:fmtPL(split.intraday.pnl), num: split.intraday.pnl, fmt: fmtPL,
+      sub:`${fmtPct(split.intraday.pct)} · since last close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} live` : ''}`,
+      cls: split.intraday.pnl >= 0 ? 'pos' : 'neg',
+      title:`Movement since each ticker's last completed close, live-priced names only (markets in session or moved since the bake). Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}` },
+    { label:'1-Day P&L', value:fmtPL(split.prevDay.pnl), num: split.prevDay.pnl, fmt: fmtPL,
+      sub:`${fmtPct(split.prevDay.pct)} · last completed session`,
+      cls: split.prevDay.pnl >= 0 ? 'pos' : 'neg',
+      title:`Each market's last completed session, close-to-close — stable once a session ends; dates differ per market on a global book. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}` },
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
     { label:'YTD P&L', value:fmtPL(ytd.totalDollar), num: ytd.totalDollar, fmt: fmtPL, sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
