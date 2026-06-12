@@ -4,10 +4,11 @@
   "cashAnchor": {
     "date": "2026-06-11",
     "balances": {
-      "USD": 37378.18,
-      "HKD": 131200,
-      "JPY": 1904000,
-      "EUR": 6390
+      "USD": 38530.95,
+      "HKD": 139126.5,
+      "JPY": 1925638,
+      "EUR": 7378.93,
+      "AUD": 91.62
     }
   },
   "epochCloses": {
@@ -33,12 +34,7 @@
     "SPHR.US": 16.87,
     "SOI.FR": 9.49
   },
-  "ledgerOverrides": {
-    "PHAG.GB": {
-      "qty": 0,
-      "reason": "Bought 100 @ 82.70 on 2026-02-25; the position was closed but the sale was never recorded in the ledger (confirmed via git history — PHAG.GB never appeared in POSITIONS). Replace this override with the actual sell row once broker records are checked."
-    }
-  },
+  "ledgerOverrides": {},
   "meta": {
     "4004.JP": {
       "yf": "4004.T",
@@ -707,6 +703,18 @@
       "name": "USD Cash (tactical, ledger-derived)",
       "exchange": "NMS",
       "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Cash & Money Market",
+      "type": "Cash",
+      "account": "Brokerage",
+      "mktPriceSnap": 1
+    },
+    "AUD.CASH": {
+      "yf": null,
+      "name": "AUD Cash (tactical, ledger-derived)",
+      "exchange": "ASX",
+      "ccy": "AUD",
       "fee": 0,
       "availLTV": 0,
       "theme": "Cash & Money Market",
