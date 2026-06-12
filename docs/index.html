@@ -1792,18 +1792,36 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
   };
 }
 
-// Split day P&L: the single "1-Day" figure mixed two different things on a
-// multi-timezone book — a live intraday tick for markets in session and a
-// completed close-to-close move for markets already baked — and its meaning
-// drifted through the day. This engine separates them per ticker:
-//   prevDay  — the last COMPLETED session (last baked bar vs the bar before
-//              it), stable once a session ends; dates differ per market,
-//              which is inherent to a global book.
-//   intraday — movement since the last completed close, only where the live
-//              snapshot is genuinely fresher than the last bar (markets in
-//              session or moved since the bake); zero otherwise.
-// The two sum to the move from two closes ago to now. Same universe,
-// trade-awareness and FX-as-of-date conventions as calcPortfolioPeriodPnL.
+// Split day P&L on the GLOBAL trading day, anchored at the US close.
+// The trading day, as seen from Singapore, runs Asia open → Europe → US
+// close; the day boundary is therefore the most recent completed New York
+// close (16:00 America/New_York).
+//   intraday — the CURRENT global day: every ticker's move since its last
+//              close at or before the prior US close. Today's completed
+//              Asian session counts as intraday; US names contribute their
+//              live tick while in session; the card resets shortly after
+//              the US close.
+//   prevDay  — the PREVIOUS complete global day, ending at the most recent
+//              US close (yesterday's Asia session plus the US session that
+//              closed this morning SGT).
+// With daily bars this is exact: every market's session on calendar date D
+// ends before New York's close on date D, so "last close at or before the
+// US close of D" is simply each ticker's last bar dated <= D. The two
+// windows chain — their sum is the move from the boundary-before-last to
+// now. Same universe, trade-awareness and FX-as-of-date conventions as
+// calcPortfolioPeriodPnL.
+function _usCloseBoundary() {
+  // New York wall-clock via Intl (handles DST properly — never computed by
+  // manual offset). If the NY clock has passed 16:00, today's NY date is the
+  // boundary; otherwise the boundary is the previous NY calendar date.
+  // Date.UTC months are 0-indexed (JavaScript convention).
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit' }).formatToParts(new Date());
+  const get = t => +parts.find(p => p.type === t).value;
+  let utcMs = Date.UTC(get('year'), get('month') - 1, get('day'));
+  if (get('hour') < 16) utcMs -= 24 * 3600 * 1000;   // calendar-date arithmetic in UTC ms — exact
+  return new Date(utcMs).toISOString().slice(0, 10);
+}
+
 function calcSplitDayPnL(ps, trades) {
   const liveData = state.liveData || {};
   const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
@@ -1814,6 +1832,7 @@ function calcSplitDayPnL(ps, trades) {
 
   const barISO = bar => (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
   const adj = bar => bar.adjclose != null ? bar.adjclose : bar.close;
+  const boundary = _usCloseBoundary();
 
   let intradayEq = 0, prevEq = 0, liveCount = 0;
   for (const tk of Object.keys(meta)) {
@@ -1821,46 +1840,57 @@ function calcSplitDayPnL(ps, trades) {
     const h = histOf(yf);
     if (!h || h.length < 2) continue;
     const n = h.length;
-    const lastAdj = adj(h[n - 1]), prevAdj = adj(h[n - 2]);
-    if (!isFinite(lastAdj) || lastAdj <= 0 || !isFinite(prevAdj) || prevAdj <= 0) continue;
-    const lastDate = barISO(h[n - 1]), prevDate = barISO(h[n - 2]);
+    // Index of the last bar at or before the boundary (the prior US close).
+    let iU = n - 1;
+    while (iU >= 0 && barISO(h[iU]) > boundary) iU--;
+    if (iU < 1) continue;                              // need a bar before the boundary too
+    const closeU = adj(h[iU]), closeP = adj(h[iU - 1]);
+    if (!isFinite(closeU) || closeU <= 0 || !isFinite(closeP) || closeP <= 0) continue;
+    const dateU = barISO(h[iU]), dateP = barISO(h[iU - 1]);
+
     const pos = ps.find(p => p.ticker === tk);
     const qtyNow = pos ? pos.qty : 0;
+    const lastAdj = adj(h[n - 1]);
     const curPrice = pos ? pos.mktPrice : (liveData[yf] ? liveData[yf].price : lastAdj);
     const fresher = curPrice != null && Math.abs(curPrice - lastAdj) > 1e-6;
+    // Current value: live tick if fresher than the last bar, else the last
+    // bar itself (for Asia after today's close, that bar is dated after the
+    // boundary and carries today's session into intraday).
+    const pNow = fresher ? curPrice : lastAdj;
     const fxNow = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
     const tradesOf = trades.filter(t => t.t === tk);
     const net = arr => arr.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
     const flow = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d), 0);
 
-    // Intraday: (lastDate, now] — live names only.
-    const wIntra = tradesOf.filter(t => t.d > lastDate);
-    if (fresher) {
-      const qtyAtLast = qtyNow - net(wIntra);
-      if (qtyAtLast !== 0 || wIntra.length > 0) {
-        intradayEq += qtyNow * curPrice * fxNow - qtyAtLast * lastAdj * fxAtDate(ccy, lastDate) - flow(wIntra);
-        liveCount++;
-      }
+    // Intraday: (boundary, now]
+    const wIntra = tradesOf.filter(t => t.d > dateU);
+    const qtyAtU = qtyNow - net(wIntra);
+    const moved = fresher || iU < n - 1;               // live tick, or a completed post-boundary session
+    if (moved && (qtyAtU !== 0 || qtyNow !== 0 || wIntra.length > 0)) {
+      intradayEq += qtyNow * pNow * fxNow - qtyAtU * closeU * fxAtDate(ccy, dateU) - flow(wIntra);
+      liveCount++;
     }
-    // Previous completed session: (prevDate, lastDate].
-    const qtyAtLast = qtyNow - net(wIntra);
-    const wPrev = tradesOf.filter(t => t.d > prevDate && t.d <= lastDate);
-    const qtyAtPrev = qtyAtLast - net(wPrev);
-    if (qtyAtPrev !== 0 || wPrev.length > 0) {
-      prevEq += qtyAtLast * lastAdj * fxAtDate(ccy, lastDate) - qtyAtPrev * prevAdj * fxAtDate(ccy, prevDate) - flow(wPrev);
+    // Previous global day: (dateP, dateU]
+    const wPrev = tradesOf.filter(t => t.d > dateP && t.d <= dateU);
+    const qtyAtP = qtyAtU - net(wPrev);
+    if (qtyAtP !== 0 || wPrev.length > 0) {
+      prevEq += qtyAtU * closeU * fxAtDate(ccy, dateU) - qtyAtP * closeP * fxAtDate(ccy, dateP) - flow(wPrev);
     }
   }
 
-  // Cash buckets: FX move split the same way — last baked FX bar to live spot
-  // is intraday; the last two baked FX bars are the previous session.
+  // Cash buckets: FX split on the same boundary — last FX bar at or before
+  // the boundary to live spot is intraday; the pair before that is prevDay.
   let intradayCash = 0, prevCash = 0;
   for (const p of ps) {
     if (p.type !== 'Cash' || p.ccy === 'SGD') continue;
     const fxNow = p.fxRate || FX[p.ccy] || 1;
     const ser = (typeof FX_HISTORY !== 'undefined') ? FX_HISTORY[p.ccy] : null;
     if (ser && ser.length >= 2) {
-      intradayCash += p.qty * (fxNow - ser[ser.length - 1].rate);
-      prevCash += p.qty * (ser[ser.length - 1].rate - ser[ser.length - 2].rate);
+      let iU = ser.length - 1;
+      while (iU >= 0 && ser[iU].date > boundary) iU--;
+      if (iU < 1) continue;
+      intradayCash += p.qty * (fxNow - ser[iU].rate);
+      prevCash += p.qty * (ser[iU].rate - ser[iU - 1].rate);
     }
   }
 
@@ -1906,13 +1936,13 @@ function renderKPIs() {
   const kpis = [
     { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} · CDP ${fmtSGD(cdpValue)}` },
     { label:'Intraday P&L', value:fmtPL(split.intraday.pnl), num: split.intraday.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.intraday.pct)} · since last close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} live` : ''}`,
+      sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}`,
       cls: split.intraday.pnl >= 0 ? 'pos' : 'neg',
-      title:`Movement since each ticker's last completed close, live-priced names only (markets in session or moved since the bake). Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}` },
+      title:`The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}` },
     { label:'1-Day P&L', value:fmtPL(split.prevDay.pnl), num: split.prevDay.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.prevDay.pct)} · last completed session`,
+      sub:`${fmtPct(split.prevDay.pct)} · prior global day to US close`,
       cls: split.prevDay.pnl >= 0 ? 'pos' : 'neg',
-      title:`Each market's last completed session, close-to-close — stable once a session ends; dates differ per market on a global book. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}` },
+      title:`The previous complete global trading day, ending at the most recent New York close — yesterday's Asian session plus the US session that closed this morning SGT. Stable until the next US close. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}` },
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
     { label:'YTD P&L', value:fmtPL(ytd.totalDollar), num: ytd.totalDollar, fmt: fmtPL, sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
