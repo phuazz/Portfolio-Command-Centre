@@ -1934,7 +1934,7 @@ function renderKPIs() {
   });
 
   const kpis = [
-    { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} · CDP ${fmtSGD(cdpValue)}` },
+    { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} (${scPs.length}) · CDP ${fmtSGD(cdpValue)} (${cdpPs.length})` },
     { label:'Intraday P&L', value:fmtPL(split.intraday.pnl), num: split.intraday.pnl, fmt: fmtPL,
       sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}`,
       cls: split.intraday.pnl >= 0 ? 'pos' : 'neg',
@@ -1946,7 +1946,6 @@ function renderKPIs() {
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
     { label:'YTD P&L', value:fmtPL(ytd.totalDollar), num: ytd.totalDollar, fmt: fmtPL, sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
-    { label:'Positions', value:`${ps.length}`, sub:`${scPs.length} Brokerage · ${cdpPs.length} CDP` },
   ];
 
   const strip = document.getElementById('kpiStrip');
