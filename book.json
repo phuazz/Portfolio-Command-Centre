@@ -40,6 +40,26 @@
     }
   },
   "meta": {
+    "4004.JP": {
+      "yf": "4004.T",
+      "name": "Resonac Holdings",
+      "exchange": "TSE",
+      "ccy": "JPY",
+      "fee": 0,
+      "availLTV": 50,
+      "theme": "Japan Chemicals",
+      "type": "Stock"
+    },
+    "992.HK": {
+      "yf": "0992.HK",
+      "name": "Lenovo Group",
+      "exchange": "HKG",
+      "ccy": "HKD",
+      "fee": 0,
+      "availLTV": 60,
+      "theme": "China Tech",
+      "type": "Stock"
+    },
     "SGM.AU": {
       "yf": "SGM.AX",
       "name": "Sims Ltd",
