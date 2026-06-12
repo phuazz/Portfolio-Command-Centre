@@ -94,5 +94,7 @@
   {"d":"2026-06-05","t":"SLV.US","a":"S","q":120,"p":62.15,"ccy":"USD","yf":"SLV","th":"Silver/Precious Metals"},
   {"d":"2026-06-11","t":"DELL.US","a":"B","q":25,"p":387.885,"ccy":"USD","yf":"DELL","th":"US Tech"},
   {"d":"2026-06-11","t":"LLY.US","a":"B","q":8,"p":1165.25,"ccy":"USD","yf":"LLY","th":"US Pharma"},
-  {"d":"2026-06-11","t":"MRVL.US","a":"B","q":50,"p":274.362,"ccy":"USD","yf":"MRVL","th":"US Semis"}
+  {"d":"2026-06-11","t":"MRVL.US","a":"B","q":50,"p":274.362,"ccy":"USD","yf":"MRVL","th":"US Semis"},
+  {"d":"2026-06-12","t":"4004.JP","a":"B","q":100,"p":17315,"ccy":"JPY","yf":"4004.T","th":"Japan Chemicals"},
+  {"d":"2026-06-12","t":"992.HK","a":"B","q":6000,"p":22.94,"ccy":"HKD","yf":"0992.HK","th":"China Tech"}
 ]
