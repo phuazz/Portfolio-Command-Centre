@@ -2151,57 +2151,25 @@ function calcAllocationRisk(ps, trades, pivot) {
     groups[k].mv += p.mktValueSGD || 0;
   }
 
-  // Priced subset only — bonds/cash/unpriced have no daily-return history.
-  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
+  // Priced subset, date axis and forward-filled close rows come from the
+  // unified core (the axis starts at the epoch, which is this engine's
+  // window start). Fixed-current-quantity convention below is unchanged:
+  // vol decomposition of the CURRENT allocation over historical moves.
+  const book = buildDailyBook(ps, trades);
+  const priced = book.priced;
+  const dates = book.dates;
 
-  // Unified date axis from YTD start onward, snapshot-extended with today.
-  const allDates = new Set();
-  for (const p of priced) {
-    for (const bar of p.history) {
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
-      if (ds >= startDateStr) allDates.add(ds);
-    }
-  }
-  let dates = [...allDates].sort();
-  dates = _maybeAppendTodayDate(dates, priced);
-
-  // Adjclose-based closeMatrix with seed-from-last-bar-before-window so
-  // staggered market openings do not produce first-day return artifacts.
-  // Snapshot-aware: today gets populated from p.mktPrice.
-  const closeMatrix = {};
-  const todayISO_alloc = new Date().toISOString().slice(0, 10);
-  for (const p of priced) {
-    closeMatrix[p.ticker] = {};
-    let seed = null;
-    for (let i = p.history.length - 1; i >= 0; i--) {
-      const bar = p.history[i];
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
-      if (ds < startDateStr) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
-    }
-    for (const bar of p.history) {
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0,10);
-      closeMatrix[p.ticker][ds] = bar.adjclose != null ? bar.adjclose : bar.close;
-    }
-    if (dates.length > 0 && dates[dates.length - 1] === todayISO_alloc && p.mktPrice != null) {
-      closeMatrix[p.ticker][todayISO_alloc] = p.mktPrice;
-    }
-    let last = seed;
-    for (const ds of dates) {
-      if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
-      else if (last != null) closeMatrix[p.ticker][ds] = last;
-    }
-  }
-
-  // Per-bucket daily value series using CURRENT qty (fixed-weights convention
+  // Per-bucket daily value series using CURRENT qty  // Per-bucket daily value series using CURRENT qty (fixed-weights convention
   // for vol decomposition — current allocation, historical price moves).
   // FX-as-of-date: each bar's value uses the FX rate observed on that date.
   const bucketValueSeries = {};
   for (const [k, g] of Object.entries(groups)) {
     const series = new Array(dates.length).fill(0);
     for (const p of g.positions) {
-      if (!closeMatrix[p.ticker]) continue;
+      const row = book.closeRows[p.ticker];
+      if (!row) continue;
       for (let i = 0; i < dates.length; i++) {
-        const px = closeMatrix[p.ticker][dates[i]];
+        const px = row[i];
         if (px != null) series[i] += p.qty * px * fxAtDate(p.ccy, dates[i]);
       }
     }
@@ -3861,122 +3829,145 @@ function _maybeAppendTodayDate(dates, priced) {
   return dates;
 }
 
-function calcTwrr(ps, trades, startDateStr) {
-  // 1. Priced equity universe: any position with usable history.
-  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
-  if (priced.length === 0) return { equityTwrr: 0, days: 0, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'No priced equity positions' };
+// ═══════════════════════════════════════════════════════════════
+//  UNIFIED VALUATION CORE (REFACTOR_PLAN_V2 Phase B)
+//  One memoised daily book from the 2026-01-01 epoch: union trading-date
+//  axis (snapshot-extended), forward-filled adjclose rows with pre-epoch
+//  seeds, a daily quantity walk per priced ticker, and the derived SGD
+//  series — equity NAV, tracked trade flows (held priced tickers: internal
+//  rotations against the cash pool) and untracked net flows (closed-out
+//  tickers: external to the book). FX is applied as of each date.
+//
+//  The NAV-series engines — getEquityCurve, calcTwrr, calcAllocationRisk —
+//  are projections of this object. The per-ticker engines
+//  (calcPortfolioPeriodPnL, calcAttribution, calcYtdAttribution) keep
+//  per-ticker windowing BY DESIGN: a shared global axis is precisely what
+//  caused the weekend-bake 1-Day collapse, so they share effectiveReturn()
+//  and the ledger instead of this matrix.
+//
+//  Memoised on _dataVersion plus the positions-array identity, so the
+//  10-second live poll rebuilds the matrix once per data change rather
+//  than once per engine call.
+// ═══════════════════════════════════════════════════════════════
+const BOOK_EPOCH = '2026-01-01';
+let _dailyBook = null, _dailyBookKey = '';
+function buildDailyBook(ps, trades) {
+  const key = _dataVersion + '|' + ps.length;
+  if (_dailyBook && _dailyBookKey === key && _dailyBook._ps === ps) return _dailyBook;
 
-  // 2. Unified date axis = union of all bar dates >= startDate.
+  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
+
+  // 1. Axis: union of bar dates >= epoch across priced tickers, extended
+  //    with today when any live snapshot is fresher than its last bar.
   const allDates = new Set();
   for (const p of priced) {
     for (const bar of p.history) {
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const ds = d.toISOString().slice(0, 10);
-      if (ds >= startDateStr) allDates.add(ds);
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+      if (ds >= BOOK_EPOCH) allDates.add(ds);
     }
   }
   let dates = [...allDates].sort();
-  // Extend dates with today's snapshot point when the pipeline has not yet
-  // appended today's bar. This ensures the right-edge TWRR reading reflects
-  // today's intraday move (closeMatrix below populates today from p.mktPrice).
   dates = _maybeAppendTodayDate(dates, priced);
-  if (dates.length < 2) return { equityTwrr: 0, days: dates.length, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'Not enough trading dates in window' };
+  const idx = {};
+  dates.forEach((d, i) => { idx[d] = i; });
 
-  // 3. Index trades by ticker × date for the qty walk, and by date alone for cash-flow aggregation.
-  const tradesByTickerDate = {};
-  const tradesByDate = {};
-  for (const t of trades) {
-    if (!tradesByTickerDate[t.t]) tradesByTickerDate[t.t] = {};
-    if (!tradesByTickerDate[t.t][t.d]) tradesByTickerDate[t.t][t.d] = [];
-    tradesByTickerDate[t.t][t.d].push(t);
-    if (!tradesByDate[t.d]) tradesByDate[t.d] = [];
-    tradesByDate[t.d].push(t);
+  // 2. Forward-filled adjclose rows, seeded from the last close before the
+  //    epoch; the appended today (if any) reads the live snapshot price.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const closeRows = {};
+  for (const p of priced) {
+    const byDate = {};
+    let seed = null;
+    for (let i = p.history.length - 1; i >= 0; i--) {
+      const bar = p.history[i];
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+      if (ds < BOOK_EPOCH) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
+    }
+    for (const bar of p.history) {
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+      byDate[ds] = bar.adjclose != null ? bar.adjclose : bar.close;
+    }
+    if (dates.length > 0 && dates[dates.length - 1] === todayISO && p.mktPrice != null) {
+      byDate[todayISO] = p.mktPrice;
+    }
+    const row = new Array(dates.length);
+    let last = seed;
+    for (let i = 0; i < dates.length; i++) {
+      if (byDate[dates[i]] != null) last = byDate[dates[i]];
+      row[i] = last;   // stays null before a ticker's first observation when unseeded
+    }
+    closeRows[p.ticker] = row;
   }
 
-  // 4. qty trajectory per ticker: start at jan1Qty, apply trades chronologically (post-trade snapshot per date).
-  const qtyMatrix = {};
+  // 3. Trade indices.
+  const tradesByTickerDate = {}, tradesByDate = {};
+  for (const t of trades) {
+    (tradesByTickerDate[t.t] = tradesByTickerDate[t.t] || {});
+    (tradesByTickerDate[t.t][t.d] = tradesByTickerDate[t.t][t.d] || []).push(t);
+    (tradesByDate[t.d] = tradesByDate[t.d] || []).push(t);
+  }
+
+  // 4. Daily quantity walk: epoch quantity inferred from the full ledger
+  //    (current minus net flow), fills applied on their trade dates.
+  const qtyRows = {};
   for (const p of priced) {
     const all = trades.filter(t => t.t === p.ticker);
     const buyTotal  = all.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
     const sellTotal = all.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
-    let qty = p.qty - buyTotal + sellTotal;     // jan-1 inferred qty
-    qtyMatrix[p.ticker] = {};
-    for (const ds of dates) {
-      const tt = tradesByTickerDate[p.ticker]?.[ds] || [];
+    let qty = p.qty - buyTotal + sellTotal;
+    const row = new Array(dates.length);
+    for (let i = 0; i < dates.length; i++) {
+      const tt = tradesByTickerDate[p.ticker] && tradesByTickerDate[p.ticker][dates[i]] || [];
       for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
-      qtyMatrix[p.ticker][ds] = qty;
+      row[i] = qty;
     }
+    qtyRows[p.ticker] = row;
   }
 
-  // 5. close matrix per ticker × date with forward-fill, SEEDED from the last
-  // close BEFORE the window. Without the seed, staggered market openings make
-  // NAV ramp up over the first few days and Modified Dietz mis-reads it as
-  // organic return.
-  // Adjclose-based close matrix with seed-from-last-bar-before-window. Using
-  // adjclose makes the TWRR a total-return number (dividends rolled in via
-  // Yahoo's split- and dividend-adjusted series).
-  const closeMatrix = {};
-  const todayISO_twrr = new Date().toISOString().slice(0, 10);
-  for (const p of priced) {
-    closeMatrix[p.ticker] = {};
-    let lastCloseBeforeWindow_twrr = null;
-    for (let i = p.history.length - 1; i >= 0; i--) {
-      const bar = p.history[i];
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const ds = d.toISOString().slice(0, 10);
-      if (ds < startDateStr) { lastCloseBeforeWindow_twrr = bar.adjclose != null ? bar.adjclose : bar.close; break; }
-    }
-    for (const bar of p.history) {
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const ds = d.toISOString().slice(0, 10);
-      closeMatrix[p.ticker][ds] = bar.adjclose != null ? bar.adjclose : bar.close;
-    }
-    // Snapshot-aware: populate today with the live snapshot price.
-    if (dates.length > 0 && dates[dates.length - 1] === todayISO_twrr && p.mktPrice != null) {
-      closeMatrix[p.ticker][todayISO_twrr] = p.mktPrice;
-    }
-    let last = lastCloseBeforeWindow_twrr;
-    for (const ds of dates) {
-      if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
-      else if (last != null) closeMatrix[p.ticker][ds] = last;
-    }
-  }
-
-  // 6. Daily equity NAV + daily trade cash flow (SGD, sign-adjusted from equity-sub perspective).
-  //    + flow = buy (cash INTO equity);  − flow = sell (cash OUT of equity into the cash bucket).
-  // FX-as-of-date: NAV bars use FX as of the bar's date; trade CFs use FX
-  // as of the trade date.
-  const navByDate = {};
-  const cfByDate = {};
-  for (const ds of dates) {
+  // 5. Derived daily SGD series.
+  const navRow = new Array(dates.length).fill(0);
+  const cfRow = new Array(dates.length).fill(0);
+  const untrackedRow = new Array(dates.length).fill(0);
+  for (let i = 0; i < dates.length; i++) {
+    const ds = dates[i];
     let nav = 0;
     for (const p of priced) {
-      const qty = qtyMatrix[p.ticker][ds];
-      const px  = closeMatrix[p.ticker][ds];
-      if (qty > 0 && px != null) nav += qty * px * fxAtDate(p.ccy, ds);
+      const q = qtyRows[p.ticker][i], px = closeRows[p.ticker][i];
+      if (q > 0 && px != null) nav += q * px * fxAtDate(p.ccy, ds);
     }
-    navByDate[ds] = nav;
-
-    let cf = 0;
+    navRow[i] = nav;
+    let cf = 0, untracked = 0;
     for (const t of (tradesByDate[ds] || [])) {
       const pos = ps.find(p => p.ticker === t.t);
-      if (!pos || !pos.history || pos.history.length < 50 || pos.type === 'Bond' || pos.type === 'Cash') continue;
-      const fx = fxAtDate(pos.ccy, t.d);
-      const usd = t.q * t.p * fx;
-      cf += (t.a === 'B' ? usd : -usd);
+      const isPricedEquity = pos && pos.history && pos.history.length >= 50 && pos.type !== 'Bond' && pos.type !== 'Cash';
+      if (isPricedEquity) cf += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(pos.ccy, t.d);
+      else untracked += (t.a === 'S' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
     }
-    cfByDate[ds] = cf;
+    cfRow[i] = cf;
+    untrackedRow[i] = untracked;
   }
 
-  // 7. Geometric link of daily Modified-Dietz sub-period returns.
-  //    Sub-period return = (EMV − CF) / BMV − 1
-  //    (CF assumed at end of period — simplest Dietz; mid-period weighting is a 2nd-order refinement.)
-  let cumRet = 1;
-  let flowCount = 0, flowTotalSGD = 0;
-  for (let i = 1; i < dates.length; i++) {
-    const bmv = navByDate[dates[i - 1]];
-    const emv = navByDate[dates[i]];
-    const cf  = cfByDate[dates[i]];
+  _dailyBook = { dates, idx, priced, closeRows, qtyRows, navRow, cfRow, untrackedRow, _ps: ps };
+  _dailyBookKey = key;
+  return _dailyBook;
+}
+
+function calcTwrr(ps, trades, startDateStr) {
+  // Projection of the unified core: geometric linking of daily Modified
+  // Dietz sub-period returns over the equity NAV series, with tracked trade
+  // flows as the external cash flows of the equity sub-portfolio.
+  const book = buildDailyBook(ps, trades);
+  if (book.priced.length === 0) return { equityTwrr: 0, days: 0, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'No priced equity positions' };
+  let startIdx = 0;
+  while (startIdx < book.dates.length && book.dates[startIdx] < startDateStr) startIdx++;
+  const n = book.dates.length - startIdx;
+  if (n < 2) return { equityTwrr: 0, days: Math.max(0, n), flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'Not enough trading dates in window' };
+
+  let cumRet = 1, flowCount = 0, flowTotalSGD = 0;
+  for (let i = startIdx + 1; i < book.dates.length; i++) {
+    const bmv = book.navRow[i - 1];
+    const emv = book.navRow[i];
+    const cf  = book.cfRow[i];
     if (bmv <= 0) continue;
     const r = (emv - cf) / bmv - 1;
     if (isFinite(r)) cumRet *= (1 + r);
@@ -3985,11 +3976,11 @@ function calcTwrr(ps, trades, startDateStr) {
 
   return {
     equityTwrr: (cumRet - 1) * 100,
-    days: dates.length,
+    days: n,
     flowCount,
     flowTotalSGD,
-    bmv: navByDate[dates[0]],
-    emv: navByDate[dates[dates.length - 1]],
+    bmv: book.navRow[startIdx],
+    emv: book.navRow[book.dates.length - 1],
   };
 }
 
@@ -4003,126 +3994,20 @@ function calcTwrr(ps, trades, startDateStr) {
 //            startNav, currentNav, totalReturnPct, maxDrawdown:{value,date,from},
 //            bestDay:{date,return}, worstDay:{date,return} }
 function getEquityCurve(ps, trades, startDateStr) {
-  const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
-  if (priced.length === 0) return { dates: [], nav: [], error: 'No priced positions' };
-
-  // Build unified date axis from window-start onward, then extend with
-  // today's snapshot point if the pipeline has not yet baked today's bar.
-  const allDates = new Set();
-  for (const p of priced) {
-    for (const bar of p.history) {
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const ds = d.toISOString().slice(0, 10);
-      if (ds >= startDateStr) allDates.add(ds);
-    }
-  }
-  let dates = [...allDates].sort();
-  dates = _maybeAppendTodayDate(dates, priced);
+  // Projection of the unified core: slice the daily book at the window start
+  // and hand the equity NAV, tracked-flow and untracked-flow series to the
+  // cash walk and Modified Dietz machinery below.
+  const book = buildDailyBook(ps, trades);
+  if (book.priced.length === 0) return { dates: [], nav: [], error: 'No priced positions' };
+  let startIdx = 0;
+  while (startIdx < book.dates.length && book.dates[startIdx] < startDateStr) startIdx++;
+  const dates = book.dates.slice(startIdx);
   if (dates.length < 2) return { dates, nav: [], error: 'Not enough trading days' };
+  const equityAll = book.navRow.slice(startIdx);
+  const cfAll = book.cfRow.slice(startIdx);
+  const untrackedNetAll = book.untrackedRow.slice(startIdx);
 
-  // Index trades
-  const tradesByTickerDate = {};
-  const tradesByDate = {};
-  for (const t of trades) {
-    if (!tradesByTickerDate[t.t]) tradesByTickerDate[t.t] = {};
-    if (!tradesByTickerDate[t.t][t.d]) tradesByTickerDate[t.t][t.d] = [];
-    tradesByTickerDate[t.t][t.d].push(t);
-    if (!tradesByDate[t.d]) tradesByDate[t.d] = [];
-    tradesByDate[t.d].push(t);
-  }
-
-  // Reconstruct qty per ticker per date.
-  // For YTD window: jan1Qty = currentQty - net flow over window.
-  // For 1M/3M window: similar, but only YTD trades in our ledger so we
-  // walk net flow from start-of-window forward.
-  const qtyMatrix = {};
-  for (const p of priced) {
-    // Compute the qty as of the start of the window:
-    // qtyAtStart = currentQty - net flow from start-of-window through today
-    const tradesInWindow = trades.filter(t => t.t === p.ticker && t.d >= startDateStr);
-    const buyInWindow  = tradesInWindow.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
-    const sellInWindow = tradesInWindow.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
-    let qty = p.qty - buyInWindow + sellInWindow;
-    qtyMatrix[p.ticker] = {};
-    for (const ds of dates) {
-      const tt = tradesByTickerDate[p.ticker]?.[ds] || [];
-      for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
-      qtyMatrix[p.ticker][ds] = qty;
-    }
-  }
-
-  // Close matrix with forward fill, SEEDED from the last close BEFORE the
-  // window. Without the seed, staggered market openings (US Jan 2, HK Jan 5,
-  // JPN Jan 4, etc.) cause NAV to ramp up over the first few days as each
-  // market reports its first window bar — Modified Dietz then mis-reads
-  // that ramp as a sub-period return. Seeding fixes the first-day artifact.
-  // Adjclose-based close matrix with seed-from-last-bar-before-window.
-  // Snapshot-aware: today's date (if appended) gets populated with p.mktPrice.
-  const closeMatrix = {};
-  const todayISO_ec = new Date().toISOString().slice(0, 10);
-  for (const p of priced) {
-    closeMatrix[p.ticker] = {};
-    let lastCloseBeforeWindow = null;
-    for (let i = p.history.length - 1; i >= 0; i--) {
-      const bar = p.history[i];
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const ds = d.toISOString().slice(0, 10);
-      if (ds < startDateStr) { lastCloseBeforeWindow = bar.adjclose != null ? bar.adjclose : bar.close; break; }
-    }
-    for (const bar of p.history) {
-      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-      const ds = d.toISOString().slice(0, 10);
-      closeMatrix[p.ticker][ds] = bar.adjclose != null ? bar.adjclose : bar.close;
-    }
-    if (dates.length > 0 && dates[dates.length - 1] === todayISO_ec && p.mktPrice != null) {
-      closeMatrix[p.ticker][todayISO_ec] = p.mktPrice;
-    }
-    let last = lastCloseBeforeWindow;
-    for (const ds of dates) {
-      if (closeMatrix[p.ticker][ds] != null) last = closeMatrix[p.ticker][ds];
-      else if (last != null) closeMatrix[p.ticker][ds] = last;
-    }
-  }
-
-  // CASH-INCLUDED-NAV: compute equity NAV per day, plus cash + bond/unpriced
-  // constant, so total NAV reflects the full portfolio. Trades become
-  // internal rotations between equity and cash buckets — no external CF.
-  // FX-as-of-date: each historical NAV bar uses the FX rate observed on
-  // that date (via fxAtDate), so FX drift no longer contaminates the
-  // equity-only return signal.
-  const equityAll = [], cfAll = [], untrackedNetAll = [];
-  for (const ds of dates) {
-    let n = 0;
-    for (const p of priced) {
-      const q = qtyMatrix[p.ticker][ds];
-      const px = closeMatrix[p.ticker][ds];
-      if (q > 0 && px != null) n += q * px * fxAtDate(p.ccy, ds);
-    }
-    equityAll.push(n);
-    let c = 0, untracked = 0;
-    for (const t of (tradesByDate[ds] || [])) {
-      const pos = ps.find(p => p.ticker === t.t);
-      const isPricedEquity = pos && pos.history && pos.history.length >= 50 && pos.type !== 'Bond' && pos.type !== 'Cash';
-      if (isPricedEquity) {
-        // Tracked position: the trade is an internal rotation between this curve's
-        // equity sleeve and its cash pool. FX-as-of-trade-date (trade currency at
-        // the time of execution).
-        c += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(pos.ccy, t.d);
-      } else {
-        // Closed-out (untracked) position: its equity history is not in this curve,
-        // so the trade cannot be a rotation. A sale enters the cash pool as an
-        // EXTERNAL INFLOW; an in-year buy that was later fully closed is an EXTERNAL
-        // OUTFLOW (cash left the curve into an untracked asset). The net is stripped
-        // from the return — the round-trip P&L lives in the FIFO attribution, so
-        // counting it here would double-count.
-        untracked += (t.a === 'S' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
-      }
-    }
-    cfAll.push(c);
-    untrackedNetAll.push(untracked);
-  }
-
-  // Honest cash trajectory, reconstructed FORWARD from a near-zero 1 January
+  // Honest cash trajectory, reconstructed FORWARD  // Honest cash trajectory, reconstructed FORWARD from a near-zero 1 January
   // base. The book carried no material idle cash into the year — today's cash is
   // entirely tactical proceeds from recent sells awaiting redeployment. cfAll[i]
   // already holds each day's net equity trade flow in SGD (positive = bought, so

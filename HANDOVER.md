@@ -41,10 +41,12 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
   row once broker records are checked.
 - `costAdjustments` carries small broker-fee residues (S$9–220 on nine
   tickers) absorbed from the old hand-maintained cost figures.
-- Engine architecture: six engines still re-derive shared primitives — that
-  is v2 Phase B (unified valuation core), gated on golden numbers. Phase C
-  adds FX-decomposed and since-inception attribution plus a cash-impact
-  panel. See `REFACTOR_PLAN_V2.md`.
+- Engine architecture: the NAV-series engines (equity curve, TWRR,
+  allocation risk) run as projections of the memoised `buildDailyBook()`
+  core since v2 Phase B; the per-ticker engines (period P&L, attribution,
+  FIFO) keep per-ticker windowing by design. Phase C (FX-decomposed and
+  since-inception attribution plus a cash-impact panel) is next. See
+  `REFACTOR_PLAN_V2.md`.
 - If corsproxy.io degrades under polling, Phase D (own Cloudflare Worker) is
   the designed fallback.
 

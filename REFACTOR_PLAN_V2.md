@@ -216,6 +216,41 @@ fails parity, revert that engine only — the projections are independent.
 
 Dependencies. Phase A deployed and stable.
 
+Post-flight note (2026-06-12). Completed, with one deliberate re-scope. A
+memoised `buildDailyBook(ps, trades)` now produces the daily book from the
+2026-01-01 epoch — union trading-date axis (snapshot-extended), forward-filled
+adjclose rows with pre-epoch seeds, the daily quantity walk, and the derived
+SGD series (equity NAV, tracked trade flows, untracked closed-position
+flows). `getEquityCurve`, `calcTwrr` and `calcAllocationRisk` are now
+projections of it: the curve and TWRR slice the series at their window start
+(forward-fill associativity makes an epoch-rooted matrix exact for any
+sub-window), and the allocation engine consumes the axis and close rows while
+keeping its fixed-current-quantity convention. Three duplicated
+axis-plus-close-matrix builders and two duplicated quantity walks are retired;
+the patch removed more code than the documented core added. Memoisation is
+keyed on `_dataVersion` plus the positions-array identity, so the 10-second
+live poll builds the matrix once per data change rather than once per engine
+call.
+
+Re-scope, recorded as a deliberate decision: `calcPortfolioPeriodPnL`,
+`calcAttribution` and `calcYtdAttribution` were listed for the same swap but
+are intentionally NOT moved onto the shared matrix. They are per-ticker
+window and lot engines — the per-ticker windowing in the period engine is
+itself the fix for the June weekend-bake bug, where a shared global axis
+collapsed the 1-Day P&L, and the FIFO engine walks lots, not dates. Forcing
+them onto a global axis would reintroduce a known bug class for zero
+duplication gain; they already share `effectiveReturn()` and the ledger.
+
+Parity gate passed in full on the baked data with auto-refresh off: period
+P&L (1D/1W/1M including equity-sleeve percentages and counts), FIFO YTD
+(dollar, percentage, start basis, zero flags), attribution at all three
+horizons, TWRR (return, days, flow count, BMV, EMV), the equity curve on both
+YTD and 1M windows (total return, start/current NAV, Sharpe, Sortino, Calmar,
+max drawdown, annualised vol, date count, MWRR, net CF), all four allocation
+pivots and the benchmark curve — every figure identical to four decimal
+places against the pre-change golden capture. All six tabs render; no console
+errors; repeated core calls return the same memoised object.
+
 ### Phase C — Attribution v2 (one to two sessions)
 
 Scope. The analytics the owner has asked for, built on the unified core.
