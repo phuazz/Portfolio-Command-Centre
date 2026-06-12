@@ -36,11 +36,24 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
 
 ## Known items
 
-- `ledgerOverrides` in `book.json` carries PHAG.GB: bought 100 @ 82.70 on
-  25-Feb-2026, sale never recorded. Replace the override with the real sell
-  row once broker records are checked.
+- The ledger needs a full reconciliation against broker statements. A spot
+  check of the March 2026 SCB transaction history (02–09 Mar window) found
+  at least seven executed trades absent from the ledger (9660.HK, XCSI.GB,
+  MAR.US, XMED.GB sells; COPX, SLV, SXLE.GB buys/sells) and date/price
+  mismatches on recorded rows (ledger SLV 10-Mar B 100 @ 80.64 vs statement
+  09-Mar B 120 @ 76.80; ledger OXY 23-Feb B 150 @ 52.67 vs statement 02-Mar
+  B 150 @ 54.25). Current positions and cash are correct (statement-anchored)
+  but per-name YTD realised P&L and intra-year trajectories carry the
+  approximation error. Do NOT add statement rows piecemeal — sells of
+  never-recorded round-trips break the replay without their buy/opening
+  sides, and the back-solved opening book must be recomputed alongside. The
+  right fix is a dedicated reconciliation session over complete Jan–Jun
+  statements (PHAG.GB was resolved exactly this way: real sell row added,
+  override deleted).
 - `costAdjustments` carries small broker-fee residues (S$9–220 on nine
   tickers) absorbed from the old hand-maintained cost figures.
+- `cashAnchor` re-anchored 2026-06-11 to actual SCB balances (incl. a small
+  AUD bucket); the deltas absorbed accumulated dividends, interest and fees.
 - Engine architecture: the NAV-series engines (equity curve, TWRR,
   allocation risk) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,

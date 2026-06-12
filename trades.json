@@ -21,6 +21,7 @@
   {"d":"2026-02-25","t":"PHAG.GB","a":"B","q":100,"p":82.7,"ccy":"USD","yf":"PHAG.L","th":"Silver/Precious Metals"},
   {"d":"2026-02-26","t":"SLV.US","a":"S","q":90,"p":77.7,"ccy":"USD","yf":"SLV","th":"Silver/Precious Metals"},
   {"d":"2026-02-27","t":"SLV.US","a":"B","q":80,"p":82.72,"ccy":"USD","yf":"SLV","th":"Silver/Precious Metals"},
+  {"d":"2026-03-03","t":"PHAG.GB","a":"S","q":100,"p":76.34,"ccy":"USD","yf":"PHAG.L","th":"Silver/Precious Metals","fee":16.64},
   {"d":"2026-03-09","t":"COPX.US","a":"S","q":100,"p":76.46,"ccy":"USD","yf":"COPX","th":"Copper/Commodities"},
   {"d":"2026-03-09","t":"IBIT.US","a":"B","q":235,"p":39.23,"ccy":"USD","yf":"IBIT","th":"Crypto/Bitcoin"},
   {"d":"2026-03-09","t":"MRVL.US","a":"B","q":100,"p":85.618,"ccy":"USD","yf":"MRVL","th":"US Semis"},
