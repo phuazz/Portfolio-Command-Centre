@@ -193,6 +193,32 @@ inputs. Third: future deposit/withdrawal rows (`"a": "D"`/`"W"`) are filtered
 out before the engines see them, so the row type can be introduced in
 Phase C without engine changes.
 
+### Phase A.1 — Ledger reconciliation against broker statements (executed 2026-06-12)
+
+Unplanned phase, inserted after a spot check of the March SCB transaction
+history revealed fills absent from the inherited ledger. Six monthly SCB
+statements (issued 01/01/2026 through 01/06/2026, i.e. month-ends Dec-2025
+to May-2026) were parsed mechanically (pdfplumber over the text layer; the
+per-currency ACCOUNT MOVEMENT sections carry every fill with date, quantity,
+price and cash movement, from which fees are derived; cancelled bookings are
+netted). Reconciliation outcome: 87 of 88 ledger rows matched the statements
+exactly; one row needed exchange reattribution (the 23-Mar GDX buy was ARCA,
+proven by the broker average); nine fills were missing, including four whole
+round-trips never recorded (9660.HK, MAR.US, XMED.GB, XCSI.GB — together
+about +S$2.5k of unbooked realised P&L).
+
+The ledger and book were rebuilt from source: Jan–May fills statement-sourced
+with explicit fees; June fills retained (order-screen verified); the opening
+book and epoch closes taken from the December 2025 statement (replacing the
+Phase A back-solve); cost basis made fee-inclusive in the replay, matching
+the broker average convention. Gates: replayed holdings tie to all five 2026
+month-end statements exactly on quantity, and on average cost within broker
+rounding (a persistent 3.06 residue on IGV is pinned via costAdjustments);
+cash buckets re-derive to the anchored actuals unchanged; all engines run
+clean with zero FIFO flags, and the displayed averages now equal the
+broker's own figures. YTD analytics shifted as intended — that movement IS
+the correction the reconciliation exists to deliver.
+
 ### Phase B — Unified valuation core (one to two sessions)
 
 Scope. One `buildDailyBook(book, trades, history, fxHistory)` producing the

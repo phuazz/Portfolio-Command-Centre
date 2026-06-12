@@ -1,5 +1,5 @@
 {
-  "_comment": "Opening book at the epoch plus static metadata. See REFACTOR_PLAN_V2.md Phase A. cashAnchor.balances are last-reconciled brokerage balances as at end of cashAnchor.date; trades dated strictly after it adjust the buckets. costAdjustments absorb broker fees baked into historical cost figures for positions whose opening lot zero-crossed during the year. ledgerOverrides are named, logged patches over known ledger gaps — each one should eventually be replaced by the real missing trade rows.",
+  "_comment": "Opening book at the epoch plus static metadata. See REFACTOR_PLAN_V2.md Phase A. cashAnchor.balances are last-reconciled brokerage balances as at end of cashAnchor.date; trades dated strictly after it adjust the buckets. costAdjustments absorb broker fees baked into historical cost figures for positions whose opening lot zero-crossed during the year. ledgerOverrides are named, logged patches over known ledger gaps â€” each one should eventually be replaced by the real missing trade rows. Rebuilt 2026-06-12 from SCB monthly statements Dec-2025 to May-2026 (Phase A.1 reconciliation): opening book and epoch closes from the December 2025 statement; Jan-May fills statement-sourced with explicit fees; cost basis is fee-inclusive, matching the broker average convention.",
   "epoch": "2026-01-01",
   "cashAnchor": {
     "date": "2026-06-11",
@@ -12,27 +12,31 @@
     }
   },
   "epochCloses": {
-    "UBER.US": 81.71,
-    "XPEV.US": 20.28,
-    "BIDU.US": 130.66,
-    "GREK.US": 65.91,
-    "OXY.US": 41.12,
-    "SXLE.GB": 36.0175,
+    "1615.JP": 528.2,
+    "3010.HK": 71.0,
+    "3173.HK": 9.415,
+    "9660.HK": 8.66,
+    "9961.HK": 554.0,
     "9988.HK": 142.8,
+    "ARGT.US": 91.41,
+    "BIDU.US": 130.66,
+    "COPX.US": 71.79,
+    "GDX.GB": 97.5054,
     "GE.US": 308.03,
-    "9961.HK": 554,
-    "SLV.US": 64.42
+    "GREK.US": 65.91,
+    "MAR.US": 310.24,
+    "MSFT.US": 483.62,
+    "REMX.US": 73.92,
+    "SLV.US": 64.42,
+    "TAN.US": 49.12,
+    "TSLA.US": 449.72,
+    "UBER.US": 81.71,
+    "XCSI.GB": 47.53,
+    "XMED.GB": 125.58,
+    "XPEV.US": 20.28
   },
   "costAdjustments": {
-    "SGM.AU": 24.36,
-    "2338.HK": 219.8,
-    "3750.HK": 220.01,
-    "GDX.US": 18.03,
-    "XLE.US": 20.04,
-    "INTC.US": 10.23,
-    "MRVL.US": 9.33,
-    "SPHR.US": 16.87,
-    "SOI.FR": 9.49
+    "IGV.US": 3.06
   },
   "ledgerOverrides": {},
   "meta": {
@@ -757,74 +761,180 @@
       "type": "Cash",
       "account": "Brokerage",
       "mktPriceSnap": 1
+    },
+    "9660.HK": {
+      "yf": "9660.HK",
+      "name": "Horizon Robotics",
+      "exchange": "HKG",
+      "ccy": "HKD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "China AI/Robotics",
+      "type": "Stock"
+    },
+    "MAR.US": {
+      "yf": "MAR",
+      "name": "Marriott International",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "US Travel",
+      "type": "Stock"
+    },
+    "XMED.GB": {
+      "yf": null,
+      "name": "Xtrackers Europe Health ETF",
+      "exchange": "LSE",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Europe Healthcare",
+      "type": "ETF"
+    },
+    "XCSI.GB": {
+      "yf": null,
+      "name": "Xtrackers CSI500 UCITS ETF",
+      "exchange": "LSE",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "China Equity",
+      "type": "ETF"
     }
   },
   "positions": [
     {
+      "ticker": "ARGT.US",
+      "qty": 125.0,
+      "avgPrice": 61.3434,
+      "invested": 7667.93
+    },
+    {
+      "ticker": "COPX.US",
+      "qty": 130.0,
+      "avgPrice": 65.7531,
+      "invested": 8547.9
+    },
+    {
+      "ticker": "GREK.US",
+      "qty": 150.0,
+      "avgPrice": 64.1395,
+      "invested": 9620.92
+    },
+    {
+      "ticker": "REMX.US",
+      "qty": 150.0,
+      "avgPrice": 68.9099,
+      "invested": 10336.48
+    },
+    {
+      "ticker": "SLV.US",
+      "qty": 180.0,
+      "avgPrice": 25.0535,
+      "invested": 4509.63
+    },
+    {
+      "ticker": "TAN.US",
+      "qty": 200.0,
+      "avgPrice": 48.9127,
+      "invested": 9782.54
+    },
+    {
       "ticker": "3010.HK",
-      "qty": 1600,
+      "qty": 1600.0,
       "avgPrice": 60.7377,
       "invested": 97180.32
     },
     {
       "ticker": "3173.HK",
-      "qty": 11750,
+      "qty": 11750.0,
       "avgPrice": 7.4,
-      "invested": 86950
+      "invested": 86950.0
     },
     {
-      "ticker": "1615.JP",
-      "qty": 3000,
-      "avgPrice": 383.6613,
-      "invested": 1150983.9
+      "ticker": "9660.HK",
+      "qty": 6000.0,
+      "avgPrice": 7.3949,
+      "invested": 44369.4
     },
     {
-      "ticker": "ARGT.US",
-      "qty": 125,
-      "avgPrice": 61.510527,
-      "invested": 7688.8159
+      "ticker": "9961.HK",
+      "qty": 250.0,
+      "avgPrice": 318.9063,
+      "invested": 79726.57
     },
     {
-      "ticker": "COPX.US",
-      "qty": 230,
-      "avgPrice": 73.664745,
-      "invested": 16942.8914
+      "ticker": "9988.HK",
+      "qty": 700.0,
+      "avgPrice": 108.3638,
+      "invested": 75854.66
     },
     {
-      "ticker": "REMX.US",
-      "qty": 150,
-      "avgPrice": 68.9099,
-      "invested": 10336.48
+      "ticker": "GDX.GB",
+      "qty": 200.0,
+      "avgPrice": 59.2868,
+      "invested": 11857.36
     },
     {
-      "ticker": "TAN.US",
-      "qty": 200,
-      "avgPrice": 48.8964,
-      "invested": 9779.28
+      "ticker": "XCSI.GB",
+      "qty": 220.0,
+      "avgPrice": 30.4011,
+      "invested": 6688.24
     },
     {
-      "ticker": "OXY.US",
-      "qty": 150,
-      "avgPrice": 41.12,
-      "invested": 6168
+      "ticker": "XMED.GB",
+      "qty": 100.0,
+      "avgPrice": 98.4455,
+      "invested": 9844.55
+    },
+    {
+      "ticker": "BIDU.US",
+      "qty": 60.0,
+      "avgPrice": 133.9913,
+      "invested": 8039.48
+    },
+    {
+      "ticker": "MAR.US",
+      "qty": 35.0,
+      "avgPrice": 294.6709,
+      "invested": 10313.48
     },
     {
       "ticker": "MSFT.US",
-      "qty": 30,
+      "qty": 30.0,
       "avgPrice": 249.6421,
       "invested": 7489.26
     },
     {
       "ticker": "TSLA.US",
-      "qty": 22,
+      "qty": 22.0,
       "avgPrice": 343.2468,
       "invested": 7551.43
     },
     {
-      "ticker": "GDX.GB",
-      "qty": 200,
-      "avgPrice": 59.286769,
-      "invested": 11857.3538
+      "ticker": "GE.US",
+      "qty": 40.0,
+      "avgPrice": 210.107,
+      "invested": 8404.28
+    },
+    {
+      "ticker": "UBER.US",
+      "qty": 100.0,
+      "avgPrice": 78.17,
+      "invested": 7817.0
+    },
+    {
+      "ticker": "XPEV.US",
+      "qty": 400.0,
+      "avgPrice": 21.6471,
+      "invested": 8658.84
+    },
+    {
+      "ticker": "1615.JP",
+      "qty": 3000.0,
+      "avgPrice": 383.6613,
+      "invested": 1150983.9
     },
     {
       "ticker": "GAB",
@@ -1005,60 +1115,6 @@
       "qty": 13500,
       "avgPrice": 1,
       "invested": 13500
-    },
-    {
-      "ticker": "SLV.US",
-      "qty": 220,
-      "avgPrice": 64.42,
-      "invested": 14172.4
-    },
-    {
-      "ticker": "UBER.US",
-      "qty": 100,
-      "avgPrice": 81.71,
-      "invested": 8171
-    },
-    {
-      "ticker": "XPEV.US",
-      "qty": 400,
-      "avgPrice": 20.28,
-      "invested": 8112
-    },
-    {
-      "ticker": "BIDU.US",
-      "qty": 60,
-      "avgPrice": 130.66,
-      "invested": 7839.6
-    },
-    {
-      "ticker": "GREK.US",
-      "qty": 150,
-      "avgPrice": 65.91,
-      "invested": 9886.5
-    },
-    {
-      "ticker": "9961.HK",
-      "qty": 250,
-      "avgPrice": 554,
-      "invested": 138500
-    },
-    {
-      "ticker": "SXLE.GB",
-      "qty": 150,
-      "avgPrice": 36.0175,
-      "invested": 5402.625
-    },
-    {
-      "ticker": "9988.HK",
-      "qty": 700,
-      "avgPrice": 142.8,
-      "invested": 99960
-    },
-    {
-      "ticker": "GE.US",
-      "qty": 40,
-      "avgPrice": 308.03,
-      "invested": 12321.2
     }
   ]
 }
