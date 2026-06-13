@@ -347,12 +347,41 @@ the data-integrity rule, so the panel shows only rigorous quantities (current
 exposure, FX sensitivity, short-window FX P&L, portfolio drag). The deferred
 figures are gated on the deposit/dividend ledger-row enhancement (section 6).
 
-Remaining Phase C deliverables (next sessions): explicit deposit/withdrawal and
-dividend ledger rows (unlocks rigorous YTD per-currency cash analytics and the
-income view); per-position FX columns in the Top-Contributors lists
-(theme-level and portfolio FX are done); Since-Inception horizon; calendar-year
-and rolling-12M tables. The statement dividends extracted in Phase A.1 are the
-natural source for the dividend rows.
+Post-flight note (2026-06-13) — Phase C.3 (per-position FX) and Phase C close.
+Added the Local/FX/Total split to the per-position Top-Contributors and
+Top-Detractors lists (Return · FX · Contrib pp), completing the "per position
+and per theme" FX decomposition. SGD names correctly show zero FX; no console
+errors. With this, the substantive Phase C analytics are delivered: C.1 FX
+decomposition (theme + portfolio), C.2 tactical-cash impact panel, C.3
+per-position FX.
+
+Phase C is closed here, with two deliverables deliberately NOT built after the
+data contradicted their premise:
+
+  Deposit/withdrawal + dividend ledger rows — CONTRAINDICATED. Inspecting the
+  statements for this work revealed the SCB securities account is a swept
+  clearing account, not a cash store: every buy is funded by a matching
+  "Transfer fm bank A/C" and every sale swept out via "Transfer to bank A/C",
+  with month-end Balance C/F at 0.00; the investable cash lives in a linked
+  bank account outside these statements. A per-currency YTD average balance is
+  therefore a transient-settlement artefact (≈ zero between trades), not a
+  strategic position — the metric the deferred analytics promised is not
+  decision-useful. And brokerage cash dividends are negligible (one row, MSFT
+  US$19.11 YTD; most dividend payers are in CDP, and dividends already flow
+  into every return figure via dividend-adjusted closes). Building the rows
+  would be heavy ledger/replay plumbing for no decision value.
+
+  Since-Inception horizon and calendar-year / rolling-12M tables — PREMATURE.
+  Since-Inception is identical to YTD until January 2027; the calendar and
+  rolling tables need more than one year of ledger. Revisit when the ledger
+  ages past a year.
+
+Open question raised by the swept-account finding, for a future session: should
+the dashboard treat the securities-account cash as portfolio cash at all, or
+model the linked bank account as the true cash store? The current snapshot
+balances are real money in the account, so showing them is defensible, but the
+"tactical cash awaiting redeployment" framing is in-flight settlement rather
+than a held position. A data-model decision, not a quick patch.
 
 ### Phase D — Real-time hardening (optional, one short session)
 

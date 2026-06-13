@@ -65,11 +65,17 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
   FX sensitivity (SGD per +1%) — plus total tactical cash and the YTD cash
   drag (ties to the reconciliation strip). Per-currency YTD average balance
   and FX gain are deliberately omitted: the intra-year cash path is
-  underdetermined (heavy external funding, no deposit/dividend ledger rows),
-  so only rigorous figures are shown. Remaining Phase C: deposit/dividend
-  ledger rows (unlocks the deferred cash analytics + income view),
-  per-position FX columns, Since-Inception horizon, calendar-year tables.
-  See `REFACTOR_PLAN_V2.md`.
+  underdetermined, so only rigorous figures are shown.
+- Per-position FX columns added to the Top-Contributors / Detractors lists
+  (Phase C.3). Phase C is now closed — C.1 FX decomposition, C.2 cash impact,
+  C.3 per-position FX delivered. Deposit/dividend ledger rows were
+  CONTRAINDICATED: the SCB securities account is a swept clearing account
+  (buys funded by transfers in, sales swept out, month-end balance ~0), so a
+  per-currency YTD average balance is meaningless, and brokerage cash
+  dividends are negligible (MSFT US$19 YTD; dividends already in total-return
+  via adjusted closes). Since-Inception and calendar tables are premature
+  (revisit in 2027). Open data-model question for later: should swept
+  settlement cash be treated as portfolio cash at all? See `REFACTOR_PLAN_V2.md`.
 - If corsproxy.io degrades under polling, Phase D (own Cloudflare Worker) is
   the designed fallback.
 
