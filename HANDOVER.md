@@ -59,9 +59,17 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
   current, basis at epoch/per-buy FX); `localDollar` reproduces the old
   single-rate figure exactly and `fxDollar` is the intra-year currency
   effect. Headline YTD includes FX as of this change (was a single-rate
-  approximation before). Remaining Phase C: tactical-cash impact panel,
-  per-position FX columns, Since-Inception horizon, calendar-year tables,
-  statement dividends as ledger rows. See `REFACTOR_PLAN_V2.md`.
+  approximation before).
+- Tactical Cash Impact card on the Performance tab (Phase C.2, 13 Jun 2026):
+  per foreign-currency bucket — balance, SGD value, % book, 1-week FX P&L,
+  FX sensitivity (SGD per +1%) — plus total tactical cash and the YTD cash
+  drag (ties to the reconciliation strip). Per-currency YTD average balance
+  and FX gain are deliberately omitted: the intra-year cash path is
+  underdetermined (heavy external funding, no deposit/dividend ledger rows),
+  so only rigorous figures are shown. Remaining Phase C: deposit/dividend
+  ledger rows (unlocks the deferred cash analytics + income view),
+  per-position FX columns, Since-Inception horizon, calendar-year tables.
+  See `REFACTOR_PLAN_V2.md`.
 - If corsproxy.io degrades under polling, Phase D (own Cloudflare Worker) is
   the designed fallback.
 

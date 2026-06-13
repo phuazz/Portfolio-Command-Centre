@@ -326,11 +326,33 @@ The Attribution theme list now shows Local / FX / Total pp per theme (FX greyed
 when immaterial), and a "FX Contribution" header tile shows the window's
 currency effect. No console errors; all tabs render.
 
-Remaining Phase C deliverables (next sessions): the tactical-cash impact panel
-(average balance, drag in pp, FX gain on cash); per-position FX columns in the
-Top-Contributors lists (theme-level and portfolio FX are done); Since-Inception
-horizon; calendar-year and rolling-12M tables. The statement dividends
-extracted in Phase A.1 are candidates for explicit ledger rows here too.
+Post-flight note (2026-06-13) — Phase C.2 (tactical-cash impact panel). Added
+a Tactical Cash Impact card on the Performance tab (sibling to the equity
+curve, YTD-scoped, id-managed so curve-window switches refresh rather than
+duplicate it). It shows per foreign-currency bucket: current balance, SGD
+value, % of book, the FX revaluation of the current balance over the last five
+trading days, and FX sensitivity (SGD per +1% move); plus a header with total
+tactical cash (S$62k, 4.5% of book), the 1-week FX P&L, and the YTD cash drag.
+The cash drag is reused from the Performance reconciliation (equity-sleeve TWRR
+minus whole-portfolio TWRR) and was verified to tie to the strip exactly
+(0.2189 pp both). No console errors.
+
+Scope decision, recorded: the per-currency YTD average balance and YTD FX gain
+the original spec called for are NOT shown, because the intra-year cash path is
+underdetermined — the book is heavily externally funded (a from-1-Jan forward
+walk diverges from the anchored balances by ~S$18k USD and ~¥18k JPY, with
+six-figure "deposits" detected) and the ledger carries no deposit/withdrawal or
+dividend rows. Presenting a reconstructed YTD per-currency figure would violate
+the data-integrity rule, so the panel shows only rigorous quantities (current
+exposure, FX sensitivity, short-window FX P&L, portfolio drag). The deferred
+figures are gated on the deposit/dividend ledger-row enhancement (section 6).
+
+Remaining Phase C deliverables (next sessions): explicit deposit/withdrawal and
+dividend ledger rows (unlocks rigorous YTD per-currency cash analytics and the
+income view); per-position FX columns in the Top-Contributors lists
+(theme-level and portfolio FX are done); Since-Inception horizon; calendar-year
+and rolling-12M tables. The statement dividends extracted in Phase A.1 are the
+natural source for the dividend rows.
 
 ### Phase D — Real-time hardening (optional, one short session)
 

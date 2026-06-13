@@ -4454,6 +4454,90 @@ function yearsElapsed_label(daysCount) {
   return (daysCount / 252).toFixed(2) + 'y window';
 }
 
+// ─── TACTICAL CASH IMPACT (REFACTOR_PLAN_V2 Phase C.2) ──────────────
+// The foreign-currency cash buckets are idle proceeds from sells awaiting
+// redeployment. This surfaces their RIGOROUS impacts only: current balance
+// and SGD value, FX sensitivity (SGD per 1% currency move), the short-window
+// FX revaluation of the current balances, and the portfolio-level YTD cash
+// drag (reused from the Performance reconciliation, ties by construction).
+// Per-currency YTD average balance and FX gain are intentionally NOT shown:
+// the intra-year cash path is underdetermined (the book is heavily externally
+// funded and the ledger carries no deposit/withdrawal or dividend rows), so a
+// from-zero forward walk diverges from the anchored balances. Those figures
+// await explicit cash-event ledger rows.
+function calcCashImpact(ps, trades) {
+  const totalMV = state.totalValueSGD || ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const rows = [];
+  let totalCashSGD = 0, totalFx1wPnl = 0;
+  for (const p of ps.filter(p => p.type === 'Cash')) {
+    const fxNow = p.fxRate || FX[p.ccy] || 1;
+    const balSGD = p.qty * fxNow;
+    totalCashSGD += balSGD;
+    let fx1wPnl = 0;
+    if (p.ccy !== 'SGD') {
+      const ser = (typeof FX_HISTORY !== 'undefined') ? FX_HISTORY[p.ccy] : null;
+      const fx5 = (ser && ser.length >= 6) ? ser[ser.length - 1 - 5].rate : fxNow;
+      fx1wPnl = p.qty * (fxNow - fx5);
+    }
+    totalFx1wPnl += fx1wPnl;
+    rows.push({ ccy: p.ccy, balanceNative: p.qty, balanceSGD: balSGD,
+      weightPct: totalMV > 0 ? balSGD / totalMV * 100 : 0,
+      fx1wPnl, fxSens: p.ccy === 'SGD' ? 0 : balSGD * 0.01 });
+  }
+  rows.sort((a, b) => b.balanceSGD - a.balanceSGD);
+  let cashDragYTD = null;
+  try {
+    const tw = calcTwrr(ps, trades, '2026-01-01');
+    const ec = getEquityCurve(ps, trades, '2026-01-01');
+    if (tw && !tw.error && ec && !ec.error) cashDragYTD = tw.equityTwrr - ec.totalReturnPct;
+  } catch (e) { /* drag unavailable — render as — */ }
+  return { rows, totalCashSGD, weightPct: totalMV > 0 ? totalCashSGD / totalMV * 100 : 0, totalFx1wPnl, cashDragYTD };
+}
+
+function _renderCashImpactHTML(ps, trades) {
+  const ci = calcCashImpact(ps, trades);
+  if (!ci.rows.length) return '';
+  const dragStr = ci.cashDragYTD == null ? '—' : `${ci.cashDragYTD >= 0 ? '−' : '+'}${Math.abs(ci.cashDragYTD).toFixed(2)} pp`;
+  const rowsHTML = ci.rows.map(r => `
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:7px 8px;font-weight:700;color:var(--t1)">${r.ccy}</td>
+      <td style="padding:7px 8px;text-align:right;font-family:var(--mono)">${r.balanceNative.toLocaleString('en-US',{maximumFractionDigits:0})}</td>
+      <td style="padding:7px 8px;text-align:right;font-family:var(--mono)">${fmtSGD(r.balanceSGD)}</td>
+      <td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--t2)">${r.weightPct.toFixed(1)}%</td>
+      <td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:${r.ccy==='SGD'?'var(--t4)':(r.fx1wPnl>=0?'var(--g)':'var(--r)')}">${r.ccy==='SGD'?'—':fmtPL(r.fx1wPnl)}</td>
+      <td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--t2)">${r.ccy==='SGD'?'—':fmtSGD(r.fxSens)}</td>
+    </tr>`).join('');
+  return `
+    <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Tactical Cash Impact — idle FX exposure &amp; drag</div></div>
+    <div class="card-body" style="padding-top:8px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:14px">
+        <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Tactical Cash</div>
+          <div style="font-family:var(--sans);font-size:20px;font-weight:700;color:var(--t1)">${fmtSGD(ci.totalCashSGD)}</div>
+          <div style="font-size:11px;color:var(--t3)">${ci.weightPct.toFixed(1)}% of book · awaiting redeployment</div></div>
+        <div title="Equity-sleeve TWRR minus whole-portfolio TWRR over YTD — the return foregone by holding idle cash. Ties to the Performance curve by construction."><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Cash Drag · YTD</div>
+          <div style="font-family:var(--sans);font-size:20px;font-weight:700;color:var(--r)">${dragStr}</div>
+          <div style="font-size:11px;color:var(--t3)">return foregone vs fully invested</div></div>
+        <div title="Currency revaluation of the current cash balances over the last 5 trading days."><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">1-Week FX P&amp;L</div>
+          <div style="font-family:var(--sans);font-size:20px;font-weight:700;color:${ci.totalFx1wPnl>=0?'var(--g)':'var(--r)'}">${fmtPL(ci.totalFx1wPnl)}</div>
+          <div style="font-size:11px;color:var(--t3)">on current balances</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <tr style="font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
+          <th style="text-align:left;padding:4px 8px">Ccy</th>
+          <th style="text-align:right;padding:4px 8px">Balance</th>
+          <th style="text-align:right;padding:4px 8px">SGD value</th>
+          <th style="text-align:right;padding:4px 8px">% book</th>
+          <th style="text-align:right;padding:4px 8px" title="Currency revaluation over the last 5 trading days on the current balance">1-wk FX P&amp;L</th>
+          <th style="text-align:right;padding:4px 8px" title="SGD gain or loss if this currency strengthens 1% against SGD">FX sens. /+1%</th>
+        </tr>
+        ${rowsHTML}
+      </table>
+      <div style="margin-top:10px;font-size:10px;color:var(--t4);line-height:1.5">
+        Idle proceeds from sells awaiting redeployment. FX sensitivity is the SGD impact of a 1% move in each currency against SGD; the 1-week FX P&amp;L revalues the current balances over the last five trading days. Per-currency YTD average balance and FX gain are omitted — the intra-year cash path is not rigorously reconstructable without explicit deposit/dividend ledger rows (a planned enhancement).
+      </div>
+    </div>`;
+}
+
 function renderEquityCurve(elId, ps, trades, windowKey) {
   const startDate = _perfWindowStart(windowKey);
   const curve = getEquityCurve(ps, trades, startDate);
@@ -4598,6 +4682,18 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       </div>
       ${reconcileHTML}
     </div>`;
+
+  // Tactical Cash Impact card — a sibling after the equity curve card, managed
+  // by id so curve-window switches refresh it without duplicating. YTD-scoped
+  // (current balances + YTD drag) independent of the selected curve window.
+  let cashCard = document.getElementById('cashImpactCard');
+  if (!cashCard) {
+    cashCard = document.createElement('div');
+    cashCard.id = 'cashImpactCard';
+    cashCard.className = 'card mb';
+    container.parentNode.insertBefore(cashCard, container.nextSibling);
+  }
+  cashCard.innerHTML = _renderCashImpactHTML(ps, trades);
 
   // Render Plotly chart
   setTimeout(() => {
