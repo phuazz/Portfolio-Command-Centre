@@ -3678,9 +3678,14 @@ function calcAttribution(ps, bars) {
     const endSGD    = r.closeNow  * p.qty * fxNow;
     const dollar    = endSGD - startSGD;
     if (!isFinite(startSGD) || startSGD === 0) continue;
+    // Exact two-point FX decomposition: local move valued at the start FX,
+    // currency move valued at the end local price; localDollar + fxDollar
+    // === dollar. SGD positions have fxThen === fxNow so fxDollar === 0.
+    const localDollar = p.qty * fxThen * (r.closeNow - r.closeThen);
+    const fxDollar    = p.qty * r.closeNow * (fxNow - fxThen);
     rows.push({
       pos: p,
-      startSGD, endSGD, dollar,
+      startSGD, endSGD, dollar, localDollar, fxDollar,
       retPct: ((r.closeNow - r.closeThen) / r.closeThen) * 100,
     });
     totalStart += startSGD;
@@ -3692,11 +3697,13 @@ function calcAttribution(ps, bars) {
   const themeMap = {};
   rows.forEach(r => {
     const t = r.pos.theme || '(Unclassified)';
-    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, contribPp:0, weightPct:0, positions:[] };
-    themeMap[t].startSGD  += r.startSGD;
-    themeMap[t].dollar    += r.dollar;
-    themeMap[t].contribPp += r.contribPp;
-    themeMap[t].weightPct += r.weightPct;
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, localDollar:0, fxDollar:0, contribPp:0, weightPct:0, positions:[] };
+    themeMap[t].startSGD   += r.startSGD;
+    themeMap[t].dollar     += r.dollar;
+    themeMap[t].localDollar += r.localDollar;
+    themeMap[t].fxDollar   += r.fxDollar;
+    themeMap[t].contribPp  += r.contribPp;
+    themeMap[t].weightPct  += r.weightPct;
     themeMap[t].positions.push(r);
   });
   const themes = Object.values(themeMap).map(t => ({
@@ -3704,10 +3711,13 @@ function calcAttribution(ps, bars) {
     retPct: t.startSGD > 0 ? (t.dollar / t.startSGD) * 100 : 0,
   }));
   const totalDollar = rows.reduce((s,r) => s + r.dollar, 0);
+  const totalFxDollar = rows.reduce((s,r) => s + (r.fxDollar || 0), 0);
+  const totalLocalDollar = rows.reduce((s,r) => s + (r.localDollar || 0), 0);
   return {
     bars,
-    totalStart, totalDollar,
+    totalStart, totalDollar, totalFxDollar, totalLocalDollar,
     portfolioRetPct: totalStart > 0 ? (totalDollar / totalStart) * 100 : 0,
+    fxContribPp: totalStart > 0 ? (totalFxDollar / totalStart) * 100 : 0,
     rows, themes,
     covered: rows.length,
     skipped: ps.length - rows.length,
@@ -3755,6 +3765,18 @@ function calcYtdAttribution(ps, trades) {
       if (d.getFullYear() === 2026) { jan1Cache[yf] = h[i].close; return h[i].close; }
     }
     return (jan1Cache[yf] = null);
+  };
+
+  // ISO date of the seeded pre-YTD lot's basis bar (first 2026 bar), so its
+  // cost can be FX-converted at the epoch rate rather than today's. Falls back
+  // to the epoch date when no 2026 history bar exists.
+  const getJan1Date = (pos) => {
+    if (!pos || !pos.history) return '2026-01-01';
+    for (const bar of pos.history) {
+      const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+      if (d.getFullYear() === 2026) return d.toISOString().slice(0, 10);
+    }
+    return '2026-01-01';
   };
 
   // Dividend uplift factor u(d) = close(d) / adjclose(d) for the history bar on
@@ -3820,6 +3842,18 @@ function calcYtdAttribution(ps, trades) {
     // Resolve Jan-1 close: from pos.history if pos has it; else null (flag).
     let jan1Px = pos ? getJan1Px(pos) : null;
 
+    // FX setup for the FX-aware total-return split (Phase C). Each lot carries
+    // the FX rate as of its entry; proceeds convert at the sell-date rate and
+    // marks at the current rate. The LOCAL P&L (realised/unrealised below) is
+    // computed exactly as before; localDollar = local P&L x current FX equals
+    // the pre-Phase-C figure, and fxDollar = total - localDollar isolates the
+    // intra-year currency effect the old single-rate conversion omitted.
+    const ccy = pos ? pos.ccy : (trades[0]?.ccy || 'SGD');
+    const fxNow = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
+    const jan1FxDate = getJan1Date(pos);
+    const jan1Fx = fxAtDate(ccy, jan1FxDate);
+    let realisedSGD = 0, unrealisedSGD = 0;   // FX-aware, per-flow conversion
+
     // Build initial lot queue
     const lots = [];
     if (jan1Qty > 0) {
@@ -3836,24 +3870,28 @@ function calcYtdAttribution(ps, trades) {
           flags.push({ ticker, reason: 'pre-YTD lot — cost basis unavailable, sell price used' });
         }
       }
-      lots.push({ qty: jan1Qty, cost: jan1Px, u: getJan1U(pos) });
+      lots.push({ qty: jan1Qty, cost: jan1Px, u: getJan1U(pos), fxEntry: jan1Fx });
     }
 
     // Replay trades FIFO
     let realised = 0;
     for (const tr of trades) {
       if (tr.a === 'B') {
-        lots.push({ qty: tr.q, cost: tr.p, u: uFactorAt(pos, tr.d) });
+        lots.push({ qty: tr.q, cost: tr.p, u: uFactorAt(pos, tr.d), fxEntry: fxAtDate(ccy, tr.d) });
       } else {
         const uSell = uFactorAt(pos, tr.d);
+        const fxSell = fxAtDate(ccy, tr.d);
         let remaining = tr.q;
         while (remaining > 0 && lots.length > 0) {
           const lot = lots[0];
           const take = Math.min(lot.qty, remaining);
           // Total-return realised: sale proceeds dividend-uplifted from the
           // lot's entry date to the sale date (u_entry / u_sell), less the raw
-          // cash cost of the lot.
-          realised += (tr.p * ((lot.u || 1) / uSell) - lot.cost) * take;
+          // cash cost of the lot. Local figure is unchanged; the SGD figure
+          // converts proceeds at the sell-date FX and cost at the lot's entry FX.
+          const procLocal = tr.p * ((lot.u || 1) / uSell) * take;
+          realised    += procLocal - lot.cost * take;
+          realisedSGD += procLocal * fxSell - lot.cost * take * (lot.fxEntry || fxNow);
           lot.qty -= take;
           remaining -= take;
           if (lot.qty <= 1e-9) lots.shift();
@@ -3868,8 +3906,11 @@ function calcYtdAttribution(ps, trades) {
     const currentPx = pos ? pos.mktPrice : (lots.length && trades.length ? trades[trades.length-1].p : 0);
     for (const lot of lots) {
       // Total-return unrealised: current price dividend-uplifted from the lot's
-      // entry date to today (u_today = 1), less the raw cash cost.
-      unrealised += (currentPx * (lot.u || 1) - lot.cost) * lot.qty;
+      // entry date to today (u_today = 1), less the raw cash cost. SGD figure
+      // marks at the current FX and costs the lot at its entry FX.
+      const markLocal = currentPx * (lot.u || 1) * lot.qty;
+      unrealised    += markLocal - lot.cost * lot.qty;
+      unrealisedSGD += markLocal * fxNow - lot.cost * lot.qty * (lot.fxEntry || fxNow);
       endQty += lot.qty;
     }
 
@@ -3878,18 +3919,22 @@ function calcYtdAttribution(ps, trades) {
       flags.push({ ticker, reason: `FIFO end qty ${endQty.toFixed(0)} vs POSITIONS qty ${pos.qty} — trade ledger may be incomplete` });
     }
 
-    // Convert to SGD using current FX (approximation — ignores intra-year FX)
-    const fxRate = pos ? pos.fxRate : (FX[trades[0]?.ccy] || 1);
-    const realisedSGD   = realised   * fxRate;
-    const unrealisedSGD = unrealised * fxRate;
-    const dollar        = realisedSGD + unrealisedSGD;
-    const startSGD      = jan1Qty > 0 ? jan1Qty * (jan1Px || 0) * fxRate : 0;
+    // SGD figures (FX-aware): realisedSGD / unrealisedSGD were accrued per-flow
+    // above. The total is FX-inclusive; localDollar is the local P&L marked at
+    // today's FX (the pre-Phase-C figure), and fxDollar isolates the currency
+    // effect. localDollar + fxDollar === dollar by construction.
+    const dollar      = realisedSGD + unrealisedSGD;
+    const localDollar = (realised + unrealised) * fxNow;
+    const fxDollar    = dollar - localDollar;
+    // Start NAV and YTD deployed cost converted FX-as-of-date (epoch FX for the
+    // opening lot; each buy at its own date) so the denominator matches the
+    // FX-aware numerator.
+    const startSGD      = jan1Qty > 0 ? jan1Qty * (jan1Px || 0) * jan1Fx : 0;
     // Effective basis = max(start NAV, cost of capital deployed during YTD).
     // For themes built entirely during the year, startSGD is 0 — using the
     // sum of YTD buy costs as denominator gives a meaningful return number
     // instead of 0.00%.
-    const buyCostNative = trades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p, 0);
-    const buyCostSGD    = buyCostNative * fxRate;
+    const buyCostSGD    = trades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
     const basisSGD      = Math.max(startSGD, buyCostSGD);
 
     // Theme from POSITIONS if available, else from first trade entry
@@ -3902,6 +3947,7 @@ function calcYtdAttribution(ps, trades) {
       jan1Qty, jan1Px, currentPx, endQty,
       buyQty, sellQty, buyCostSGD,
       realisedSGD, unrealisedSGD, dollar,
+      localDollar, fxDollar,
       startSGD, basisSGD,
       // Null-out retPct when there is no realised+unrealised P&L recorded — this isolates
       // the data-quality fallback cases (closed positions with unknown pre-YTD basis)
@@ -3925,10 +3971,12 @@ function calcYtdAttribution(ps, trades) {
   const themeMap = {};
   rows.forEach(r => {
     const t = r.theme || '(Unclassified)';
-    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, basisSGD:0, dollar:0, contribPp:0, weightPct:0, realisedSGD:0, unrealisedSGD:0, positions:[] };
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, basisSGD:0, dollar:0, localDollar:0, fxDollar:0, contribPp:0, weightPct:0, realisedSGD:0, unrealisedSGD:0, positions:[] };
     themeMap[t].startSGD     += r.startSGD;
     themeMap[t].basisSGD     += r.basisSGD || 0;
     themeMap[t].dollar       += r.dollar;
+    themeMap[t].localDollar  += r.localDollar;
+    themeMap[t].fxDollar     += r.fxDollar;
     themeMap[t].contribPp    += (r.contribPp || 0);   // null coerced to 0 for safe summation
     themeMap[t].weightPct    += r.weightPct;
     themeMap[t].realisedSGD  += r.realisedSGD;
@@ -3941,10 +3989,13 @@ function calcYtdAttribution(ps, trades) {
     contribPp: (t.dollar === 0) ? null : t.contribPp,
   }));
 
+  const totalFxDollar = rows.reduce((s, r) => s + (r.fxDollar || 0), 0);
+  const totalLocalDollar = rows.reduce((s, r) => s + (r.localDollar || 0), 0);
   return {
     bars: null, horizon: 'YTD',
-    totalStart, totalDollar,
+    totalStart, totalDollar, totalFxDollar, totalLocalDollar,
     portfolioRetPct: totalStart > 0 ? (totalDollar / totalStart) * 100 : 0,
+    fxContribPp: totalStart > 0 ? (totalFxDollar / totalStart) * 100 : 0,
     rows, themes,
     covered: rows.length,
     skipped: ps.length - rows.filter(r => !r.isClosed).length,
@@ -4792,6 +4843,11 @@ function renderAttribution(el) {
             <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${reconciles?'var(--g)':'var(--r)'}">${fmtPct(sumContrib)}</div>
             <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(heldEquityRetPct)} held-equity return</div>
           </div>
+          <div title="Currency contribution to the SGD return over this window: r_SGD = (1 + r_local)(1 + r_FX) − 1, summed across the foreign-currency book. Positive means the foreign currencies strengthened against SGD over the window; SGD-denominated positions contribute nothing. Local + FX = Total on every row.">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">FX Contribution · ${horizonDef.label}</div>
+            <div style="font-family:var(--sans);font-size:18px;font-weight:700;color:${(A.fxContribPp||0)>=0?'var(--g)':'var(--r)'}">${fmtPct(A.fxContribPp||0)} pp</div>
+            <div style="font-size:12px;color:var(--t2)">${fmtPL(A.totalFxDollar||0)} · currency effect on foreign-ccy holdings</div>
+          </div>
           ${isYtd ? `
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Realised P&L · YTD</div>
@@ -4814,20 +4870,24 @@ function renderAttribution(el) {
         <div id="attrWaterfall" style="height:420px"></div>
       </div>
       <div class="card">
-        <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Theme Return vs Contribution (pp)</div></div>
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Theme Contribution — Local / FX / Total (pp)</div></div>
         <div class="card-body" style="max-height:420px;overflow-y:auto">
-          ${themesByContrib.map(t => {
-            const w = Math.min(100, (Math.abs(t.contribPp) / maxAbsContrib) * 100);
-            const col = t.contribPp >= 0 ? 'var(--g)' : 'var(--r)';
-            return `<div style="display:grid;grid-template-columns:150px 1fr 60px 60px;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd)">
+          ${(() => { const ts = A.totalStart || 0; return themesByContrib.map(t => {
+            const w = Math.min(100, (Math.abs(t.contribPp || 0) / (maxAbsContrib || 1)) * 100);
+            const col = (t.contribPp || 0) >= 0 ? 'var(--g)' : 'var(--r)';
+            const localPp = ts > 0 ? (t.localDollar / ts) * 100 : 0;
+            const fxPp    = ts > 0 ? (t.fxDollar    / ts) * 100 : 0;
+            const fxCol = Math.abs(fxPp) < 0.005 ? 'var(--t4)' : (fxPp >= 0 ? 'var(--g)' : 'var(--r)');
+            return `<div style="display:grid;grid-template-columns:140px 1fr 52px 52px 56px;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--bd)">
               <div style="font-size:12px;font-weight:700;color:var(--t1);display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.theme}"><span class="indicator" style="background:${attrThemeColor(t.theme)};width:6px;height:6px;border-radius:50%;flex-shrink:0"></span>${t.theme}</div>
               <div class="bar-track" style="height:8px"><div class="bar-fill" style="width:${w}%;background:${col}"></div></div>
-              <div class="pl ${t.retPct>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:12px;text-align:right">${fmtPct(t.retPct)}</div>
-              <div class="pl ${t.contribPp>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:13px;font-weight:700;text-align:right">${fmtPct(t.contribPp)}</div>
+              <div style="font-family:var(--mono);font-size:12px;text-align:right;color:${localPp>=0?'var(--g)':'var(--r)'}">${fmtPct(localPp)}</div>
+              <div style="font-family:var(--mono);font-size:12px;text-align:right;color:${fxCol}">${fmtPct(fxPp)}</div>
+              <div class="pl ${(t.contribPp||0)>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:13px;font-weight:700;text-align:right">${fmtPct(t.contribPp)}</div>
             </div>`;
-          }).join('')}
-          <div style="display:grid;grid-template-columns:150px 1fr 60px 60px;gap:10px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
-            <div>Theme</div><div>Contribution magnitude</div><div style="text-align:right">Return</div><div style="text-align:right">Contrib pp</div>
+          }).join(''); })()}
+          <div style="display:grid;grid-template-columns:140px 1fr 52px 52px 56px;gap:9px;padding-top:8px;font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px">
+            <div>Theme</div><div>Contribution magnitude</div><div style="text-align:right">Local</div><div style="text-align:right">FX</div><div style="text-align:right">Total pp</div>
           </div>
         </div>
       </div>

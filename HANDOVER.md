@@ -52,9 +52,16 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
 - Engine architecture: the NAV-series engines (equity curve, TWRR,
   allocation risk) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
-  FIFO) keep per-ticker windowing by design. Phase C (FX-decomposed and
-  since-inception attribution plus a cash-impact panel) is next. See
-  `REFACTOR_PLAN_V2.md`.
+  FIFO) keep per-ticker windowing by design.
+- Attribution carries an explicit Local / FX / Total decomposition on every
+  horizon plus a portfolio FX-contribution tile (Phase C.1, 13 Jun 2026).
+  The YTD FIFO engine is now FX-aware (proceeds at sell-date FX, marks at
+  current, basis at epoch/per-buy FX); `localDollar` reproduces the old
+  single-rate figure exactly and `fxDollar` is the intra-year currency
+  effect. Headline YTD includes FX as of this change (was a single-rate
+  approximation before). Remaining Phase C: tactical-cash impact panel,
+  per-position FX columns, Since-Inception horizon, calendar-year tables,
+  statement dividends as ledger rows. See `REFACTOR_PLAN_V2.md`.
 - If corsproxy.io degrades under polling, Phase D (own Cloudflare Worker) is
   the designed fallback.
 

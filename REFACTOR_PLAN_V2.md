@@ -305,6 +305,33 @@ is untouched.
 
 Dependencies. Phase B deployed and stable.
 
+Post-flight note (2026-06-13) — Phase C.1 (FX decomposition). The first of the
+Phase C deliverables landed: explicit Local / FX / Total decomposition across
+every attribution horizon, plus a portfolio FX-contribution tile. The YTD
+engine was made FX-aware (user-approved, as it shifts the headline): each lot
+now carries its entry FX, sale proceeds convert at the sell-date rate and
+marks at the current rate, and the opening basis and per-buy deployed cost
+convert FX-as-of-date. The local-currency P&L is computed by the exact same
+lines as before, so `localDollar` (= local P&L x current FX) equals the
+pre-change figure to the cent — a built-in continuity check that passed
+exactly (140,684.06) — and `fxDollar = total - localDollar` isolates the
+intra-year currency effect. The period horizons (already FX-aware) use the
+exact two-point split (local move at start FX, currency move at end price).
+Verification gates all passed on live data: per-row and per-theme identity
+`Local + FX == Total` to zero error; SGD positions carry exactly zero FX; the
+two-point and FIFO splits both reconcile. The headline YTD moved 16.18% to
+16.03% — the -0.13pp / -S$1,094 currency drag the old single-rate conversion
+omitted (SGD firmed modestly against the book's USD/HKD/JPY/EUR over the year).
+The Attribution theme list now shows Local / FX / Total pp per theme (FX greyed
+when immaterial), and a "FX Contribution" header tile shows the window's
+currency effect. No console errors; all tabs render.
+
+Remaining Phase C deliverables (next sessions): the tactical-cash impact panel
+(average balance, drag in pp, FX gain on cash); per-position FX columns in the
+Top-Contributors lists (theme-level and portfolio FX are done); Since-Inception
+horizon; calendar-year and rolling-12M tables. The statement dividends
+extracted in Phase A.1 are candidates for explicit ledger rows here too.
+
 ### Phase D — Real-time hardening (optional, one short session)
 
 Scope. Only needed if the free corsproxy tier degrades under the 10-second
