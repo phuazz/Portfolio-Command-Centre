@@ -398,6 +398,25 @@ deliberately NOT built after the data contradicted their premise:
   rolling tables need more than one year of ledger. Revisit when the ledger
   ages past a year.
 
+Post-flight note (2026-06-14) — Phase C.5 (money-weighted return denominator).
+Owner questioned whether the YTD "Portfolio Return" denominator made sense.
+Investigation corrected an earlier mis-statement: the denominator was Σ opening
+market value (S$870,649 → 15.97%), i.e. "P&L over opening capital" — NOT the
+Σ max(start, cost) basis (which exists in the code for per-position retPct but
+does not drive the portfolio figure). The opening-capital base is not a
+recognised return measure: it ignores capital added mid-year, so it overstates
+the money-weighted return. Replaced it with the proper Modified Dietz average
+capital employed (opening value plus each flow weighted by time invested,
+S$912,322), giving the money-weighted return 15.24%. The headline and every
+contribution (theme, position, and the Price/Income/FX drivers) now divide by
+this single Dietz base and tie to 15.24% exactly; the hero YTD card moves in
+step. The tile is relabelled "Portfolio Return · YTD (MWR)" with a tooltip, and
+the Performance-tab reconciliation footnote is corrected (it had wrongly said
+the figure used current FX and a 1-Jan cost basis — it is FX-as-of-date and now
+Modified Dietz). The ~3pp gap to the equity TWRR (18.26%) is genuine flow
+timing (money- vs time-weighting), not a denominator artefact. Period horizons
+keep their start-value base (flows immaterial over 1W/1M). No console errors.
+
 Open question raised by the swept-account finding, for a future session: should
 the dashboard treat the securities-account cash as portfolio cash at all, or
 model the linked bank account as the true cash store? The current snapshot
