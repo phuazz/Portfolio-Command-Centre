@@ -3987,12 +3987,34 @@ function calcYtdAttribution(ps, trades) {
 
   const totalDollar = rows.reduce((s, r) => s + r.dollar, 0);
 
-  // Weights & contributions. Null-out contribPp when there is no recorded
-  // P&L for this row so the renderer prints '—' rather than '+0.00%'
-  // (matches the retPct null treatment — flags data-quality fallback rows).
+  // Return denominator = Modified Dietz average capital employed (money-weighted):
+  // opening market value (BMV) plus each YTD flow weighted by the fraction of the
+  // period it was invested. This replaces the prior "P&L over opening capital"
+  // base, which ignored capital added mid-year and so was not a recognised return
+  // measure (it overstated the money-weighted return). The portfolio return and
+  // every contribution now tie to this single Modified Dietz base; the gap to the
+  // equity TWRR shown alongside is genuine flow-timing (money- vs time-weighting).
+  const bmv = totalStart;                                  // Σ opening values
+  const _epoch = Date.parse('2026-01-01T00:00:00Z');
+  const _now = Date.now();                                 // runtime "now" — elapsed-day fraction, not date arithmetic
+  const _span = _now - _epoch;
+  let avgCapital = bmv;
+  if (_span > 0) {
+    for (const tr of sorted) {
+      if (tr.a !== 'B' && tr.a !== 'S') continue;
+      const td = Date.parse(tr.d + 'T00:00:00Z');
+      let w = (_now - td) / _span; if (w < 0) w = 0; if (w > 1) w = 1;   // weight = time invested
+      avgCapital += w * (tr.a === 'B' ? 1 : -1) * tr.q * tr.p * fxAtDate(tr.ccy, tr.d);
+    }
+  }
+  if (!(avgCapital > 0)) avgCapital = bmv || 1;            // guard
+  const denom = avgCapital;
+
+  // weightPct is the opening-book share (BMV); contributions are money-weighted
+  // over the Dietz average capital, so they sum to the portfolio return.
   rows.forEach(r => {
-    r.weightPct = totalStart > 0 ? (r.startSGD / totalStart) * 100 : 0;
-    r.contribPp = (r.dollar === 0) ? null : (totalStart > 0 ? (r.dollar / totalStart) * 100 : null);
+    r.weightPct = bmv > 0 ? (r.startSGD / bmv) * 100 : 0;
+    r.contribPp = (r.dollar === 0) ? null : (denom > 0 ? (r.dollar / denom) * 100 : null);
   });
 
   // Group by theme — same shape as calcAttribution
@@ -4024,12 +4046,15 @@ function calcYtdAttribution(ps, trades) {
   const totalIncomeDollar = rows.reduce((s, r) => s + (r.incomeDollar || 0), 0);
   const totalPriceDollar = rows.reduce((s, r) => s + (r.priceDollar || 0), 0);
   return {
-    bars: null, horizon: 'YTD',
-    totalStart, totalDollar, totalFxDollar, totalLocalDollar, totalIncomeDollar, totalPriceDollar,
-    portfolioRetPct: totalStart > 0 ? (totalDollar / totalStart) * 100 : 0,
-    fxContribPp: totalStart > 0 ? (totalFxDollar / totalStart) * 100 : 0,
-    incomeContribPp: totalStart > 0 ? (totalIncomeDollar / totalStart) * 100 : 0,
-    priceContribPp: totalStart > 0 ? (totalPriceDollar / totalStart) * 100 : 0,
+    bars: null, horizon: 'YTD', moneyWeighted: true,
+    // totalStart is the return/contribution denominator — now the Modified Dietz
+    // average capital (denom). bmv (opening book value) is exposed separately for
+    // reference; render-side contribution percentages divide by totalStart.
+    totalStart: denom, bmv, totalDollar, totalFxDollar, totalLocalDollar, totalIncomeDollar, totalPriceDollar,
+    portfolioRetPct: denom > 0 ? (totalDollar / denom) * 100 : 0,
+    fxContribPp: denom > 0 ? (totalFxDollar / denom) * 100 : 0,
+    incomeContribPp: denom > 0 ? (totalIncomeDollar / denom) * 100 : 0,
+    priceContribPp: denom > 0 ? (totalPriceDollar / denom) * 100 : 0,
     rows, themes,
     covered: rows.length,
     skipped: ps.length - rows.filter(r => !r.isClosed).length,
@@ -4658,7 +4683,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
           <span style="color:var(--g);font-weight:700">${fmtPct(allTwrr)}</span>
         </div>
         <div>
-          The two figures above share one method — daily Modified Dietz on dividend-adjusted closes — and differ only by scope, so the equity-sleeve return less the idle-cash drag equals this curve exactly. The Attribution tab additionally shows a <strong style="color:var(--t2)">Portfolio Return of ${fmtPct(fifo)}</strong>. That is also a total-return figure (dividends are now rolled in via dividend-adjusted closes), but computed differently: simple realised-plus-unrealised P&amp;L over the 1 January cost basis, at current FX. It does not tie to this curve by subtraction because it is money-weighted rather than time-weighted and uses current FX rather than the rate observed on each date — the cash-drag bridge above applies only between the two TWRR figures.
+          The two figures above share one method — daily Modified Dietz on dividend-adjusted closes — and differ only by scope, so the equity-sleeve return less the idle-cash drag equals this curve exactly. The Attribution tab additionally shows a <strong style="color:var(--t2)">Portfolio Return of ${fmtPct(fifo)}</strong>. That is the <strong style="color:var(--t2)">money-weighted</strong> return — total P&amp;L over the average capital employed (Modified Dietz: opening value plus each flow weighted by time invested), total-return and FX-as-of-date like this curve. It does not tie to this curve by subtraction because it is money- rather than time-weighted: the gap to the time-weighted figures is genuine flow timing, not a methodology mismatch. The cash-drag bridge above applies only between the two TWRR figures.
         </div>
       </div>`;
     }
@@ -4942,10 +4967,10 @@ function renderAttribution(el) {
       </div>
       <div class="card-body" style="padding-top:8px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
-          <div title="Equity + cash book return (bonds excluded), trade-aware and identical to the hero P&L cards. The theme decomposition below covers current holdings; for period horizons it reconciles to the held-equity return, which differs from this headline by the realised P&L of positions closed in the window plus the cash effect.">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Portfolio Return · ${horizonDef.label}</div>
+          <div title="${isYtd ? 'Money-weighted (Modified Dietz) return: total P&L over the average capital employed — opening market value plus each flow weighted by the time it was invested. This is the rigorous version of return-on-capital; it differs from the equity TWRR alongside by flow timing (money- vs time-weighting) and by the cash scope. Equity + cash basis, bonds excluded.' : 'Equity + cash book return (bonds excluded), trade-aware and identical to the hero P&L cards. The theme decomposition below covers current holdings and reconciles to the held-equity return, which differs from this headline by the realised P&L of positions closed in the window plus the cash effect.'}">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Portfolio Return · ${horizonDef.label}${isYtd ? ' (MWR)' : ''}</div>
             <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${bookRetPct>=0?'var(--g)':'var(--r)'}">${fmtPct(bookRetPct)}</div>
-            <div style="font-size:12px;color:var(--t2)">${fmtPL(headlineDollar)} · equity + cash basis${isYtd ? '' : ' · trade-aware'}</div>
+            <div style="font-size:12px;color:var(--t2)">${fmtPL(headlineDollar)} · ${isYtd ? 'money-weighted · equity + cash' : 'equity + cash basis · trade-aware'}</div>
           </div>
           ${isYtd && twrr && !twrr.error ? `
           <div title="Modified Dietz time-weighted return on the equity sub-portfolio. Removes the effect of when capital was deployed during the year; treats each trade as an external cash flow into/out of the equity bucket. The CFA / GIPS standard for performance reporting.">
