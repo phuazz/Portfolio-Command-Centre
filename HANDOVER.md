@@ -67,8 +67,14 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
   and FX gain are deliberately omitted: the intra-year cash path is
   underdetermined, so only rigorous figures are shown.
 - Per-position FX columns added to the Top-Contributors / Detractors lists
-  (Phase C.3). Phase C is now closed — C.1 FX decomposition, C.2 cash impact,
-  C.3 per-position FX delivered. Deposit/dividend ledger rows were
+  (Phase C.3). Dividend/income contribution tracker (Phase C.4): a "Return
+  Drivers" card on the Attribution tab decomposes the SGD total return into
+  Price + Income + FX = Total (Income = adjclose total return − close price
+  return, from a parallel u=1 FIFO walk; ties per row to zero error). YTD
+  income ~+1.13pp / S$9,817, from the CDP payers. The standalone FX header
+  tile was folded into this card to keep the decomposition in one place.
+  Phase C is now closed — C.1 FX decomposition, C.2 cash impact, C.3
+  per-position FX, C.4 income tracker delivered. Deposit/dividend ledger rows were
   CONTRAINDICATED: the SCB securities account is a swept clearing account
   (buys funded by transfers in, sales swept out, month-end balance ~0), so a
   per-currency YTD average balance is meaningless, and brokerage cash

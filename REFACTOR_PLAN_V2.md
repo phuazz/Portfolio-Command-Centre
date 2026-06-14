@@ -355,8 +355,30 @@ errors. With this, the substantive Phase C analytics are delivered: C.1 FX
 decomposition (theme + portfolio), C.2 tactical-cash impact panel, C.3
 per-position FX.
 
-Phase C is closed here, with two deliverables deliberately NOT built after the
-data contradicted their premise:
+Post-flight note (2026-06-14) — Phase C.4 (dividend / income contribution
+tracker). Added on the owner's request: a way to see how much of total return
+is dividends. Income is decomposed rigorously from data already held — every
+bar carries close (price) and adjclose (dividend-reinvested), so Income =
+Total return − Price return. The YTD FIFO engine gained a parallel price-only
+walk (u = 1) and effectiveReturn / the global-day helper now return raw closes,
+so both YTD and period horizons split the local total return into Price and
+Income; with the existing FX split this gives the full additive bridge
+Price + Income + FX = Total, verified to tie per row to zero error. YTD result:
+Price ~+14.97pp, Income +1.13pp (S$9,817), FX ~-0.13pp — income dominated by
+the CDP payers (SG Broad Market, SG Banks, SG Industrials, SG REITs), not the
+brokerage growth sleeve (which is why the swept cash dividend was only $19 but
+embedded dividend return is ~S$10k).
+
+Placement was decided deliberately to avoid confusion: a single "Return
+Drivers" card on the Attribution tab (below the header tiles) shows the
+Price + Income + FX = Total bridge plus a "where the income comes from" list,
+and the standalone FX header tile was folded into it so the decomposition lives
+in one place rather than scattered. The theme list stays Local / FX / Total
+with a note that Local = Price + Income. Verified across horizons (1-Week
+bridge ties; income ~0 over a week, as expected); no console errors.
+
+Phase C is closed here (income tracker included), with two deliverables
+deliberately NOT built after the data contradicted their premise:
 
   Deposit/withdrawal + dividend ledger rows — CONTRAINDICATED. Inspecting the
   statements for this work revealed the SCB securities account is a swept
