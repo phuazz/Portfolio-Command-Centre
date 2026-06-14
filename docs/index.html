@@ -1689,7 +1689,12 @@ function effectiveReturn(p, lookbackBars) {
   if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
   const refDateObj = refBar.date instanceof Date ? refBar.date : new Date(refBar.date);
   const refDate = refDateObj.toISOString().slice(0, 10);
-  return { closeNow, closeThen, snapshotFresher, refDate };
+  // Raw (price-only) closes at the same two points, for the price/income split.
+  // closeNow/closeThen are adjclose (total return); rawNow/rawThen are close;
+  // the gap between the two return measures is the dividend (income) component.
+  const rawNow = snapshotFresher ? p.mktPrice : (lastBar.close != null ? lastBar.close : lastAdj);
+  const rawThen = refBar.close != null ? refBar.close : closeThen;
+  return { closeNow, closeThen, rawNow, rawThen, snapshotFresher, refDate };
 }
 
 // Trade-aware portfolio-level period P&L.
@@ -3639,6 +3644,7 @@ function _effectiveReturnGlobalDay(p, mode) {
   const h = p.history, n = h.length;
   const iso = b => (b.date instanceof Date ? b.date : new Date(b.date)).toISOString().slice(0, 10);
   const adj = b => b.adjclose != null ? b.adjclose : b.close;
+  const raw = b => b.close != null ? b.close : (b.adjclose != null ? b.adjclose : 0);
   const boundary = _usCloseBoundary();
   let iU = n - 1;
   while (iU >= 0 && iso(h[iU]) > boundary) iU--;
@@ -3649,11 +3655,12 @@ function _effectiveReturnGlobalDay(p, mode) {
     const closeNow = fresher ? p.mktPrice : lastAdj;
     const closeThen = adj(h[iU]);
     if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
-    return { closeNow, closeThen, snapshotFresher: fresher, refDate: iso(h[iU]), endFxDate: null };
+    const rawNow = fresher ? p.mktPrice : raw(h[n - 1]);
+    return { closeNow, closeThen, rawNow, rawThen: raw(h[iU]), snapshotFresher: fresher, refDate: iso(h[iU]), endFxDate: null };
   }
   const closeNow = adj(h[iU]), closeThen = adj(h[iU - 1]);
   if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
-  return { closeNow, closeThen, snapshotFresher: false, refDate: iso(h[iU - 1]), endFxDate: iso(h[iU]) };
+  return { closeNow, closeThen, rawNow: raw(h[iU]), rawThen: raw(h[iU - 1]), snapshotFresher: false, refDate: iso(h[iU - 1]), endFxDate: iso(h[iU]) };
 }
 
 function calcAttribution(ps, bars) {
@@ -3683,9 +3690,16 @@ function calcAttribution(ps, bars) {
     // === dollar. SGD positions have fxThen === fxNow so fxDollar === 0.
     const localDollar = p.qty * fxThen * (r.closeNow - r.closeThen);
     const fxDollar    = p.qty * r.closeNow * (fxNow - fxThen);
+    // Split the local (total-return) move into price and income (dividends):
+    // priceDollar uses the raw close move; income is the remainder, i.e. the
+    // dividend uplift that adjclose carries over close. price + income = local.
+    const rawNow = r.rawNow != null ? r.rawNow : r.closeNow;
+    const rawThen = r.rawThen != null ? r.rawThen : r.closeThen;
+    const priceDollar = p.qty * fxThen * (rawNow - rawThen);
+    const incomeDollar = localDollar - priceDollar;
     rows.push({
       pos: p,
-      startSGD, endSGD, dollar, localDollar, fxDollar,
+      startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar,
       retPct: ((r.closeNow - r.closeThen) / r.closeThen) * 100,
     });
     totalStart += startSGD;
@@ -3697,11 +3711,13 @@ function calcAttribution(ps, bars) {
   const themeMap = {};
   rows.forEach(r => {
     const t = r.pos.theme || '(Unclassified)';
-    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, localDollar:0, fxDollar:0, contribPp:0, weightPct:0, positions:[] };
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, localDollar:0, fxDollar:0, priceDollar:0, incomeDollar:0, contribPp:0, weightPct:0, positions:[] };
     themeMap[t].startSGD   += r.startSGD;
     themeMap[t].dollar     += r.dollar;
     themeMap[t].localDollar += r.localDollar;
     themeMap[t].fxDollar   += r.fxDollar;
+    themeMap[t].priceDollar += r.priceDollar;
+    themeMap[t].incomeDollar += r.incomeDollar;
     themeMap[t].contribPp  += r.contribPp;
     themeMap[t].weightPct  += r.weightPct;
     themeMap[t].positions.push(r);
@@ -3713,11 +3729,15 @@ function calcAttribution(ps, bars) {
   const totalDollar = rows.reduce((s,r) => s + r.dollar, 0);
   const totalFxDollar = rows.reduce((s,r) => s + (r.fxDollar || 0), 0);
   const totalLocalDollar = rows.reduce((s,r) => s + (r.localDollar || 0), 0);
+  const totalIncomeDollar = rows.reduce((s,r) => s + (r.incomeDollar || 0), 0);
+  const totalPriceDollar = rows.reduce((s,r) => s + (r.priceDollar || 0), 0);
   return {
     bars,
-    totalStart, totalDollar, totalFxDollar, totalLocalDollar,
+    totalStart, totalDollar, totalFxDollar, totalLocalDollar, totalIncomeDollar, totalPriceDollar,
     portfolioRetPct: totalStart > 0 ? (totalDollar / totalStart) * 100 : 0,
     fxContribPp: totalStart > 0 ? (totalFxDollar / totalStart) * 100 : 0,
+    incomeContribPp: totalStart > 0 ? (totalIncomeDollar / totalStart) * 100 : 0,
+    priceContribPp: totalStart > 0 ? (totalPriceDollar / totalStart) * 100 : 0,
     rows, themes,
     covered: rows.length,
     skipped: ps.length - rows.length,
@@ -3873,8 +3893,10 @@ function calcYtdAttribution(ps, trades) {
       lots.push({ qty: jan1Qty, cost: jan1Px, u: getJan1U(pos), fxEntry: jan1Fx });
     }
 
-    // Replay trades FIFO
-    let realised = 0;
+    // Replay trades FIFO. realisedPrice mirrors realised but WITHOUT the
+    // dividend uplift (u = 1), so realised - realisedPrice is the income
+    // (dividend) component of the total return.
+    let realised = 0, realisedPrice = 0;
     for (const tr of trades) {
       if (tr.a === 'B') {
         lots.push({ qty: tr.q, cost: tr.p, u: uFactorAt(pos, tr.d), fxEntry: fxAtDate(ccy, tr.d) });
@@ -3891,6 +3913,7 @@ function calcYtdAttribution(ps, trades) {
           // converts proceeds at the sell-date FX and cost at the lot's entry FX.
           const procLocal = tr.p * ((lot.u || 1) / uSell) * take;
           realised    += procLocal - lot.cost * take;
+          realisedPrice += tr.p * take - lot.cost * take;   // price-only (no dividend uplift)
           realisedSGD += procLocal * fxSell - lot.cost * take * (lot.fxEntry || fxNow);
           lot.qty -= take;
           remaining -= take;
@@ -3901,7 +3924,7 @@ function calcYtdAttribution(ps, trades) {
     }
 
     // Mark remaining lots to current price (unrealised)
-    let unrealised = 0;
+    let unrealised = 0, unrealisedPrice = 0;
     let endQty = 0;
     const currentPx = pos ? pos.mktPrice : (lots.length && trades.length ? trades[trades.length-1].p : 0);
     for (const lot of lots) {
@@ -3910,6 +3933,7 @@ function calcYtdAttribution(ps, trades) {
       // marks at the current FX and costs the lot at its entry FX.
       const markLocal = currentPx * (lot.u || 1) * lot.qty;
       unrealised    += markLocal - lot.cost * lot.qty;
+      unrealisedPrice += currentPx * lot.qty - lot.cost * lot.qty;   // price-only (no dividend uplift)
       unrealisedSGD += markLocal * fxNow - lot.cost * lot.qty * (lot.fxEntry || fxNow);
       endQty += lot.qty;
     }
@@ -3926,6 +3950,10 @@ function calcYtdAttribution(ps, trades) {
     const dollar      = realisedSGD + unrealisedSGD;
     const localDollar = (realised + unrealised) * fxNow;
     const fxDollar    = dollar - localDollar;
+    // Price/income split of the local return (both at current FX, so they sum
+    // to localDollar): income is the dividend uplift the adjclose carries.
+    const priceDollar  = (realisedPrice + unrealisedPrice) * fxNow;
+    const incomeDollar = localDollar - priceDollar;
     // Start NAV and YTD deployed cost converted FX-as-of-date (epoch FX for the
     // opening lot; each buy at its own date) so the denominator matches the
     // FX-aware numerator.
@@ -3947,7 +3975,7 @@ function calcYtdAttribution(ps, trades) {
       jan1Qty, jan1Px, currentPx, endQty,
       buyQty, sellQty, buyCostSGD,
       realisedSGD, unrealisedSGD, dollar,
-      localDollar, fxDollar,
+      localDollar, fxDollar, priceDollar, incomeDollar,
       startSGD, basisSGD,
       // Null-out retPct when there is no realised+unrealised P&L recorded — this isolates
       // the data-quality fallback cases (closed positions with unknown pre-YTD basis)
@@ -3971,12 +3999,14 @@ function calcYtdAttribution(ps, trades) {
   const themeMap = {};
   rows.forEach(r => {
     const t = r.theme || '(Unclassified)';
-    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, basisSGD:0, dollar:0, localDollar:0, fxDollar:0, contribPp:0, weightPct:0, realisedSGD:0, unrealisedSGD:0, positions:[] };
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, basisSGD:0, dollar:0, localDollar:0, fxDollar:0, priceDollar:0, incomeDollar:0, contribPp:0, weightPct:0, realisedSGD:0, unrealisedSGD:0, positions:[] };
     themeMap[t].startSGD     += r.startSGD;
     themeMap[t].basisSGD     += r.basisSGD || 0;
     themeMap[t].dollar       += r.dollar;
     themeMap[t].localDollar  += r.localDollar;
     themeMap[t].fxDollar     += r.fxDollar;
+    themeMap[t].priceDollar  += r.priceDollar;
+    themeMap[t].incomeDollar += r.incomeDollar;
     themeMap[t].contribPp    += (r.contribPp || 0);   // null coerced to 0 for safe summation
     themeMap[t].weightPct    += r.weightPct;
     themeMap[t].realisedSGD  += r.realisedSGD;
@@ -3991,11 +4021,15 @@ function calcYtdAttribution(ps, trades) {
 
   const totalFxDollar = rows.reduce((s, r) => s + (r.fxDollar || 0), 0);
   const totalLocalDollar = rows.reduce((s, r) => s + (r.localDollar || 0), 0);
+  const totalIncomeDollar = rows.reduce((s, r) => s + (r.incomeDollar || 0), 0);
+  const totalPriceDollar = rows.reduce((s, r) => s + (r.priceDollar || 0), 0);
   return {
     bars: null, horizon: 'YTD',
-    totalStart, totalDollar, totalFxDollar, totalLocalDollar,
+    totalStart, totalDollar, totalFxDollar, totalLocalDollar, totalIncomeDollar, totalPriceDollar,
     portfolioRetPct: totalStart > 0 ? (totalDollar / totalStart) * 100 : 0,
     fxContribPp: totalStart > 0 ? (totalFxDollar / totalStart) * 100 : 0,
+    incomeContribPp: totalStart > 0 ? (totalIncomeDollar / totalStart) * 100 : 0,
+    priceContribPp: totalStart > 0 ? (totalPriceDollar / totalStart) * 100 : 0,
     rows, themes,
     covered: rows.length,
     skipped: ps.length - rows.filter(r => !r.isClosed).length,
@@ -4939,11 +4973,6 @@ function renderAttribution(el) {
             <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${reconciles?'var(--g)':'var(--r)'}">${fmtPct(sumContrib)}</div>
             <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(heldEquityRetPct)} held-equity return</div>
           </div>
-          <div title="Currency contribution to the SGD return over this window: r_SGD = (1 + r_local)(1 + r_FX) − 1, summed across the foreign-currency book. Positive means the foreign currencies strengthened against SGD over the window; SGD-denominated positions contribute nothing. Local + FX = Total on every row.">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">FX Contribution · ${horizonDef.label}</div>
-            <div style="font-family:var(--sans);font-size:18px;font-weight:700;color:${(A.fxContribPp||0)>=0?'var(--g)':'var(--r)'}">${fmtPct(A.fxContribPp||0)} pp</div>
-            <div style="font-size:12px;color:var(--t2)">${fmtPL(A.totalFxDollar||0)} · currency effect on foreign-ccy holdings</div>
-          </div>
           ${isYtd ? `
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Realised P&L · YTD</div>
@@ -5136,7 +5165,55 @@ function renderAttribution(el) {
       </div>
     </div>`;
 
-  el.innerHTML = headerCard + waterfallAndList + topBotCards + tableCard + heatmapCard;
+  // Return Drivers card — decomposes the SGD total return into Price, Income
+  // (dividends) and FX, the one place these three drivers live so the figure
+  // is not scattered. Hierarchy: local total return = Price + Income; FX sits
+  // on top; Price + Income + FX = Total (ties to the headline by construction).
+  const _rdTile = (label, dollar, pp, accent, sub) => `
+    <div style="flex:1;min-width:130px;padding:10px 12px;background:var(--bg2);border-radius:6px">
+      <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.6px;font-weight:600">${label}</div>
+      <div style="font-family:var(--sans);font-size:18px;font-weight:700;color:${accent}">${fmtPct(pp)} pp</div>
+      <div style="font-size:11px;color:var(--t3);font-family:var(--mono)">${fmtPL(dollar)}</div>
+      ${sub ? `<div style="font-size:10px;color:var(--t4);margin-top:2px">${sub}</div>` : ''}
+    </div>`;
+  const _incThemes = (A.themes || []).filter(t => Math.abs(t.incomeDollar || 0) > 0.5)
+    .sort((a, b) => (b.incomeDollar || 0) - (a.incomeDollar || 0)).slice(0, 6);
+  const _ts = A.totalStart || 0;
+  const _sign = v => v >= 0 ? 'var(--g)' : 'var(--r)';
+  const returnDriversCard = `
+    <div class="card mb">
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Return Drivers · ${horizonDef.label} — Price + Income + FX = Total</div></div>
+      <div class="card-body" style="padding-top:8px">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin-bottom:6px">
+          ${_rdTile('Price', A.totalPriceDollar || 0, A.priceContribPp || 0, _sign(A.totalPriceDollar || 0), 'price-only return')}
+          <div style="display:flex;align-items:center;font-size:20px;color:var(--t4);font-weight:300">+</div>
+          ${_rdTile('Income (dividends)', A.totalIncomeDollar || 0, A.incomeContribPp || 0, '#1351b4', 'reinvested-dividend uplift')}
+          <div style="display:flex;align-items:center;font-size:20px;color:var(--t4);font-weight:300">+</div>
+          ${_rdTile('FX', A.totalFxDollar || 0, A.fxContribPp || 0, _sign(A.totalFxDollar || 0), 'currency on foreign book')}
+          <div style="display:flex;align-items:center;font-size:20px;color:var(--t4);font-weight:300">=</div>
+          ${_rdTile('Total', A.totalDollar || 0, A.portfolioRetPct || 0, _sign(A.totalDollar || 0), 'SGD total return')}
+        </div>
+        ${_incThemes.length ? `
+        <div style="margin-top:12px">
+          <div style="font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px;font-weight:600;margin-bottom:6px">Where the income comes from — top dividend contributors</div>
+          ${_incThemes.map(t => {
+            const pp = _ts > 0 ? (t.incomeDollar / _ts) * 100 : 0;
+            const w = _incThemes[0].incomeDollar > 0 ? Math.max(0, (t.incomeDollar / _incThemes[0].incomeDollar) * 100) : 0;
+            return `<div style="display:grid;grid-template-columns:150px 1fr 64px 56px;align-items:center;gap:10px;padding:4px 0">
+              <div style="font-size:12px;font-weight:600;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.theme}">${t.theme}</div>
+              <div class="bar-track" style="height:6px"><div class="bar-fill" style="width:${w}%;background:#1351b4"></div></div>
+              <div style="font-family:var(--mono);font-size:12px;text-align:right;color:var(--t2)">${fmtPL(t.incomeDollar)}</div>
+              <div style="font-family:var(--mono);font-size:12px;text-align:right;color:#1351b4">${fmtPct(pp)}</div>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
+        <div style="margin-top:10px;font-size:10px;color:var(--t4);line-height:1.5">
+          The local-currency total return splits into <strong style="color:var(--t3)">Price</strong> (close-to-close) and <strong style="color:var(--t3)">Income</strong> (the dividend uplift carried by adjusted closes); <strong style="color:var(--t3)">FX</strong> is the currency move on the foreign-currency book. The three sum to the SGD <strong style="color:var(--t3)">Total</strong> on every position. In the theme list below, "Local" is Price + Income combined.
+        </div>
+      </div>
+    </div>`;
+
+  el.innerHTML = headerCard + returnDriversCard + waterfallAndList + topBotCards + tableCard + heatmapCard;
 
   // Waterfall: ranked theme contributions, portfolio total at the bottom
   setTimeout(() => {
