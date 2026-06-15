@@ -612,7 +612,11 @@ function detectSplit(cached, fresh) {
 
 async function fetchLivePrice(yfSymbol, range='10y') {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yfSymbol}?range=${range}&interval=1d`;
+    // Cache-buster: corsproxy.io caches each upstream response for ~8 minutes,
+    // so without a unique URL every 10-second poll gets the SAME stale quote and
+    // the intraday figures freeze for minutes. A throwaway _cb param Yahoo
+    // ignores forces a cache miss, so each poll fetches a genuinely fresh price.
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yfSymbol}?range=${range}&interval=1d&_cb=${Date.now()}`;
     const json = await fetchWithRetry(url);
     if (!json) return null;
     return parseYahooResponse(json);
