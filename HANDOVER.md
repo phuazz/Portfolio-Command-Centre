@@ -30,7 +30,13 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
 - Live feed: corsproxy-first proxy list (`?url=` API), 10-second visible-tab
   polling with an in-flight guard, tweened headline values, pill-only status
   ("● N LIVE · HH:MM"). Refresh fetches 7-day windows merged into baked
-  history — full history is never re-pulled by the client.
+  history — full history is never re-pulled by the client. `fetchLivePrice`
+  appends a `_cb=<timestamp>` cache-buster to every Yahoo URL — load-bearing:
+  corsproxy.io caches each upstream response for ~8-14 min, so without it every
+  poll returns the SAME stale quote and intraday figures freeze for minutes
+  (Yahoo itself updates in near-real-time). Trade-off: every poll is now a real
+  upstream fetch; if corsproxy rate-limits under sustained 10s polling, relax
+  `LIVE_POLL_MS` to ~30s (fresh-every-30s still beats stale-for-8-min).
 - CI on `checkout@v5` / `setup-node@v5` (Node 24 ready). Three crons plus
   `workflow_dispatch` in `.github/workflows/update.yml`.
 
