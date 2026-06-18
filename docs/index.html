@@ -5320,41 +5320,65 @@ function renderThesis(el) {
   const convBadge = c => {
     const u = (c || '').toUpperCase();
     const col = (u.includes('H') && !u.includes('L')) ? 'var(--g)' : (u.includes('L') && !u.includes('H')) ? 'var(--t3)' : '#b45309';
-    return `<span style="font-size:10px;font-weight:700;font-family:var(--mono);color:${col};border:1px solid ${col};border-radius:4px;padding:1px 6px">${c || '—'}</span>`;
+    return `<span style="font-size:11px;font-weight:700;font-family:var(--mono);color:${col};border:1px solid ${col};border-radius:4px;padding:2px 7px" title="Conviction (subjective): H high · M medium · L low">${c || '—'}</span>`;
   };
+  // Momentum-vs-thesis: every thesis here is long, so a bullish trend signal
+  // supports the long, a bearish one fights it (a review prompt, not a verdict).
+  const alignOf = sig => { if (!sig || sig === '—') return null; if (/SELL/i.test(sig)) return 'against'; if (/BUY/i.test(sig)) return 'aligned'; return 'neutral'; };
+  const alignCol = { aligned: 'var(--g)', neutral: '#b45309', against: 'var(--r)' };
+  const offHighOf = p => {
+    if (!p.history || p.history.length < 2 || !p.mktPrice) return null;
+    let hi = 0; for (const b of p.history.slice(-252)) { const c = b.adjclose != null ? b.adjclose : b.close; if (c > hi) hi = c; }
+    return hi > 0 ? (p.mktPrice / hi - 1) * 100 : null;
+  };
+  let nA = 0, nN = 0, nX = 0; const review = [];
+  sorted.forEach(p => { const a = alignOf(p.trendSignals && p.trendSignals.signal); if (a === 'aligned') nA++; else if (a === 'against') { nX++; review.push(p.ticker); } else if (a === 'neutral') nN++; });
+
   const banner = `
-    <div style="background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--t3);line-height:1.55">
-      <strong style="color:var(--t2)">Investment theses.</strong> Concise structural views (knowledge cutoff Jan 2026) — the durable bull case and key risk per holding. <strong style="color:var(--t2)">For personal use, not investment advice, and not live news.</strong> The <em>current</em> read — YTD return, contribution and the trend signal — is computed live and shown on each card; the thesis text is the slow-moving "why". Conviction (H/M/L) is a subjective read. Edit <code style="font-family:var(--mono)">theses.json</code> to refine any of these.
+    <div style="background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--t3);line-height:1.6">
+      <strong style="color:var(--t2)">Investment theses.</strong> Concise structural views (knowledge cutoff Jan 2026) — the durable bull case and key risk per holding. <strong style="color:var(--t2)">Personal use, not investment advice, not live news.</strong> The <em>current</em> read on each card (YTD return, contribution, trend signal, distance off the 52-week high) is computed live; the thesis text is the slow-moving "why". Edit <code style="font-family:var(--mono)">theses.json</code> to refine.
+    </div>
+    <div class="card" style="margin-bottom:14px;padding:12px 16px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;font-size:13px">
+      <strong style="color:var(--t1)">Momentum vs thesis</strong>
+      <span style="color:var(--g)">● ${nA} aligned</span>
+      <span style="color:#b45309">● ${nN} neutral</span>
+      <span style="color:var(--r)">● ${nX} against</span>
+      ${review.length ? `<span style="color:var(--t3)">— review (momentum against your long thesis): <strong style="font-family:var(--mono);color:var(--r)">${review.join(', ')}</strong></span>` : ''}
     </div>`;
   const cards = sorted.map(p => {
     const t = THESES[p.ticker] || {};
     const r = ytdRows[p.ticker];
     const wt = (p.mktValueSGD || 0) / total * 100;
     const sig = p.trendSignals && p.trendSignals.signal && p.trendSignals.signal !== '—' ? p.trendSignals.signal : null;
+    const align = alignOf(sig);
+    const borderCol = align ? alignCol[align] : 'var(--bd)';
     const ytdRet = (r && r.retPct != null) ? fmtPct(r.retPct) : '—';
     const ytdRetCls = (r && r.retPct != null && r.retPct >= 0) ? 'var(--g)' : 'var(--r)';
     const ytdContrib = (r && r.contribPp != null) ? fmtPct(r.contribPp) + ' pp' : '—';
+    const oh = offHighOf(p);
+    const ohStr = oh == null ? null : (Math.abs(oh) < 0.5 ? 'at 52w high' : `${oh.toFixed(0)}% off 52w high`);
     const hasThesis = t.thesis || t.desc;
-    return `<div class="card" style="margin-bottom:10px;padding:14px 16px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
-        <div style="min-width:0"><span style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--t1)">${p.ticker}</span>
-          <span style="font-size:13px;color:var(--t2);margin-left:8px">${p.name || ''}</span></div>
-        <div style="display:flex;align-items:center;gap:10px;white-space:nowrap">
+    return `<div class="card" style="margin-bottom:12px;padding:16px 18px;border-left:3px solid ${borderCol}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:5px">
+        <div style="min-width:0"><span style="font-family:var(--mono);font-weight:700;font-size:15px;color:var(--t1)">${p.ticker}</span>
+          <span style="font-size:14px;color:var(--t2);margin-left:9px">${p.name || ''}</span></div>
+        <div style="display:flex;align-items:center;gap:11px;white-space:nowrap">
           ${convBadge(t.conviction)}
-          <span style="font-size:11px;color:var(--t3);font-family:var(--mono)">${wt.toFixed(1)}% of book</span>
+          <span style="font-size:12px;color:var(--t3);font-family:var(--mono)">${wt.toFixed(1)}% of book</span>
         </div>
       </div>
-      <div style="font-size:10px;color:var(--t4);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${p.theme || ''}</div>
+      <div style="font-size:10px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:9px">${p.theme || ''}</div>
       ${hasThesis ? `
-      <div style="font-size:12px;color:var(--t2);margin-bottom:6px">${t.desc || ''}</div>
-      <div style="font-size:13px;color:var(--t1);line-height:1.5;margin-bottom:5px"><strong style="color:var(--g)">Thesis.</strong> ${t.thesis || '—'}</div>
-      <div style="font-size:12px;color:var(--t2);line-height:1.5"><strong style="color:#b45309">Watch.</strong> ${t.risk || '—'}</div>`
-        : `<div style="font-size:12px;color:var(--t3);font-style:italic">No thesis yet — add an entry for ${p.ticker} to theses.json.</div>`}
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid var(--bd);font-size:11px;color:var(--t3)">
-        <span>Live read:</span>
-        <span>YTD return <strong style="font-family:var(--mono);color:${ytdRetCls}">${ytdRet}</strong></span>
-        <span>contribution <strong style="font-family:var(--mono);color:var(--t2)">${ytdContrib}</strong></span>
-        ${sig ? `<span>signal <strong style="color:${sigCol(sig)}">${sig}</strong></span>` : ''}
+      <div style="font-size:13px;color:var(--t2);margin-bottom:7px;line-height:1.55">${t.desc || ''}</div>
+      <div style="font-size:15px;color:var(--t1);line-height:1.62;margin-bottom:7px"><strong style="color:var(--g)">Thesis.</strong> ${t.thesis || '—'}</div>
+      <div style="font-size:13px;color:var(--t2);line-height:1.55"><strong style="color:#b45309">Watch.</strong> ${t.risk || '—'}</div>`
+        : `<div style="font-size:13px;color:var(--t3);font-style:italic">No thesis yet — add an entry for ${p.ticker} to theses.json.</div>`}
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--bd);font-size:12px;color:var(--t3)">
+        <span style="color:var(--t4);text-transform:uppercase;letter-spacing:0.5px;font-size:10px;align-self:center">Live read</span>
+        <span>YTD <strong style="font-family:var(--mono);color:${ytdRetCls}">${ytdRet}</strong></span>
+        <span>contrib <strong style="font-family:var(--mono);color:var(--t2)">${ytdContrib}</strong></span>
+        ${ohStr ? `<span><strong style="font-family:var(--mono);color:var(--t2)">${ohStr}</strong></span>` : ''}
+        ${sig ? `<span>signal <strong style="color:${sigCol(sig)}">${sig}</strong>${align === 'against' ? ' <span style="color:var(--r)">(vs thesis)</span>' : ''}</span>` : ''}
       </div>
     </div>`;
   }).join('');
