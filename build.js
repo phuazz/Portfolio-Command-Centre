@@ -322,6 +322,10 @@ async function main() {
   // under docs/.
   fs.copyFileSync(TRADES_SRC, path.join(DATA_DIR, 'trades.json'));
   fs.copyFileSync(BOOK_SRC, path.join(DATA_DIR, 'book.json'));
+  // theses.json (per-holding investment theses for the Thesis tab) — user-owned
+  // input copied into docs/data/ for the client to fetch, like the ledger files.
+  const THESES_SRC = path.join(__dirname, 'theses.json');
+  if (fs.existsSync(THESES_SRC)) fs.copyFileSync(THESES_SRC, path.join(DATA_DIR, 'theses.json'));
 
   // Write docs/data/meta.json (date, ticker list, generation timestamp)
   const meta = {

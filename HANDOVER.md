@@ -40,6 +40,23 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
 - CI on `checkout@v5` / `setup-node@v5` (Node 24 ready). Three crons plus
   `workflow_dispatch` in `.github/workflows/update.yml`.
 
+## Thesis tab (19 Jun 2026)
+
+`theses.json` at the repo root is a user-owned input (like `trades.json`) holding
+one concise investment thesis per holding — `desc` (what it is), `thesis` (why it
+may do well), `risk` (what to watch), `conviction` (H/M/L). It was AI-seeded as
+durable structural views at a Jan-2026 knowledge cutoff for PERSONAL use (not
+advice, not live news) — edit freely. `build.js` copies it into `docs/data/`;
+the client fetches it into the `THESES` global (tolerant — a missing file never
+blanks the dashboard). The Thesis tab (`renderThesis`) shows one card per held
+priced equity/ETF/REIT, sorted by weight, pairing the durable thesis with the
+LIVE read the dashboard computes (YTD return, contribution, trend signal) — so
+the qualitative "why" sits next to the quantitative "how it's actually doing".
+Live news/catalyst refresh (Tier 2) was deliberately NOT built: it needs a news
+source + an LLM call at bake time with sourcing/accuracy guardrails, and for
+real decisions fabricated catalysts are a liability — keep any such layer clearly
+labelled as unverified research, not fact.
+
 ## Known items
 
 - Intraday/1-Day "since prior close" can over-state for a market on a day when
