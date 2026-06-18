@@ -201,6 +201,17 @@
       "type": "Stock",
       "mktPriceSnap": 24.37
     },
+    "SPCX.US": {
+      "yf": null,
+      "name": "Space Exploration Tech Cl A",
+      "exchange": "Private",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Private / Space",
+      "type": "Stock",
+      "mktPriceSnap": 177.20
+    },
     "XLE.US": {
       "yf": "XLE",
       "name": "Energy Select SPDR",
