@@ -190,6 +190,17 @@
       "theme": "Clean Energy",
       "type": "ETF"
     },
+    "FLNC.US": {
+      "yf": "FLNC",
+      "name": "Fluence Energy",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 50,
+      "theme": "Clean Energy",
+      "type": "Stock",
+      "mktPriceSnap": 24.37
+    },
     "XLE.US": {
       "yf": "XLE",
       "name": "Energy Select SPDR",
