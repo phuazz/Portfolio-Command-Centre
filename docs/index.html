@@ -337,6 +337,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
     <button class="tab" data-tab="allocation">Allocation</button>
     <button class="tab" data-tab="performance">Performance</button>
     <button class="tab" data-tab="risk">Risk Analysis</button>
+    <button class="tab" data-tab="thesis">Thesis</button>
   </div>
 
   <div id="tabContent">
@@ -346,6 +347,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
     <div id="pane-allocation" class="tab-pane" style="display:none"></div>
     <div id="pane-performance" class="tab-pane" style="display:none"></div>
     <div id="pane-risk" class="tab-pane" style="display:none"></div>
+    <div id="pane-thesis" class="tab-pane" style="display:none"></div>
   </div>
 </div>
 
@@ -369,6 +371,7 @@ const voteLabel = v => v>=3?'3/3':v>=2?'2/3':v>=1?'1/3':'0/3';
 // ═══════════════════════════════════════════════════════════════
 let POSITIONS = [];   // Derived at boot: replayLedger() replays data/trades.json over data/book.json.
 let TRADES_YTD = [];  // Loaded at boot from data/trades.json (buy/sell rows only, chronological).
+let THESES = {};      // Loaded at boot from data/theses.json (per-holding investment theses) — optional.
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
 const SNAPSHOT = {
@@ -5303,8 +5306,63 @@ window.toggleAttrTheme = function(theme) {
 let _dataVersion = 0;
 const _paneVersion = {}; // tracks which version each pane was rendered at
 
+// ─── TAB: THESIS ─────────────────────────────────────────────────
+// Per-holding investment thesis (from theses.json) paired with the LIVE read
+// the dashboard computes (YTD return, contribution, trend signal). The thesis
+// text is a durable structural view; the live read is current. Sorted by
+// current weight so the positions that matter most lead.
+function renderThesis(el) {
+  const ps = state.positions.filter(p => p.type !== 'Bond' && p.type !== 'Cash');
+  const total = state.totalValueSGD || ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0) || 1;
+  const ytdRows = {};
+  try { calcYtdAttribution(state.positions, TRADES_YTD).rows.forEach(r => { ytdRows[r.pos.ticker] = r; }); } catch (e) {}
+  const sorted = [...ps].sort((a, b) => (b.mktValueSGD || 0) - (a.mktValueSGD || 0));
+  const convBadge = c => {
+    const u = (c || '').toUpperCase();
+    const col = (u.includes('H') && !u.includes('L')) ? 'var(--g)' : (u.includes('L') && !u.includes('H')) ? 'var(--t3)' : '#b45309';
+    return `<span style="font-size:10px;font-weight:700;font-family:var(--mono);color:${col};border:1px solid ${col};border-radius:4px;padding:1px 6px">${c || '—'}</span>`;
+  };
+  const banner = `
+    <div style="background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--t3);line-height:1.55">
+      <strong style="color:var(--t2)">Investment theses.</strong> Concise structural views (knowledge cutoff Jan 2026) — the durable bull case and key risk per holding. <strong style="color:var(--t2)">For personal use, not investment advice, and not live news.</strong> The <em>current</em> read — YTD return, contribution and the trend signal — is computed live and shown on each card; the thesis text is the slow-moving "why". Conviction (H/M/L) is a subjective read. Edit <code style="font-family:var(--mono)">theses.json</code> to refine any of these.
+    </div>`;
+  const cards = sorted.map(p => {
+    const t = THESES[p.ticker] || {};
+    const r = ytdRows[p.ticker];
+    const wt = (p.mktValueSGD || 0) / total * 100;
+    const sig = p.trendSignals && p.trendSignals.signal && p.trendSignals.signal !== '—' ? p.trendSignals.signal : null;
+    const ytdRet = (r && r.retPct != null) ? fmtPct(r.retPct) : '—';
+    const ytdRetCls = (r && r.retPct != null && r.retPct >= 0) ? 'var(--g)' : 'var(--r)';
+    const ytdContrib = (r && r.contribPp != null) ? fmtPct(r.contribPp) + ' pp' : '—';
+    const hasThesis = t.thesis || t.desc;
+    return `<div class="card" style="margin-bottom:10px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <div style="min-width:0"><span style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--t1)">${p.ticker}</span>
+          <span style="font-size:13px;color:var(--t2);margin-left:8px">${p.name || ''}</span></div>
+        <div style="display:flex;align-items:center;gap:10px;white-space:nowrap">
+          ${convBadge(t.conviction)}
+          <span style="font-size:11px;color:var(--t3);font-family:var(--mono)">${wt.toFixed(1)}% of book</span>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--t4);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">${p.theme || ''}</div>
+      ${hasThesis ? `
+      <div style="font-size:12px;color:var(--t2);margin-bottom:6px">${t.desc || ''}</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.5;margin-bottom:5px"><strong style="color:var(--g)">Thesis.</strong> ${t.thesis || '—'}</div>
+      <div style="font-size:12px;color:var(--t2);line-height:1.5"><strong style="color:#b45309">Watch.</strong> ${t.risk || '—'}</div>`
+        : `<div style="font-size:12px;color:var(--t3);font-style:italic">No thesis yet — add an entry for ${p.ticker} to theses.json.</div>`}
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid var(--bd);font-size:11px;color:var(--t3)">
+        <span>Live read:</span>
+        <span>YTD return <strong style="font-family:var(--mono);color:${ytdRetCls}">${ytdRet}</strong></span>
+        <span>contribution <strong style="font-family:var(--mono);color:var(--t2)">${ytdContrib}</strong></span>
+        ${sig ? `<span>signal <strong style="color:${sigCol(sig)}">${sig}</strong></span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML = banner + cards;
+}
+
 function renderTab(forceAll) {
-  const tabs = ['positions','attribution','signals','allocation','performance','risk'];
+  const tabs = ['positions','attribution','signals','allocation','performance','risk','thesis'];
   // Show/hide panes
   tabs.forEach(t => {
     document.getElementById('pane-'+t).style.display = t === state.tab ? '' : 'none';
@@ -5319,6 +5377,7 @@ function renderTab(forceAll) {
       case 'attribution': renderAttribution(pane); break;
       case 'signals': renderSignals(pane); break;
       case 'risk': renderRisk(pane); break;
+      case 'thesis': renderThesis(pane); break;
     }
     _paneVersion[state.tab] = _dataVersion;
   }
@@ -5655,6 +5714,10 @@ async function bootstrap() {
     TRADES_YTD = trades.filter(t => t.a === 'B' || t.a === 'S');
     PRE_YTD_BASIS = book.epochCloses || {};
     POSITIONS = replayLedger(book, trades);
+    // Theses are optional and non-critical: fetch separately so a missing/
+    // not-yet-baked theses.json never blanks the dashboard.
+    try { const t = await fetchDataFile('theses.json'); THESES = (t && t.theses) || t || {}; }
+    catch (e2) { THESES = {}; }
   } catch (e) {
     console.warn('[bootstrap] data/*.json load failed:', e.message);
     // Leave PRELOADED_HISTORY/POSITIONS empty; init() will take the FETCH
