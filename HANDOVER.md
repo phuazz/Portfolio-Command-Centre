@@ -42,6 +42,23 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
 
 ## Known items
 
+- Intraday/1-Day "since prior close" can over-state for a market on a day when
+  Yahoo's v8 chart feed returns a NULL recent daily bar. Seen 18 Jun 2026: the
+  17-Jun SGX close came back null for every Asian name (in BOTH the daily bake
+  and the live fetch — confirmed in docs/data/history.json, bars jump 16-Jun →
+  18-Jun), so the global-day engine anchored the window on 16-Jun and the SGX
+  names showed ~+1.4% "intraday" instead of ~+0.2% (e.g. ES3 16-Jun 5.206 →
+  18-Jun 5.282 = +1.46% vs the true 17→18 ≈ +0.23%). Yahoo's website shows the
+  right figure because it reads the v7 quote endpoint (regularMarketPreviousClose),
+  which the CORS proxies cannot reach (needs a crumb). NOT a calc bug and NOT
+  persistent — positions/YTD/cost basis are unaffected, and it self-corrects the
+  next day when the window moves past the gapped bar. A heuristic guard was
+  considered and rejected: it cannot distinguish a missing bar from a real
+  holiday (where measuring across the gap is correct), so it would wrongly blank
+  valid intraday on holiday-adjacent days. The durable fix is a quote-grade
+  source (the Phase D Cloudflare Worker hitting v7) for an authoritative prior
+  close. Do not re-investigate; if intraday looks inflated for one day, check
+  whether a recent daily bar is null in the chart feed.
 - The ledger is statement-reconciled (Phase A.1, 12 Jun 2026). All Jan–May
   fills are sourced from the six SCB monthly statements with explicit
   per-fill fees; the opening book and epoch closes come from the December
