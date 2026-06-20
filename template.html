@@ -1834,6 +1834,23 @@ function _usCloseBoundary() {
   return new Date(utcMs).toISOString().slice(0, 10);
 }
 
+// The calendar weekday immediately BEFORE the boundary's reference weekday,
+// skipping weekends. The 1-Day window's start leg anchors here (last bar on or
+// before this date) rather than on the bar immediately before the boundary, so
+// a market that was closed on the most recent weekday — a US holiday such as
+// Juneteenth — reads flat for the 1-Day move (its start and end bars coincide)
+// instead of reaching back to its prior real session. Markets that did trade
+// that weekday still show their genuine move. Date arithmetic is in UTC ms only
+// (no manual offsets, DST-safe); getUTCDay returns 0=Sun .. 6=Sat.
+function _prevWeekdayAnchor(boundary) {
+  let ms = Date.parse(boundary + 'T00:00:00Z');
+  const isWeekend = m => { const d = new Date(m).getUTCDay(); return d === 0 || d === 6; };
+  while (isWeekend(ms)) ms -= 86400000;   // refDay: most recent weekday on/before the boundary
+  ms -= 86400000;                          // step to the weekday strictly before refDay
+  while (isWeekend(ms)) ms -= 86400000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 function calcSplitDayPnL(ps, trades) {
   const liveData = state.liveData || {};
   const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
@@ -1845,6 +1862,7 @@ function calcSplitDayPnL(ps, trades) {
   const barISO = bar => (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
   const adj = bar => bar.adjclose != null ? bar.adjclose : bar.close;
   const boundary = _usCloseBoundary();
+  const prevAnchor = _prevWeekdayAnchor(boundary);
 
   let intradayEq = 0, prevEq = 0, liveCount = 0;
   for (const tk of Object.keys(meta)) {
@@ -1856,9 +1874,14 @@ function calcSplitDayPnL(ps, trades) {
     let iU = n - 1;
     while (iU >= 0 && barISO(h[iU]) > boundary) iU--;
     if (iU < 1) continue;                              // need a bar before the boundary too
-    const closeU = adj(h[iU]), closeP = adj(h[iU - 1]);
+    // Start leg: last bar on or before the weekday before the boundary's
+    // reference weekday (calendar-anchored). iP === iU means this market did not
+    // trade on the most recent weekday (a holiday) — the 1-Day move is then flat.
+    let iP = iU;
+    while (iP > 0 && barISO(h[iP]) > prevAnchor) iP--;
+    const closeU = adj(h[iU]), closeP = adj(h[iP]);
     if (!isFinite(closeU) || closeU <= 0 || !isFinite(closeP) || closeP <= 0) continue;
-    const dateU = barISO(h[iU]), dateP = barISO(h[iU - 1]);
+    const dateU = barISO(h[iU]), dateP = barISO(h[iP]);
 
     const pos = ps.find(p => p.ticker === tk);
     const qtyNow = pos ? pos.qty : 0;
@@ -1901,8 +1924,13 @@ function calcSplitDayPnL(ps, trades) {
       let iU = ser.length - 1;
       while (iU >= 0 && ser[iU].date > boundary) iU--;
       if (iU < 1) continue;
+      // Start leg on the same calendar-weekday anchor as equities. FX trades on
+      // US equity holidays, so a closed-equity weekday still carries a real FX
+      // move here (iP < iU); only a genuine FX gap collapses it to flat.
+      let iP = iU;
+      while (iP > 0 && ser[iP].date > prevAnchor) iP--;
       intradayCash += p.qty * (fxNow - ser[iU].rate);
-      prevCash += p.qty * (ser[iU].rate - ser[iU - 1].rate);
+      prevCash += p.qty * (ser[iU].rate - ser[iP].rate);
     }
   }
 
@@ -3665,9 +3693,16 @@ function _effectiveReturnGlobalDay(p, mode) {
     const rawNow = fresher ? p.mktPrice : raw(h[n - 1]);
     return { closeNow, closeThen, rawNow, rawThen: raw(h[iU]), snapshotFresher: fresher, refDate: iso(h[iU]), endFxDate: null };
   }
-  const closeNow = adj(h[iU]), closeThen = adj(h[iU - 1]);
+  // Start leg: last bar on or before the weekday before the boundary's
+  // reference weekday (calendar-anchored, matching calcSplitDayPnL). iP === iU
+  // means this market was closed on the most recent weekday (a holiday) — the
+  // 1-Day move reads flat rather than reaching back to its prior real session.
+  const prevAnchor = _prevWeekdayAnchor(boundary);
+  let iP = iU;
+  while (iP > 0 && iso(h[iP]) > prevAnchor) iP--;
+  const closeNow = adj(h[iU]), closeThen = adj(h[iP]);
   if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
-  return { closeNow, closeThen, rawNow: raw(h[iU]), rawThen: raw(h[iU - 1]), snapshotFresher: false, refDate: iso(h[iU - 1]), endFxDate: iso(h[iU]) };
+  return { closeNow, closeThen, rawNow: raw(h[iU]), rawThen: raw(h[iP]), snapshotFresher: false, refDate: iso(h[iP]), endFxDate: iso(h[iU]) };
 }
 
 function calcAttribution(ps, bars) {

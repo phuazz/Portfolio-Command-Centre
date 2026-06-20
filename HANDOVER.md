@@ -57,6 +57,27 @@ source + an LLM call at bake time with sourcing/accuracy guardrails, and for
 real decisions fabricated catalysts are a liability — keep any such layer clearly
 labelled as unverified research, not fact.
 
+## 1-Day window is calendar-weekday anchored (20 Jun 2026)
+
+The 1-Day card and the 1-Day contributors/detractors panel anchor their START
+leg on the calendar weekday BEFORE the boundary's reference weekday, not on each
+ticker's immediately preceding bar. The helper `_prevWeekdayAnchor` computes that
+date (UTC-ms arithmetic, weekend-skipping); `calcSplitDayPnL` and
+`_effectiveReturnGlobalDay` then take the last bar on or before it as the start.
+Consequence: a market that was closed on the most recent weekday — a US holiday
+such as Juneteenth — reads FLAT for the 1-Day move (its start and end bars are the
+same), instead of reaching back to its prior real session and showing a two-day-old
+move mislabelled as "1-Day". Markets that did trade that weekday still show their
+genuine move; foreign-cash FX (which trades on US equity holidays) still shows the
+real weekday FX move. This is a no-op on ordinary days — it only bites on
+holiday-adjacent days. Requested 20 Jun 2026 after Juneteenth (Fri) made every US
+name show its Wed-to-Thu move as "1-Day" on the Saturday. Two honest caveats: (1)
+the last real session's move drops out of the 1-Day view during the holiday gap
+(by design — it is calendar-older than one day); (2) if a market traded but Yahoo
+returned a null/missing bar for that weekday (the Asian-close lag below), the name
+reads flat for that day rather than across the gap — a softer, self-correcting
+failure than an inflated move. The intraday (ID) path is unchanged.
+
 ## Known items
 
 - Intraday/1-Day "since prior close" can over-state for a market on a day when
