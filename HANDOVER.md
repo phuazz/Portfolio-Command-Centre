@@ -37,6 +37,17 @@ needs one `meta` entry in `book.json`. See the workflow section in `CLAUDE.md`.
   (Yahoo itself updates in near-real-time). Trade-off: every poll is now a real
   upstream fetch; if corsproxy rate-limits under sustained 10s polling, relax
   `LIVE_POLL_MS` to ~30s (fresh-every-30s still beats stale-for-8-min).
+- Live data is last-good sticky (25 Jun 2026). A per-ticker fetch failure keeps
+  the ticker's previous LIVE entry (`state.liveData[sym]`) instead of reverting
+  to the baked close, and `refreshPrices` merges each poll over the existing
+  `state.liveData` rather than replacing it wholesale. Before this, a partial
+  poll (some tickers 429/timeout) reverted the failed names to baked, so the
+  headline — intraday, 1M, YTD, total market value — jumped between polls (e.g.
+  49 live names then 27, total swinging ~S$6k); 1-Day was immune because it is
+  anchored on baked bars, not the live price. Now the book only moves on genuine
+  ticks. Minor cost: a repeatedly-failing ticker shows an ageing live price
+  without a stale badge (`isStale` is false while any live price is held) —
+  acceptable versus the jump.
 - CI on `checkout@v5` / `setup-node@v5` (Node 24 ready). Three crons plus
   `workflow_dispatch` in `.github/workflows/update.yml`.
 

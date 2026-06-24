@@ -757,16 +757,26 @@ async function fetchAllPrices() {
         const data = await fetchLivePrice(item.sym, item.range);
         if (!data) {
           failed++;
-          // FALLBACK: on a failed fetch keep the baked figures (baked > nothing).
+          // FALLBACK on a failed fetch: keep the LAST-GOOD LIVE figures if we have
+          // them, dropping to the baked snapshot only when there is no prior live
+          // value (e.g. the first poll). Reverting a transiently-failed ticker to
+          // its baked close is what made the headline (intraday / 1M / YTD / total)
+          // jump whenever a poll returned only a partial set — last-good keeps it
+          // steady, so a single ticker's flaky fetch no longer moves the book.
           if (item.mode !== 'fx') {
-            const pre = (typeof PRELOADED_HISTORY !== 'undefined' && PRELOADED_HISTORY[item.sym]) || cache[item.sym];
-            if (pre && pre.history && pre.history.length > 10) {
-              results[item.sym] = {
-                price: pre.price, prevClose: pre.prevClose,
-                dayChange: pre.price - (pre.prevClose || pre.price),
-                dayChangePct: pre.prevClose ? ((pre.price - pre.prevClose) / pre.prevClose) * 100 : 0,
-                history: historyToFull(pre.history)
-              };
+            const prev = state.liveData && state.liveData[item.sym];
+            if (prev && prev.history && prev.history.length > 10) {
+              results[item.sym] = prev;
+            } else {
+              const pre = (typeof PRELOADED_HISTORY !== 'undefined' && PRELOADED_HISTORY[item.sym]) || cache[item.sym];
+              if (pre && pre.history && pre.history.length > 10) {
+                results[item.sym] = {
+                  price: pre.price, prevClose: pre.prevClose,
+                  dayChange: pre.price - (pre.prevClose || pre.price),
+                  dayChangePct: pre.prevClose ? ((pre.price - pre.prevClose) / pre.prevClose) * 100 : 0,
+                  history: historyToFull(pre.history)
+                };
+              }
             }
           }
           continue;
@@ -5551,7 +5561,11 @@ window.refreshPrices = async function() {
     const liveData = await fetchAllPrices();
     const liveCount = Object.keys(liveData).filter(k => !k.includes('=')).length;
     if (liveCount > 0) {
-      state.liveData = liveData;
+      // Merge over the existing live data rather than replacing it wholesale, so a
+      // ticker absent from this poll keeps its prior (last-good) entry instead of
+      // dropping out and reverting to baked. Combined with the last-good fallback
+      // in fetchAllPrices, the headline only moves on genuine price ticks.
+      state.liveData = { ...state.liveData, ...liveData };
       state.dataSource = 'live';
       enrichAll();
       renderKPIs();
