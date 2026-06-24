@@ -108,5 +108,7 @@
   {"d": "2026-06-12", "t": "4004.JP", "a": "B", "q": 100, "p": 17315, "ccy": "JPY", "yf": "4004.T", "th": "Japan Chemicals"},
   {"d": "2026-06-12", "t": "992.HK", "a": "B", "q": 6000, "p": 22.94, "ccy": "HKD", "yf": "0992.HK", "th": "China Tech"},
   {"d": "2026-06-17", "t": "FLNC.US", "a": "B", "q": 350, "p": 24.37, "ccy": "USD", "yf": "FLNC", "th": "Clean Energy"},
-  {"d": "2026-06-18", "t": "SPCX.US", "a": "B", "q": 30, "p": 177.20, "ccy": "USD", "yf": "SPCX", "th": "Space"}
+  {"d": "2026-06-18", "t": "SPCX.US", "a": "B", "q": 30, "p": 177.20, "ccy": "USD", "yf": "SPCX", "th": "Space"},
+  {"d": "2026-06-24", "t": "FLNC.US", "a": "S", "q": 350, "p": 19.9489, "ccy": "USD", "yf": "FLNC", "th": "Clean Energy"},
+  {"d": "2026-06-24", "t": "SPCX.US", "a": "S", "q": 30, "p": 155.91, "ccy": "USD", "yf": "SPCX", "th": "Space"}
 ]
