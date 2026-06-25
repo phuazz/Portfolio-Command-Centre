@@ -212,6 +212,17 @@
       "type": "Stock",
       "mktPriceSnap": 180.27
     },
+    "TLN.US": {
+      "yf": "TLN",
+      "name": "Talen Energy",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 50,
+      "theme": "Nuclear Power",
+      "type": "Stock",
+      "mktPriceSnap": 417.80
+    },
     "XLE.US": {
       "yf": "XLE",
       "name": "Energy Select SPDR",
