@@ -116,12 +116,23 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   convention; replayed holdings tie to every month-end statement exactly on
   quantity (average within broker rounding, IGV pinned via a 3.06
   costAdjustment). Nine previously-missing fills were recovered, including
-  four whole round-trips (9660.HK, MAR.US, XMED.GB, XCSI.GB). June fills are
-  order-screen verified and carry no fee field; the next statement
-  re-anchors them.
-- `cashAnchor` re-anchored 2026-06-11 to actual SCB balances (incl. a small
-  AUD bucket); the deltas absorbed accumulated dividends, interest and fees.
-  Statement dividends are not yet ledger rows — a Phase C candidate.
+  four whole round-trips (9660.HK, MAR.US, XMED.GB, XCSI.GB). June fills were
+  reconciled against the June statement on 2026-07-02: all sixteen statement
+  fills matched the ledger 1:1 on date, quantity and price — no missing fills
+  — and explicit fees were backfilled from the statement cash movements.
+  Replayed holdings tie to the 30 June statement exactly on quantity and
+  within broker rounding on average (largest residue JPY 0.03 per share on
+  4004.JP; no new costAdjustments needed).
+- `cashAnchor` re-anchored 2026-06-30 to the June statement balances: every
+  currency (including AUD) swept to exactly zero at month-end — the pure
+  swept-clearing pattern, and the first live crystallisation under the
+  swept-cash decision. About S$49k of derived trading float since the
+  11 June anchor left the book as a level step in Total Market Value and
+  the allocation weights; the return engines are unaffected (they never
+  read the buckets) and the Tactical Cash card honestly reads zero until
+  the next sale. Dividends remain non-ledger per the Phase C
+  contraindication; all five June dividend receipts (US$143 in total) were
+  swept out within days of landing.
 - Engine architecture: the NAV-series engines (equity curve, TWRR,
   allocation risk) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
