@@ -152,8 +152,12 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   per-currency YTD average balance is meaningless, and brokerage cash
   dividends are negligible (MSFT US$19 YTD; dividends already in total-return
   via adjusted closes). Since-Inception and calendar tables are premature
-  (revisit in 2027). Open data-model question for later: should swept
-  settlement cash be treated as portfolio cash at all? See `REFACTOR_PLAN_V2.md`.
+  (revisit in 2027). The swept-cash question was decided on 2026-07-02: the
+  anchored cash buckets stay in the book, read as tactical trading float —
+  the return engines never consume them (the equity curve and cash drag run
+  on their own from-zero forward walk), so the question only ever concerned
+  the balance-sheet views. Decision record and full consumer trace in
+  `REFACTOR_PLAN_V2.md` section 6.
 - If corsproxy.io degrades under polling, Phase D (own Cloudflare Worker) is
   the designed fallback.
 

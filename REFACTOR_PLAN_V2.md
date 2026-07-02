@@ -422,7 +422,9 @@ the dashboard treat the securities-account cash as portfolio cash at all, or
 model the linked bank account as the true cash store? The current snapshot
 balances are real money in the account, so showing them is defensible, but the
 "tactical cash awaiting redeployment" framing is in-flight settlement rather
-than a held position. A data-model decision, not a quick patch.
+than a held position. A data-model decision, not a quick patch. Decided
+2026-07-02: the buckets stay in the book, read as tactical trading float —
+decision record and full consumer trace in section 6.
 
 ### Phase D — Real-time hardening (optional, one short session)
 
@@ -457,6 +459,66 @@ risk; add a split row type only when a holding actually splits.
 Fees: the ledger schema carries a `fee` field, all zeros today. Default:
 populate from broker confirmations whenever convenient; engines treat it as a
 reduction of proceeds / addition to cost when present.
+
+Swept settlement cash — DECIDED 2026-07-02. The Phase C statement work
+established that the SCB securities account is a swept clearing account
+(buys funded just-in-time by transfers in, sale proceeds swept out,
+month-end balance ~0), which raised the question recorded under the C.5
+post-flight note: should swept settlement cash count as portfolio cash at
+all? Three options were considered: status quo (the anchored forward-walk
+buckets stay in the book); exclusion (equity-only book, cash removed from
+every denominator); hybrid tagging (numbers unchanged, buckets tagged and
+re-framed as settlement float).
+
+The consumer trace is the load-bearing fact: the dashboard runs two
+independent cash models, and the return engines never read the anchored
+buckets. The snapshot buckets (replayLedger: cashAnchor plus the net of
+post-anchor trades, floored at zero) feed only the balance-sheet views —
+hero Total Market Value and the position table, the allocation pivots
+(cash as a zero-volatility bucket), the 1D/1W/1M and intraday period P&L
+(FX move on the current balances; cash-inclusive denominators) and the
+Tactical Cash Impact card. The equity curve, the whole-portfolio TWRR, the
+MWRR cross-check and the reconciliation-strip cash drag all derive from
+getEquityCurve's own from-zero forward cash walk (seeded empty at the
+epoch, external deposits inferred at the zero floor; the buckets are never
+consulted). The equity-sleeve TWRR carries no cash by construction, and
+the YTD attribution Dietz denominator is equity-scope — FIFO already
+treats sale proceeds as leaving at the sell date, which is incidentally
+sweep-consistent. Excluding the buckets would therefore not change a
+single return figure; it would only shrink the balance-sheet views.
+
+Decision: status quo numbers, with the interpretation made explicit. The
+buckets stay in the book and in every denominator that currently includes
+them, read as tactical trading float — net investable proceeds
+attributable to trading since the last anchor, wherever custody happens to
+sweep them. Reasons: (i) the balances are real, verified money at every
+anchor date and exact trade arithmetic after it — excluding verified
+balances would detach the book from the broker statements; (ii) the sweep
+is custody mechanics between the owner's own accounts, not an economic
+event — proceeds awaiting redeployment are a portfolio decision (time out
+of the market), and hiding their drag would flatter performance; (iii) an
+equity-only book would degenerate the reconciliation strip (equity-sleeve
+TWRR minus cash drag equals whole-portfolio TWRR), the standing regression
+gate, into a tautology; (iv) exclusion is a wide engine surface
+(enrichment, hero cards, allocation, period P&L, tactical card) for
+negative analytical value.
+
+Semantics now fixed in writing: between anchors the bucket is not the
+physical SCB balance — the physical account decays towards zero as sweeps
+clear; the bucket is the portfolio's investable trading float. A re-anchor
+is the crystallisation point: money swept out and not redeployed by the
+next anchor leaves the book as a level step in Total Market Value and the
+allocation weights (the return engines are unaffected), which is the
+correct treatment of a genuine withdrawal. Periodic re-anchoring continues
+to absorb dividends, interest and fees exactly as today.
+
+No code change follows from this decision. One optional, presentation-only
+follow-up is noted, not scheduled: the Tactical Cash Impact card's
+"awaiting redeployment" caption and footnote should eventually state that
+balances are held across the clearing account and its linked funding
+account, anchored to verified actuals as of the book.json anchor date.
+Labels and tooltips only, one short commit, parity gate: every displayed
+number byte-identical before and after.
 
 ## 7. Risk map
 
