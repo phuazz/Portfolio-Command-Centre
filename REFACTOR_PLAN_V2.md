@@ -441,6 +441,25 @@ fallback path exercised by pointing the Worker URL at a dead host.
 Dependencies. None — can run any time; triggered by observed throttling
 rather than by schedule.
 
+Verdict (2026-07-02) — keep parked. Assessed from the repository record.
+Trigger (a), corsproxy strain: partial polls (429/timeout on a subset of
+tickers) were frequent enough by 25 Jun 2026 to justify building the
+last-good-sticky merge — that fix is itself the evidence that real strain
+occurred — but it removed the user-visible symptom at zero infrastructure
+cost, `LIVE_POLL_MS` remains at the aggressive 10 s with the documented
+~30 s relaxation never needed, and nothing recorded since 25 Jun shows
+further degradation. One honest caveat: stickiness suppresses the stale
+badge, so a quiet worsening would surface as ageing live prices rather
+than as an alert. Trigger (b), the null-bar intraday defect (18 Jun 2026):
+one documented occurrence, display-only, self-corrected the next day;
+positions, YTD and cost basis were never touched. The Worker's
+authoritative v7 prior close is its only durable fix, but a single
+transient occurrence does not justify standing infrastructure. Build D
+when live coverage visibly degrades despite stickiness (persistently
+ageing intraday values under the 10-second cadence) or the null-bar
+mis-statement recurs often enough to affect intraday decisions; building
+it also requires a Cloudflare account decision, which has not been taken.
+
 ## 6. Open questions (decide during execution, not before)
 
 External cash flows: deposits and withdrawals are currently inferred by the

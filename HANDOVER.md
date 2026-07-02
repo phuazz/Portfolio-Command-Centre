@@ -1,10 +1,11 @@
 # Portfolio Command Centre — Handover Brief
 
 Read `CLAUDE.md` first; it is load-bearing. `REFACTOR_PLAN.md` (delivery
-architecture, complete) and `REFACTOR_PLAN_V2.md` (domain architecture, in
-progress) carry the design intent and per-phase post-flight notes.
+architecture, complete) and `REFACTOR_PLAN_V2.md` (domain architecture,
+complete; Phase D optional and parked) carry the design intent and
+per-phase post-flight notes.
 
-## State of play (12 June 2026)
+## State of play (2 July 2026)
 
 The dashboard is ledger-first as of v2 Phase A. `trades.json` (full 2026
 ledger) and `book.json` (opening book at the 2026-01-01 epoch, per-ticker
@@ -159,7 +160,37 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   the balance-sheet views. Decision record and full consumer trace in
   `REFACTOR_PLAN_V2.md` section 6.
 - If corsproxy.io degrades under polling, Phase D (own Cloudflare Worker) is
-  the designed fallback.
+  the designed fallback. Assessed 2026-07-02 and deliberately kept parked —
+  verdict and build triggers recorded under Phase D in `REFACTOR_PLAN_V2.md`.
+
+## V2 closeout (2 July 2026)
+
+The v2 plan is closed: Phases A, A.1, B and C are complete with post-flight
+notes; Phase D is optional and deliberately parked (verdict recorded under
+Phase D in `REFACTOR_PLAN_V2.md`). This session trued the documentation up
+to the shipped architecture and decided the last open question:
+
+- `README.md` rewritten from the pre-v1 single-file story to the shipped
+  reality (ledger-first inputs, template + `build.js` bake into `docs/`,
+  thrice-daily scheduled bake, corsproxy live feed with cache-buster and
+  last-good sticky). Public anonymised framing preserved.
+- Repo `CLAUDE.md` corrected: v2 phase status, `theses.json` recorded as the
+  third user-authored input, template ~332 KB / ~5,800 lines (measured
+  2026-07-02), `history.json` ~11 MB, end-of-session ritual
+  `git checkout -- docs/` (there is no root `data/`).
+- Swept-cash question decided — see the known-items entry above and the
+  decision record in `REFACTOR_PLAN_V2.md` section 6.
+- A stale `assume-unchanged` index bit on `README.md` was cleared; it had
+  been masking a line-ending-only (CRLF) working-tree difference, not a
+  content difference.
+
+Known cosmetic drift, deliberately left: `build.js`'s header comment still
+describes the pre-Phase-A regex universe scan; the code below it is
+ledger-first. Fix it in the next session that touches pipeline source —
+docs-only sessions do not modify it. Separately, the master `CLAUDE.md` at
+`C:\dev` carries a stale ~325 KB template figure in its PCC paragraph and
+needs the same size correction; it lives outside this repository and was
+not edited from this session.
 
 ## Session rituals
 
