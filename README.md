@@ -1,6 +1,6 @@
 # Portfolio Command Centre
 
-A single-page, client-side portfolio dashboard for multi-asset investors. Designed for monitoring trend signals, portfolio allocation, and systematic risk overlays — all from one self-contained HTML file.
+A single-page, client-side portfolio dashboard for multi-asset investors. Live prices, trend signals, FX-aware attribution and systematic risk overlays — served as static files from GitHub Pages, with an append-only trade ledger as the only manual input.
 
 **[→ Live Demo](https://your-username.github.io/portfolio-command-centre/)**
 
@@ -8,55 +8,69 @@ A single-page, client-side portfolio dashboard for multi-asset investors. Design
 
 ## What It Does
 
-**Positions** — Full position table with live prices (via Yahoo Finance CORS proxy), P&L tracking, vote signals, and expandable per-stock price charts with SMA200 overlays. Tap any row to drill in.
+**Positions** — full position table with live prices (Yahoo Finance via CORS proxy), P&L tracking, vote signals, and expandable per-stock price charts with SMA and Supertrend overlays. Tap any row to drill in.
 
-**Trend Signals** — Monthly 3-factor vote system per stock (Close > SMA200, Golden Cross, 12-month momentum). Symmetric "Exit 2/3, Enter 2/3" rules. Action cards with reasoning for every position.
+**Attribution** — FX-aware return attribution by theme and position. Every horizon decomposes into Local / FX / Total; a Return Drivers card bridges Price + Income + FX = Total return; the YTD headline is money-weighted (Modified Dietz average capital employed).
 
-**Crisis Overlay** — Macro stress detection using three breadth indicators (% below SMA200, 3-month market return, % bearish Supertrend). Semicircle speed-dial gauges. When all three trigger, portfolio exposure reduces to 25%.
+**Trend Signals** — monthly three-factor vote system per stock (Close > SMA200, golden cross, 12-month momentum) with symmetric "Exit 2/3, Enter 2/3" rules and action cards. Includes a four-strategy portfolio backtest (Combined, Vote Only, Crisis Only, Buy & Hold) and a macro crisis overlay whose live status renders as a header KPI strip.
 
-**Performance** — Portfolio-level backtest comparing four strategies: Combined (Vote + Crisis), Vote Only, Crisis Only, and Buy & Hold. Includes return heatmaps, P&L waterfall, and theme attribution.
+**Allocation** — allocation pivots by theme, type, currency and account, with volatility decomposition of the current book.
 
-**Risk Analysis** — Concentration analysis, margin facility mapping, geographic and thematic exposure breakdowns.
+**Performance** — daily equity curve with TWRR, drawdown, Sharpe/Sortino/Calmar and an MWRR cross-check; benchmark comparison; a reconciliation strip that ties the equity-sleeve return minus cash drag to the whole-portfolio return; and a tactical cash impact card showing the FX exposure and drag of idle cash.
+
+**Risk Analysis** — concentration analysis, margin facility mapping, geographic and thematic exposure breakdowns.
+
+**Thesis** — one card per holding, pairing a durable, user-written investment thesis (what it is, why it may do well, what to watch) with the live quantitative read the dashboard computes (YTD return, contribution, trend signal).
 
 ## Architecture
 
-The entire dashboard is a **single `index.html` file** with no build step, no framework, and no server. It loads two external CDN resources (Google Fonts and Plotly.js) and fetches live prices from Yahoo Finance via a public CORS proxy.
+No framework, no server. A template plus a bake script produce a static site served from `docs/`:
 
 ```
-index.html          ← Everything: HTML + CSS + JS (~2,800 lines)
-.nojekyll           ← Tells GitHub Pages to skip Jekyll processing
-README.md           ← This file
+template.html        ← The whole app: HTML + CSS + JS (~5,800 lines). Source of truth.
+build.js             ← Bake script: fetches history and FX, validates the ledger,
+                        writes docs/data/*.json, copies the template to docs/index.html.
+trades.json          ← Append-only trade ledger, one row per fill.   USER-AUTHORED
+book.json            ← Opening book at the epoch + ticker metadata.  USER-AUTHORED
+theses.json          ← One investment thesis per holding.            USER-AUTHORED
+docs/                ← GitHub Pages serves this directory. Pipeline-owned output.
+├── index.html       ← Straight copy of template.html
+└── data/            ← history.json (10-year OHLC), fx.json, meta.json, plus baked
+                        copies of trades.json, book.json and theses.json
+.github/workflows/
+└── update.yml       ← Scheduled bake: three crons per weekday + manual dispatch
 ```
 
-**Data flow:** Static position data (tickers, quantities) is embedded in the file → on load, live prices are fetched via Yahoo Finance CORS proxy → enrichment computes P&L, signals, votes → tabs render from enriched state.
+**Data flow:** `build.js` reads its ticker universe from the ledger files (closed positions stay in the universe via their trade rows, so attribution keeps its history), fetches 10-year daily OHLC plus FX series from Yahoo Finance, validates the ledger replay — a violation fails the bake rather than publishing an inconsistent book — and writes everything under `docs/`. On page load the client fetches the baked JSON, derives positions, average costs, cash buckets and closed-position bases by replaying the ledger over the opening book (`replayLedger()`), then starts live polling on top of the baked floor.
 
-**Tab caching:** Each tab has a persistent DOM pane. Switching tabs is instant (show/hide). Panes only re-render when underlying data changes (tracked via a version counter), so navigating between tabs never re-fetches data.
+**Scheduled bake:** GitHub Actions runs the bake three times each weekday around exchange closes (after the SGX close, after the US close, and a mid-Asia finalisation pass), plus on manual dispatch. Each run commits `docs/` only when the data actually changed.
 
-## Customization
+## Ledger-First Data Model
 
-To use with your own portfolio, edit the `POSITIONS` array near the top of the `<script>` block. Each position follows this schema:
+The only files a user ever edits are `trades.json`, `book.json` and `theses.json`. Everything derived — current positions, average costs, invested amounts, cash balances, closed-position bases — is computed at boot by replaying the ledger. Derived state is never hand-edited.
 
-```javascript
-{
-  ticker: '9988.HK',        // Display ticker
-  yf: '9988.HK',            // Yahoo Finance symbol (for live fetch)
-  name: 'Alibaba',          // Display name
-  exchange: 'HKG',          // HKG | TSE | ARCA | NMS | NYS | LSE | SGX
-  ccy: 'HKD',               // Position currency
-  avgPrice: 108.00,          // Average cost (null if not tracked)
-  qty: 500,                  // Shares held
-  invested: 54000,           // Total cost basis (null if not tracked)
-  fee: 0,                    // Transaction fees
-  availLTV: 60,              // Margin LTV % (0 if none)
-  theme: 'China Tech',       // Thematic label
-  type: 'Stock',             // Stock | ETF | REIT | Bond
-  // Optional for CDP/custodian positions without live feeds:
-  account: 'CDP',            // Account label
-  mktPriceSnap: 155.40       // Fallback snapshot price
-}
+A trade is one appended row:
+
+```json
+{ "d": "2026-06-11", "t": "DELL.US", "a": "B", "q": 25, "p": 387.885,
+  "ccy": "USD", "yf": "DELL", "th": "US Tech" }
 ```
 
-Also update the `SNAPSHOT` object and `FX_SNAP` rates as fallbacks.
+(`d` date, `t` display ticker, `a` action `B`/`S`, `q` quantity, `p` fill price, `ccy` currency, `yf` Yahoo Finance symbol, `th` theme; an optional `fee` field is treated as part of cost.)
+
+`book.json` carries the opening book at a fixed epoch date (per-position quantity, average price, invested amount and epoch close), static per-ticker metadata (name, exchange, currency, theme, type, margin LTV), cash reconciliation anchors, and named cost adjustments and ledger overrides for documented data gaps.
+
+**Trade entry workflow:** append one row to `trades.json`, commit, push, run the workflow. For a brand-new ticker, also add one `meta` entry to `book.json`. Nothing else.
+
+## Live Prices
+
+The baked end-of-day data is the reliable floor; a live layer polls Yahoo Finance every 10 seconds while the tab is visible:
+
+- **CORS proxy chain** — corsproxy.io primary with a fallback proxy, fastest-first.
+- **Cache-buster** — the proxy caches upstream responses for minutes, so every poll carries a throwaway timestamp parameter to force a genuinely fresh quote.
+- **Last-good sticky** — a failed per-ticker fetch keeps that ticker's previous live price instead of reverting to the baked close, so headline values move only on genuine ticks, never on transient proxy errors.
+- **Incremental refresh** — polls fetch short recent windows and merge them into the baked history; the client never re-pulls the full 10-year history.
+- **localStorage cache** — supports standalone use without a bake.
 
 ## Signal System
 
@@ -65,75 +79,54 @@ The vote-based exit/entry engine evaluates three monthly signals per stock:
 | Signal | Logic | What It Measures |
 |--------|-------|-----------------|
 | Vote A | Close > SMA200 | Price above long-term trend |
-| Vote B | SMA50 > SMA200 | Golden cross (trend strength) |
+| Vote B | SMA50 > SMA200 | Golden cross (trend structure) |
 | Vote C | 12-month return > 0 | Calendar momentum |
 
-**Rules (symmetric):**
-- **Hold:** votes ≥ 2/3 at month-end
-- **Exit:** votes < 2/3 at month-end
-- **Re-enter:** votes ≥ 2/3 at subsequent month-end
-
-This prevents oscillation at the 1/3 vote boundary.
+**Rules (symmetric):** hold while votes ≥ 2/3 at month-end; exit when votes < 2/3; re-enter when votes ≥ 2/3 at a subsequent month-end. The symmetry prevents oscillation at the boundary.
 
 ## Crisis Overlay
 
 A macro hedge layer that sits on top of stock selection:
 
-| Indicator | Threshold | Source |
-|-----------|-----------|--------|
-| Breadth < SMA200 | > 60% of stocks | S&P 500 constituents |
-| 3-month market return | < −10% | S&P 500 index |
-| Bearish Supertrend | > 50% of stocks | S&P 500 constituents |
+| Indicator | Threshold |
+|-----------|-----------|
+| Breadth below SMA200 | > 60% of stocks |
+| 3-month market return | < −10% |
+| Bearish Supertrend | > 50% of stocks |
 
-**All three must trigger simultaneously** to enter crisis mode (exposure → 25%). Recovery requires **any one** indicator to clear its threshold.
+**All three must trigger simultaneously** to enter crisis mode (exposure → 25%). Recovery requires any one indicator to clear its threshold.
 
 ## Deployment
 
-### GitHub Pages (recommended)
+### GitHub Pages
 
-The dashboard supports two modes:
-
-**Instant mode (recommended for public sharing):**  
-Pre-bake all historical data into the HTML so the page loads with full charts, signals, and backtests in under 1 second — zero network fetch required.
+1. Fork or clone, then enable Pages for the repository: Settings → Pages → serve from the `docs/` directory on `main`. This setting lives outside git.
+2. Replace the ledger files (`trades.json`, `book.json`, optionally `theses.json`) with your own portfolio.
+3. Bake once — either run the **Update Prices** workflow from the Actions tab, or locally:
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/your-username/portfolio-command-centre.git
-cd portfolio-command-centre
-
-# 2. Fetch data and bake into HTML (~2 minutes)
-node build.js
-
-# 3. Push to GitHub Pages
-git add . && git commit -m "Bake data" && git push
+node build.js        # Node 18+, fetches ~10 years of history for the universe
+git add docs/ && git commit -m "Bake" && git push
 ```
 
-The build script fetches 10-year daily OHLC history for all tickers plus FX rates, then embeds it directly in `index.html`. Visitors see a fully interactive dashboard instantly. A "Refresh Prices" button lets them optionally pull the latest data.
-
-**Re-bake periodically** (e.g. weekly or before sharing) to keep prices current:
-```bash
-node build.js && git add . && git commit -m "Update prices" && git push
-```
-
-**Live-fetch mode (fallback):**  
-If no data is baked in, the dashboard automatically fetches from Yahoo Finance on load with a progress bar. This is slower (~30–60s on first visit) but requires no build step. Subsequent visits use localStorage cache.
+The three daily crons keep the site fresh thereafter; no further manual builds are needed.
 
 ### Local
 
-Just open `index.html` in any modern browser. Without baked data, live price fetching requires internet access.
+```bash
+node build.js        # bake data into docs/
+npx serve docs       # serve the baked site
+```
+
+For source-only development, serve the repository root and open `template.html` — on localhost, missing baked data falls back to a live fetch with a progress bar.
 
 ## Mobile Support
 
-Responsive across desktop, tablet, and phone:
-- Scrollable tab bar on small screens
-- Collapsing grid layouts at tablet/phone breakpoints
-- iOS safe area insets for notch devices
-- Touch-optimized tap targets (48px minimum)
-- Horizontal table scrolling on narrow viewports
+Responsive across desktop, tablet and phone: scrollable tab bar, collapsing grid layouts, iOS safe-area insets, touch-friendly tap targets and horizontally scrollable tables on narrow viewports.
 
 ## Illustrative Data
 
-This version uses **illustrative portfolio data** with rounded quantities and anonymized account references. The portfolio shape, sector allocation, and signal behavior are representative of a real multi-asset portfolio. All tickers are real and publicly traded.
+This version uses **illustrative portfolio data** with rounded quantities and anonymised account references. The portfolio shape, sector allocation and signal behaviour are representative of a real multi-asset portfolio. All tickers are real and publicly traded.
 
 ---
 
