@@ -12,7 +12,7 @@ A single-page, client-side portfolio dashboard deployed via GitHub Pages. The de
 
 ## Trade entry workflow
 
-For a fill on an existing ticker: append one row to `trades.json`, run `node scripts/validate_ledger.js` (structural gate — catches locally what would fail the bake), commit, push, trigger the build. Nothing else. For a brand-new ticker: also add one `meta` entry to `book.json` (name, exchange, ccy, theme, type, availLTV). When closing a position bought before 2026, ensure `epochCloses` in `book.json` carries its Dec-31-2025 close. Fees are not entered at order time; the monthly reconciliation below backfills them.
+For a fill on an existing ticker: `node scripts/add_trade.js <YYYY-MM-DD> <B|S> <qty> <ticker> <price>` appends the row with currency, Yahoo symbol and theme resolved from the book (it refuses duplicates and unknown tickers), then `node scripts/validate_ledger.js` (structural gate — catches locally what would fail the bake), commit, push, trigger the build. Nothing else. For a brand-new ticker: also add one `meta` entry to `book.json` (name, exchange, ccy, theme, type, availLTV). When closing a position bought before 2026, ensure `epochCloses` in `book.json` carries its Dec-31-2025 close. Fees are not entered at order time; the monthly reconciliation below backfills them.
 
 ## Monthly statement reconciliation
 
