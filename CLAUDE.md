@@ -12,7 +12,11 @@ A single-page, client-side portfolio dashboard deployed via GitHub Pages. The de
 
 ## Trade entry workflow
 
-For a fill on an existing ticker: append one row to `trades.json`, commit, push, trigger the build. Nothing else. For a brand-new ticker: also add one `meta` entry to `book.json` (name, exchange, ccy, theme, type, availLTV). When closing a position bought before 2026, ensure `epochCloses` in `book.json` carries its Dec-31-2025 close. Periodically re-anchor `cashAnchor` to actual brokerage balances to absorb fees.
+For a fill on an existing ticker: append one row to `trades.json`, run `node scripts/validate_ledger.js` (structural gate — catches locally what would fail the bake), commit, push, trigger the build. Nothing else. For a brand-new ticker: also add one `meta` entry to `book.json` (name, exchange, ccy, theme, type, availLTV). When closing a position bought before 2026, ensure `epochCloses` in `book.json` carries its Dec-31-2025 close. Fees are not entered at order time; the monthly reconciliation below backfills them.
+
+## Monthly statement reconciliation
+
+Once a month the brokerage statement re-anchors the book, in one commit. The recipe: (1) reconcile every statement fill 1:1 against that month's `trades.json` rows on date, quantity and price — a statement fill missing from the ledger is added, statement-sourced; a ledger row absent from the statement stops the session; (2) backfill explicit `fee` values from the statement cash movements (buy fee = |cash| − q×p; sell fee = q×p − proceeds); (3) re-anchor `cashAnchor` to the statement's month-end Balance C/F per currency, keeping every existing currency key and writing zero where the statement prints no balance; (4) gate with `node scripts/validate_ledger.js --expect <expectations file>` — quantity exact, average within broker rounding, buckets tie exactly; any failure stops the session for review rather than being papered over with ad-hoc adjustments; (5) update the two HANDOVER bullets (fills reconciled, `cashAnchor`), commit, push, trigger `update.yml`, smoke-test the live data files. The expectations file is statement-derived and lives outside the repository; statements are personal documents and are never copied into this repository.
 
 ## File sizes
 
