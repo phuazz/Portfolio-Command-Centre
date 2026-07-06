@@ -1,14 +1,14 @@
 {
-  "_comment": "Opening book at the epoch plus static metadata. See REFACTOR_PLAN_V2.md Phase A. cashAnchor.balances are last-reconciled brokerage balances as at end of cashAnchor.date; trades dated strictly after it adjust the buckets. costAdjustments absorb broker fees baked into historical cost figures for positions whose opening lot zero-crossed during the year. ledgerOverrides are named, logged patches over known ledger gaps â€” each one should eventually be replaced by the real missing trade rows. Rebuilt 2026-06-12 from SCB monthly statements Dec-2025 to May-2026 (Phase A.1 reconciliation): opening book and epoch closes from the December 2025 statement; Jan-May fills statement-sourced with explicit fees; cost basis is fee-inclusive, matching the broker average convention. June 2026 fills reconciled against the June statement on 2026-07-02 (sixteen fills, 1:1 match, explicit fees backfilled); cash re-anchored to the 30 June statement balances, all swept to zero.",
+  "_comment": "Opening book at the epoch plus static metadata. See REFACTOR_PLAN_V2.md Phase A. cashAnchor.balances are last-reconciled brokerage balances as at end of cashAnchor.date; trades dated strictly after it adjust the buckets. costAdjustments absorb broker fees baked into historical cost figures for positions whose opening lot zero-crossed during the year. ledgerOverrides are named, logged patches over known ledger gaps â€” each one should eventually be replaced by the real missing trade rows. Rebuilt 2026-06-12 from SCB monthly statements Dec-2025 to May-2026 (Phase A.1 reconciliation): opening book and epoch closes from the December 2025 statement; Jan-May fills statement-sourced with explicit fees; cost basis is fee-inclusive, matching the broker average convention. June 2026 fills reconciled against the June statement on 2026-07-02 (sixteen fills, 1:1 match, explicit fees backfilled); cash re-anchored to the 30 June statement balances. Correction 2026-07-06: the 2026-07-02 reconciliation erroneously swept all FCY settlement balances to zero; restored to the actual 30 June 2026 FCY Securities Settlement Account current balances per the SC statement (GBP and CHF were nil on the statement and are not tracked as separate buckets).",
   "epoch": "2026-01-01",
   "cashAnchor": {
     "date": "2026-06-30",
     "balances": {
-      "USD": 0,
-      "HKD": 0,
-      "JPY": 0,
-      "EUR": 0,
-      "AUD": 0
+      "USD": 28058.27,
+      "HKD": 1023.26,
+      "JPY": 190363.00,
+      "EUR": 7378.93,
+      "AUD": 91.62
     }
   },
   "epochCloses": {
