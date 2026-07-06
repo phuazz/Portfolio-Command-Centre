@@ -459,6 +459,18 @@
       "account": "CDP",
       "mktPriceSnap": 2.35
     },
+    "K71U": {
+      "yf": "K71U.SI",
+      "name": "Keppel REIT",
+      "exchange": "SGX",
+      "ccy": "SGD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "SG REITs",
+      "type": "REIT",
+      "account": "CDP",
+      "mktPriceSnap": 0.86
+    },
     "YYY": {
       "yf": "YYY.SI",
       "name": "LGI-OSPL China L",
@@ -1008,6 +1020,12 @@
     {
       "ticker": "AJBU",
       "qty": 20300,
+      "avgPrice": null,
+      "invested": null
+    },
+    {
+      "ticker": "K71U",
+      "qty": 333,
       "avgPrice": null,
       "invested": null
     },
