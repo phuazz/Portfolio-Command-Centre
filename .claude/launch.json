@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pcc",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "4730", "C:\\dev\\Portfolio-Command-Centre\\docs"],
+      "port": 4730
+    },
+    {
+      "name": "pcc-src",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "4731", "C:\\dev\\Portfolio-Command-Centre"],
+      "port": 4731
+    },
+    {
+      "name": "navigo-docs",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "4178", "C:\\dev\\navigo-systematic-trend\\docs"],
+      "port": 4178
+    }
+  ]
+}

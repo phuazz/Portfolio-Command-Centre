@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m json.tool *)",
+      "Bash(curl -s \"https://phuazz.github.io/*)",
+      "Bash(curl -sL \"https://phuazz.github.io/*)",
+      "Bash(curl -s https://phuazz.github.io/*)"
+    ]
+  }
+}
