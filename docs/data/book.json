@@ -827,6 +827,16 @@
       "theme": "US Travel",
       "type": "Stock"
     },
+    "XBLUS.US": {
+      "yf": "XBLUS",
+      "name": "State Street SPDR S&P Biotech ETF",
+      "exchange": "ARCA",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 60,
+      "theme": "Biotech",
+      "type": "ETF"
+    },
     "XMED.GB": {
       "yf": null,
       "name": "Xtrackers Europe Health ETF",

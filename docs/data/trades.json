@@ -112,5 +112,6 @@
   {"d": "2026-06-24", "t": "FLNC.US", "a": "S", "q": 350, "p": 19.9489, "ccy": "USD", "yf": "FLNC", "th": "Clean Energy", "fee": 15.365},
   {"d": "2026-06-24", "t": "SPCX.US", "a": "S", "q": 30, "p": 155.91, "ccy": "USD", "yf": "SPCX", "th": "Space", "fee": 10.3},
   {"d": "2026-06-25", "t": "TLN.US", "a": "B", "q": 20, "p": 417.80, "ccy": "USD", "yf": "TLN", "th": "Nuclear Power", "fee": 18.21},
-  {"d": "2026-05-28", "t": "S58", "a": "B", "q": 2000, "p": 3.75, "ccy": "SGD", "yf": "S58.SI", "th": "SG Aviation", "fee": 30.9}
+  {"d": "2026-05-28", "t": "S58", "a": "B", "q": 2000, "p": 3.75, "ccy": "SGD", "yf": "S58.SI", "th": "SG Aviation", "fee": 30.9},
+  {"d": "2026-07-09", "t": "XBLUS.US", "a": "B", "q": 50, "p": 163.72, "ccy": "USD", "yf": "XBLUS", "th": "Biotech"}
 ]
