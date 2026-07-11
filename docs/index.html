@@ -532,7 +532,11 @@ function parseYahooResponse(json) {
       history.push({ d: timestamps[i], c: closes[i], ac, o: opens[i]||closes[i], h: highs[i]||closes[i], l: lows[i]||closes[i] });
     }
   }
-  return { price: currentPrice, prevClose, history };
+  // quoteTime: epoch SECONDS of the last actual trade (Yahoo regularMarketTime).
+  // Thinly traded SGX names can carry a print hours or days old while the
+  // exchange still marks an official close; the intraday engines gate on this
+  // timestamp so a stale print is never mistaken for a live tick.
+  return { price: currentPrice, prevClose, history, quoteTime: meta.regularMarketTime || null };
 }
 
 function historyToFull(compact) {
@@ -772,6 +776,7 @@ async function fetchAllPrices() {
               if (pre && pre.history && pre.history.length > 10) {
                 results[item.sym] = {
                   price: pre.price, prevClose: pre.prevClose,
+                  quoteTime: pre.quoteTime != null ? pre.quoteTime : null,
                   dayChange: pre.price - (pre.prevClose || pre.price),
                   dayChangePct: pre.prevClose ? ((pre.price - pre.prevClose) / pre.prevClose) * 100 : 0,
                   history: historyToFull(pre.history)
@@ -796,6 +801,7 @@ async function fetchAllPrices() {
           const merged = mergeHistory(baseHist, data.history);
           results[item.sym] = {
             price: data.price, prevClose: data.prevClose,
+            quoteTime: data.quoteTime,
             dayChange: data.price - data.prevClose,
             dayChangePct: ((data.price - data.prevClose) / data.prevClose) * 100,
             history: historyToFull(merged)
@@ -805,6 +811,7 @@ async function fetchAllPrices() {
           // Full fetch (a new ticker not yet in the daily bake).
           results[item.sym] = {
             price: data.price, prevClose: data.prevClose,
+            quoteTime: data.quoteTime,
             dayChange: data.price - data.prevClose,
             dayChangePct: ((data.price - data.prevClose) / data.prevClose) * 100,
             history: historyToFull(data.history)
@@ -1318,6 +1325,11 @@ function enrichAll() {
 
     // Get price and history from live data or snapshot
     mktPrice = (live && live.price) ? live.price : (p.mktPriceSnap || SNAPSHOT[p.yf] || SNAPSHOT[p.ticker] || (p.invested ? p.invested / p.qty : 0));
+    // Epoch SECONDS of the trade behind mktPrice (Yahoo regularMarketTime),
+    // null when the source cannot say (hardcoded SNAPSHOT fallback). Follows
+    // the same precedence as mktPrice so the intraday timestamp gates judge
+    // the price actually in use.
+    const quoteTime = (live && live.price && live.quoteTime != null) ? live.quoteTime : null;
     dayChange = live ? (live.dayChange || 0) : 0;
     dayChangePct = live ? (live.dayChangePct || 0) : 0;
     history = (live && live.history && live.history.length >= 5) ? live.history : null;
@@ -1360,7 +1372,7 @@ function enrichAll() {
     // price for this position and we are falling back to the baked mktPriceSnap
     // (or another offline source). Used by the Positions tab to badge the row.
     const isStale = !(live && live.price);
-    return { ...p, mktPrice, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost, region, sector, assetClass, isStale };
+    return { ...p, mktPrice, quoteTime, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost, region, sector, assetClass, isStale };
   });
 
   state.totalValueSGD = state.positions.reduce((s,p) => s + p.mktValueSGD, 0);
@@ -1844,6 +1856,42 @@ function _usCloseBoundary() {
   return new Date(utcMs).toISOString().slice(0, 10);
 }
 
+// Epoch ms of 16:00 New York on the boundary date. New York wall-clock is
+// UTC-4 (EDT) or UTC-5 (EST); both candidate instants are formatted back
+// through Intl and the one that reads 16:00 on the boundary date in the NY
+// zone wins — DST-safe, no manual offset arithmetic beyond the two candidates
+// the zone can occupy. Memoised per date (called once per ticker per render).
+const _boundaryEpochMemo = {};
+function _usCloseBoundaryEpochMs(boundaryISO) {
+  if (_boundaryEpochMemo[boundaryISO] != null) return _boundaryEpochMemo[boundaryISO];
+  let ms = Date.parse(boundaryISO + 'T20:00:00Z');            // 16:00 EDT candidate (UTC-4)
+  for (const cand of [ms, ms + 3600 * 1000]) {                // then 16:00 EST (UTC-5)
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit' }).formatToParts(new Date(cand));
+    const get = t => parts.find(x => x.type === t).value;
+    if (get('year') + '-' + get('month') + '-' + get('day') === boundaryISO && +get('hour') === 16) { ms = cand; break; }
+  }
+  _boundaryEpochMemo[boundaryISO] = ms;
+  return ms;
+}
+
+// A quote counts as an intraday tick only if it was struck meaningfully AFTER
+// the prior US close. Yahoo's regularMarketTime (epoch seconds) stamps the
+// last actual trade: thinly traded SGX names can carry a print hours or days
+// old while SGX still marks an official close, and on weekends every quote
+// predates the boundary — comparing such a print against the boundary close
+// manufactures a phantom intraday move (observed: ICU.SI at −1.88% on a
+// closed Saturday from a week-old print). The 15-minute grace absorbs closing
+// prints stamped a few seconds or minutes past 16:00 New York, which belong
+// to the completed session; the next regular session anywhere (Asia) opens
+// hours later, so the grace can never swallow a genuine tick. A null
+// quoteTime (older cache entry, a bake predating this field) is trusted
+// rather than gated, so live data is never frozen by a missing field.
+const _POST_BOUNDARY_GRACE_MS = 15 * 60 * 1000;
+function _quoteIsPostBoundary(quoteTime, boundaryISO) {
+  if (quoteTime == null) return true;
+  return quoteTime * 1000 > _usCloseBoundaryEpochMs(boundaryISO) + _POST_BOUNDARY_GRACE_MS;
+}
+
 // The calendar weekday immediately BEFORE the boundary's reference weekday,
 // skipping weekends. The 1-Day window's start leg anchors here (last bar on or
 // before this date) rather than on the bar immediately before the boundary, so
@@ -1897,7 +1945,10 @@ function calcSplitDayPnL(ps, trades) {
     const qtyNow = pos ? pos.qty : 0;
     const lastAdj = adj(h[n - 1]);
     const curPrice = pos ? pos.mktPrice : (liveData[yf] ? liveData[yf].price : lastAdj);
-    const fresher = curPrice != null && Math.abs(curPrice - lastAdj) > 1e-6;
+    // Timestamp gate: the quote behind curPrice must postdate the boundary to
+    // count as a live tick — a pre-boundary print is not an intraday move.
+    const qTime = pos ? pos.quoteTime : (liveData[yf] ? liveData[yf].quoteTime : null);
+    const fresher = curPrice != null && Math.abs(curPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(qTime, boundary);
     // Current value: live tick if fresher than the last bar, else the last
     // bar itself (for Asia after today's close, that bar is dated after the
     // boundary and carries today's session into intraday).
@@ -3696,7 +3747,9 @@ function _effectiveReturnGlobalDay(p, mode) {
   if (iU < 1) return null;
   if (mode === 'ID') {
     const lastAdj = adj(h[n - 1]);
-    const fresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6;
+    // Timestamp gate — see _quoteIsPostBoundary: a pre-boundary print (stale
+    // thin-name quote, weekend) is not an intraday tick.
+    const fresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(p.quoteTime, boundary);
     const closeNow = fresher ? p.mktPrice : lastAdj;
     const closeThen = adj(h[iU]);
     if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
@@ -4128,17 +4181,21 @@ function calcYtdAttribution(ps, trades) {
 // Returns the date axis (ISO YYYY-MM-DD strings, sorted ascending) extended
 // with today's date if any priced position has a snapshot price fresher than
 // its last history bar — i.e. today's bar has not yet been baked into the
-// pipeline output. Caller is responsible for populating closeMatrix at the
-// appended date with each position's snapshot price (or carry-forward).
+// pipeline output. The quote behind the snapshot must postdate the prior US
+// close (timestamp gate): a stale thin-name print or a weekend quote must
+// not fabricate a NAV point on a day no venue traded. Caller is responsible
+// for populating closeMatrix at the appended date with each position's
+// snapshot price (or carry-forward).
 function _maybeAppendTodayDate(dates, priced) {
   if (!dates || dates.length === 0) return dates || [];
   const todayISO = new Date().toISOString().slice(0, 10);
   if (todayISO <= dates[dates.length - 1]) return dates;
+  const boundary = _usCloseBoundary();
   for (const p of priced) {
     if (!p.history || p.history.length === 0) continue;
     const lastBar = p.history[p.history.length - 1];
     const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
-    if (p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6) {
+    if (p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(p.quoteTime, boundary)) {
       return [...dates, todayISO];
     }
   }
@@ -4535,11 +4592,13 @@ function getBenchmarkCurve(ps, sym, startDateStr) {
     dates.push(w.ds);
     cumReturn.push((w.adj / base - 1) * 100);
   }
-  // Snapshot-aware extension: append today if snapshot fresher than last bar.
+  // Snapshot-aware extension: append today if the snapshot is fresher than
+  // the last bar AND its quote postdates the prior US close (timestamp gate —
+  // a stale or weekend print must not extend the benchmark series either).
   const todayISO = new Date().toISOString().slice(0, 10);
   const lastBar = pos.history[pos.history.length - 1];
   const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
-  if (pos.mktPrice != null && Math.abs(pos.mktPrice - lastAdj) > 1e-6 && todayISO > dates[dates.length - 1]) {
+  if (pos.mktPrice != null && Math.abs(pos.mktPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(pos.quoteTime, _usCloseBoundary()) && todayISO > dates[dates.length - 1]) {
     dates.push(todayISO);
     cumReturn.push((pos.mktPrice / base - 1) * 100);
   }
@@ -5499,6 +5558,7 @@ function loadPreloadedData() {
     results[sym] = {
       price: entry.price,
       prevClose: entry.prevClose,
+      quoteTime: entry.quoteTime != null ? entry.quoteTime : null,
       dayChange: entry.price - (entry.prevClose || entry.price),
       dayChangePct: entry.prevClose ? ((entry.price - entry.prevClose) / entry.prevClose) * 100 : 0,
       history: historyToFull(entry.history || [])
@@ -5531,15 +5591,31 @@ const LIVE_POLL_MS = 10000;   // 10s — aggressive; if corsproxy free tier rate
                               // (429), polls fall back to last-good. A dedicated
                               // proxy (Cloudflare Worker) removes that ceiling.
 let _livePollTimer = null;
+
+// Global weekend: Saturday or Sunday on BOTH the Singapore and New York wall
+// clocks. Every venue in the book (SGX, HKEX, TSE, LSE, US) is closed then —
+// during the US Friday session New York still reads Friday while Singapore is
+// already on Saturday, so a live session is never gated; no Sunday-trading
+// venue is held. Weekday names come from Intl, never from manual arithmetic.
+function _isGlobalWeekend() {
+  const dayIn = tz => new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(new Date());
+  const wknd = d => d === 'Sat' || d === 'Sun';
+  return wknd(dayIn('Asia/Singapore')) && wknd(dayIn('America/New_York'));
+}
+
 function startLivePolling() {
   if (_livePollTimer) return;
+  // Timer- and focus-driven refreshes skip the global weekend: no venue can
+  // print, so each poll would only burn CORS-proxy quota re-fetching data
+  // that cannot have changed. The one-off refresh in init() still runs (it
+  // tops up bars if the last bake is stale) and a manual refresh stays live.
   _livePollTimer = setInterval(() => {
-    if (document.visibilityState === 'visible' && localStorage.getItem('pccAutoRefresh') !== 'off') {
+    if (document.visibilityState === 'visible' && localStorage.getItem('pccAutoRefresh') !== 'off' && !_isGlobalWeekend()) {
       refreshPrices();
     }
   }, LIVE_POLL_MS);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && localStorage.getItem('pccAutoRefresh') !== 'off') {
+    if (document.visibilityState === 'visible' && localStorage.getItem('pccAutoRefresh') !== 'off' && !_isGlobalWeekend()) {
       refreshPrices();
     }
   });
