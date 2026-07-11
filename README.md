@@ -43,7 +43,7 @@ docs/                ← GitHub Pages serves this directory. Pipeline-owned outp
 
 **Data flow:** `build.js` reads its ticker universe from the ledger files (closed positions stay in the universe via their trade rows, so attribution keeps its history), fetches 10-year daily OHLC plus FX series from Yahoo Finance, validates the ledger replay — a violation fails the bake rather than publishing an inconsistent book — and writes everything under `docs/`. On page load the client fetches the baked JSON, derives positions, average costs, cash buckets and closed-position bases by replaying the ledger over the opening book (`replayLedger()`), then starts live polling on top of the baked floor.
 
-**Scheduled bake:** GitHub Actions runs the bake three times each weekday around exchange closes (after the SGX close, after the US close, and a mid-Asia finalisation pass), plus on manual dispatch. Each run commits `docs/` only when the data actually changed.
+**Scheduled bake and deploy:** GitHub Actions runs the bake three times each weekday around exchange closes (after the SGX close, after the US close, and a mid-Asia finalisation pass), plus on manual dispatch. Each run bakes `docs/`, commits the changed data, then publishes `docs/` through `actions/deploy-pages`. The largest file, `docs/data/history.json`, is gitignored and served straight from the Pages artifact rather than committed, so the daily commit stays small.
 
 ## Ledger-First Data Model
 
