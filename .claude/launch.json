@@ -14,9 +14,9 @@
       "port": 4731
     },
     {
-      "name": "navigo-docs",
+      "name": "msp-docs",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "serve", "-l", "4178", "C:\\dev\\navigo-systematic-trend\\docs"],
+      "runtimeArgs": ["--yes", "serve", "-l", "4178", "C:\\dev\\multi-strategy-portfolio\\docs"],
       "port": 4178
     }
   ]
