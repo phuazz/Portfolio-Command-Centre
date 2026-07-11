@@ -14,3 +14,8 @@ regime-library/
 # Untracked on 2026-07-11; a fresh clone must run `node build.js` to produce it
 # for local serving. The live site serves the freshly-built copy, not a commit.
 docs/data/history.json
+
+# Claude Code isolation worktrees. These are local git worktrees; they must
+# never be committed as gitlinks into the main tree (doing so throws a
+# "No url found for submodule path" / exit 128 warning on every checkout).
+.claude/worktrees/
