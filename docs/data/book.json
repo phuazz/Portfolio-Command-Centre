@@ -827,8 +827,8 @@
       "theme": "US Travel",
       "type": "Stock"
     },
-    "XBLUS.US": {
-      "yf": "XBLUS",
+    "XBI.US": {
+      "yf": "XBI",
       "name": "State Street SPDR S&P Biotech ETF",
       "exchange": "ARCA",
       "ccy": "USD",
