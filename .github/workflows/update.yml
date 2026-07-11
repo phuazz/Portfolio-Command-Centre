@@ -15,8 +15,23 @@ on:
     - cron: '0 4 * * 2-6'
   workflow_dispatch:
 
+# contents:write  — the bake commits docs/ back to main (unchanged).
+# pages:write + id-token:write — required by actions/deploy-pages to publish
+# the built docs/ as a Pages artifact. This replaces the legacy branch-based
+# Pages builder, which failed intermittently and then continuously from
+# 2026-07-09. Root cause was a GitHub-side legacy-builder degradation, not
+# repo size: failed builds reported 0 ms duration and the same commit both
+# built and errored on different retries.
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+# Serialise Pages deploys so overlapping scheduled runs do not race. Do not
+# cancel an in-flight deploy — let it finish rather than leave Pages half-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -41,3 +56,23 @@ jobs:
           git add docs/
           git diff --staged --quiet || git commit -m "Auto-update prices $(date -u +%Y-%m-%d)"
           git push
+
+      # Package the freshly-baked docs/ (the working tree, so it carries the
+      # just-built data files) as the Pages artifact for the deploy job.
+      - name: Upload Pages artifact
+        # Review before 16 Sep 2026: confirm this major runs on Node 24, per
+        # the runner note above.
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

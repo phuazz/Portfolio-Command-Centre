@@ -100,16 +100,17 @@ A macro hedge layer that sits on top of stock selection:
 
 ### GitHub Pages
 
-1. Fork or clone, then enable Pages for the repository: Settings → Pages → serve from the `docs/` directory on `main`. This setting lives outside git.
+The site deploys through GitHub Actions, not the legacy branch-based build. The **Update Prices** workflow bakes `docs/`, uploads it as a Pages artifact and publishes it with `actions/deploy-pages`. To set this up on a fresh fork:
+
+1. Settings → Pages → Build and deployment → Source → **GitHub Actions**. Equivalently, `gh api --method PUT repos/OWNER/REPO/pages -f build_type=workflow`. This setting lives outside git.
 2. Replace the ledger files (`trades.json`, `book.json`, optionally `theses.json`) with your own portfolio.
-3. Bake once — either run the **Update Prices** workflow from the Actions tab, or locally:
+3. Run the **Update Prices** workflow from the Actions tab, or `gh workflow run update.yml`. The bake and the deploy run together in that one workflow.
+
+The three daily crons keep the site fresh thereafter; each run re-bakes and re-deploys. To bake locally without deploying:
 
 ```bash
 node build.js        # Node 18+, fetches ~10 years of history for the universe
-git add docs/ && git commit -m "Bake" && git push
 ```
-
-The three daily crons keep the site fresh thereafter; no further manual builds are needed.
 
 ### Local
 
