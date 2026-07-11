@@ -182,7 +182,11 @@ async function fetchTicker(symbol, range = '10y') {
         prevClose = closes.filter(c => c != null).slice(-2)[0] || price;
       }
 
-      return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), history };
+      // quoteTime: epoch seconds of the last actual trade (regularMarketTime).
+      // The dashboard's intraday engines gate on it — a print at or before the
+      // prior US close is not a live tick, however much it differs from the
+      // marked close (thinly traded SGX names routinely differ for days).
+      return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), quoteTime: meta.regularMarketTime || null, history };
     } catch (e) {
       // Try next proxy
     }
