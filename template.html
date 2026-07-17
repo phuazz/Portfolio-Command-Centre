@@ -370,6 +370,8 @@ const voteLabel = v => v>=3?'3/3':v>=2?'2/3':v>=1?'1/3':'0/3';
 //             p=price (native ccy) · ccy · yf=Yahoo symbol · th=theme
 // ═══════════════════════════════════════════════════════════════
 let POSITIONS = [];   // Derived at boot: replayLedger() replays data/trades.json over data/book.json.
+let LEDGER_BOOK = null; // Raw book.json payload kept for the daily-book universe: opening
+                        // quantities and metadata of tickers no longer held (closed in-year).
 let TRADES_YTD = [];  // Loaded at boot from data/trades.json (buy/sell rows only, chronological).
 let THESES = {};      // Loaded at boot from data/theses.json (per-holding investment theses) — optional.
 
@@ -4169,12 +4171,13 @@ function calcYtdAttribution(ps, trades) {
 
 
 // ─── TWRR (Modified Dietz) ON THE EQUITY SUB-PORTFOLIO ──────────────
-// For YTD: for each priced position, walks the trade ledger to reconstruct
-// a daily qty trajectory, sums (qty × close × FX) per day to a daily equity
-// NAV time-series, treats each trade day's net flow as an external cash
-// flow into/out of the equity sub-portfolio, and geometrically links the
-// sub-period returns. Bonds and cash are excluded — they have no meaningful
-// equity-style daily return.
+// For YTD: for each ticker in the full ledger universe (current priced
+// positions plus names closed during the year), walks the trade ledger to
+// reconstruct a daily qty trajectory, sums (qty × close × FX) per day to a
+// daily equity NAV time-series, treats each trade day's net flow as an
+// external cash flow into/out of the equity sub-portfolio, and
+// geometrically links the sub-period returns. Bonds and cash are excluded
+// — they have no meaningful equity-style daily return.
 //
 // Returns:
 //   { equityTwrr, days, flowCount, flowTotalSGD, bmv, emv, error?, dates[] }
@@ -4203,13 +4206,22 @@ function _maybeAppendTodayDate(dates, priced) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  UNIFIED VALUATION CORE (REFACTOR_PLAN_V2 Phase B)
+//  UNIFIED VALUATION CORE (REFACTOR_PLAN_V2 Phase B; closed-name
+//  perimeter fix 2026-07-17)
 //  One memoised daily book from the 2026-01-01 epoch: union trading-date
 //  axis (snapshot-extended), forward-filled adjclose rows with pre-epoch
-//  seeds, a daily quantity walk per priced ticker, and the derived SGD
-//  series — equity NAV, tracked trade flows (held priced tickers: internal
-//  rotations against the cash pool) and untracked net flows (closed-out
-//  tickers: external to the book). FX is applied as of each date.
+//  seeds, a daily quantity walk per ticker, and the derived SGD series.
+//  The universe is the FULL LEDGER: current priced positions plus every
+//  ticker closed during the year, walked forward from its opening-book
+//  quantity. Closed names sit inside the daily NAV until exit and their
+//  trades are tracked flows (internal rotations against the cash pool),
+//  so their round-trip P&L is return, not a stripped external flow — the
+//  pre-fix engine excluded it and understated the whole-book TWRR (audit
+//  2026-07-17: +15.12% shown vs +15.50% true; 1-Jan NAV 692,711 shown vs
+//  858,233 true). Untracked net flows now carry only the residual names
+//  that cannot be priced at all (no >=50-bar feed and no epoch close,
+//  e.g. an in-year round trip on a young listing): external to the book.
+//  FX is applied as of each date.
 //
 //  The NAV-series engines — getEquityCurve, calcTwrr, calcAllocationRisk —
 //  are projections of this object. The per-ticker engines
@@ -4230,11 +4242,56 @@ function buildDailyBook(ps, trades) {
 
   const priced = ps.filter(p => p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
 
+  // 0. Closed-in-year universe. Any ticker in the opening book or the trade
+  //    ledger that is absent from current positions is carried with a forward
+  //    quantity walk from its opening-book quantity (zero for in-year opens).
+  //    Bars come from the live layer when present, else the baked feed; the
+  //    live refresh only fetches held symbols, so PRELOADED_HISTORY is the
+  //    durable source for closed names. Feedless names (yf null) are carried
+  //    flat at their epoch close — the sale flow at trade price then books the
+  //    P&L on the sale date. A name with neither a >=50-bar feed nor an epoch
+  //    close stays outside the universe (untracked, external — pre-fix
+  //    treatment). ledgerOverrides forced to zero stay excluded, mirroring
+  //    replayLedger.
+  const openTickers = new Set(ps.map(p => p.ticker));
+  const closedBook = [];
+  if (LEDGER_BOOK) {
+    const candidates = new Set();
+    for (const op of LEDGER_BOOK.positions) candidates.add(op.ticker);
+    for (const t of trades) candidates.add(t.t);
+    for (const tk of candidates) {
+      if (openTickers.has(tk)) continue;
+      const t0 = trades.find(t => t.t === tk);
+      const m = LEDGER_BOOK.meta[tk] || (t0 ? { yf: t0.yf, ccy: t0.ccy, type: 'Stock' } : null);
+      if (!m || m.type === 'Bond' || m.type === 'Cash') continue;
+      const ov = LEDGER_BOOK.ledgerOverrides && LEDGER_BOOK.ledgerOverrides[tk];
+      if (ov && ov.qty === 0) continue;
+      const live = m.yf ? state.liveData[m.yf] : null;
+      let bars = (live && live.history && live.history.length >= 50) ? live.history : null;
+      if (!bars && m.yf && PRELOADED_HISTORY[m.yf] && PRELOADED_HISTORY[m.yf].history) {
+        const full = historyToFull(PRELOADED_HISTORY[m.yf].history);
+        if (full.length >= 50) bars = full;
+      }
+      const epochClose = LEDGER_BOOK.epochCloses ? LEDGER_BOOK.epochCloses[tk] : null;
+      if (!bars && epochClose == null) continue;
+      const op = LEDGER_BOOK.positions.find(p => p.ticker === tk);
+      closedBook.push({ ticker: tk, ccy: m.ccy, bars, constPrice: bars ? null : epochClose, openQty: op ? op.qty : 0 });
+    }
+  }
+
   // 1. Axis: union of bar dates >= epoch across priced tickers, extended
   //    with today when any live snapshot is fresher than its last bar.
+  //    Closed names contribute their bar dates too.
   const allDates = new Set();
   for (const p of priced) {
     for (const bar of p.history) {
+      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+      if (ds >= BOOK_EPOCH) allDates.add(ds);
+    }
+  }
+  for (const c of closedBook) {
+    if (!c.bars) continue;
+    for (const bar of c.bars) {
       const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
       if (ds >= BOOK_EPOCH) allDates.add(ds);
     }
@@ -4271,6 +4328,32 @@ function buildDailyBook(ps, trades) {
     }
     closeRows[p.ticker] = row;
   }
+  for (const c of closedBook) {
+    const row = new Array(dates.length);
+    if (c.bars) {
+      const byDate = {};
+      let seed = null;
+      for (let i = c.bars.length - 1; i >= 0; i--) {
+        const bar = c.bars[i];
+        const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+        if (ds < BOOK_EPOCH) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
+      }
+      for (const bar of c.bars) {
+        const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+        byDate[ds] = bar.adjclose != null ? bar.adjclose : bar.close;
+      }
+      // No live-snapshot override for closed names: quantity is zero on
+      // recent dates, so the forward-fill is inert there anyway.
+      let last = seed;
+      for (let i = 0; i < dates.length; i++) {
+        if (byDate[dates[i]] != null) last = byDate[dates[i]];
+        row[i] = last;
+      }
+    } else {
+      row.fill(c.constPrice);   // feedless: flat at the epoch close until exit
+    }
+    closeRows[c.ticker] = row;
+  }
 
   // 3. Trade indices.
   const tradesByTickerDate = {}, tradesByDate = {};
@@ -4296,8 +4379,29 @@ function buildDailyBook(ps, trades) {
     }
     qtyRows[p.ticker] = row;
   }
+  for (const c of closedBook) {
+    // Closed names walk FORWARD from the opening-book quantity (no current
+    // quantity exists to infer back from). The walk must end at zero; a
+    // non-zero end means ledger drift and is worth a console flag, not a
+    // silent wrong NAV.
+    let qty = c.openQty;
+    const row = new Array(dates.length);
+    for (let i = 0; i < dates.length; i++) {
+      const tt = tradesByTickerDate[c.ticker] && tradesByTickerDate[c.ticker][dates[i]] || [];
+      for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
+      row[i] = qty;
+    }
+    if (Math.abs(qty) > 1e-9) console.warn('[dailyBook] closed ticker ' + c.ticker + ' quantity walk ends at ' + qty + ' — ledger drift?');
+    qtyRows[c.ticker] = row;
+  }
 
-  // 5. Derived daily SGD series.
+  // 5. Derived daily SGD series. NAV spans current priced positions AND
+  //    closed-in-year names while they were held. A trade is a tracked flow
+  //    (internal rotation against the cash pool) when its ticker is anywhere
+  //    in that universe; only residual unpriceable names fall through to the
+  //    untracked (external) row.
+  const trackedTickers = new Set(priced.map(p => p.ticker));
+  for (const c of closedBook) trackedTickers.add(c.ticker);
   const navRow = new Array(dates.length).fill(0);
   const cfRow = new Array(dates.length).fill(0);
   const untrackedRow = new Array(dates.length).fill(0);
@@ -4308,19 +4412,21 @@ function buildDailyBook(ps, trades) {
       const q = qtyRows[p.ticker][i], px = closeRows[p.ticker][i];
       if (q > 0 && px != null) nav += q * px * fxAtDate(p.ccy, ds);
     }
+    for (const c of closedBook) {
+      const q = qtyRows[c.ticker][i], px = closeRows[c.ticker][i];
+      if (q > 0 && px != null) nav += q * px * fxAtDate(c.ccy, ds);
+    }
     navRow[i] = nav;
     let cf = 0, untracked = 0;
     for (const t of (tradesByDate[ds] || [])) {
-      const pos = ps.find(p => p.ticker === t.t);
-      const isPricedEquity = pos && pos.history && pos.history.length >= 50 && pos.type !== 'Bond' && pos.type !== 'Cash';
-      if (isPricedEquity) cf += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(pos.ccy, t.d);
+      if (trackedTickers.has(t.t)) cf += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
       else untracked += (t.a === 'S' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
     }
     cfRow[i] = cf;
     untrackedRow[i] = untracked;
   }
 
-  _dailyBook = { dates, idx, priced, closeRows, qtyRows, navRow, cfRow, untrackedRow, _ps: ps };
+  _dailyBook = { dates, idx, priced, closedBook, closeRows, qtyRows, navRow, cfRow, untrackedRow, _ps: ps };
   _dailyBookKey = key;
   return _dailyBook;
 }
@@ -4397,17 +4503,20 @@ function getEquityCurve(ps, trades, startDateStr) {
   const depositSeries = new Array(equityAll.length).fill(0);
   let runningCash = seedCash;
   for (let i = 0; i < equityAll.length; i++) {
-    // All sells add cash, all buys draw it down: tracked via −cfAll, closed-out
-    // positions via the netted untracked term.
+    // All sells add cash, all buys draw it down: the tracked term (−cfAll)
+    // now carries closed-in-year names too; the netted untracked term is the
+    // residual unpriceable names only.
     runningCash += untrackedNetAll[i] - cfAll[i];
     if (runningCash < 0) { depositSeries[i] = -runningCash; runningCash = 0; }
     cashSeries[i] = runningCash;
   }
 
-  // External portfolio cash flows per day = detected deposits (external funding of
-  // purchases beyond available cash) plus the net closed-position flow (sale
-  // proceeds in, in-year closed-out buys out). All raise or lower NAV without
-  // being return, so Modified Dietz strips them out below.
+  // External portfolio cash flows per day = detected deposits (external funding
+  // of purchases beyond available cash) plus the net flow of the residual
+  // unpriceable names (outside the daily book universe). Both raise or lower
+  // NAV without being return, so Modified Dietz strips them out below. Closed
+  // names are NOT here any more — their trades are internal rotations and
+  // their round-trip P&L is return.
   const externalFlowAll = depositSeries.map((d, i) => d + untrackedNetAll[i]);
 
   // Bonds + other unpriced positions are held at constant current value
@@ -4430,10 +4539,11 @@ function getEquityCurve(ps, trades, startDateStr) {
   const trimmedDates = dates.slice(firstReal);
   const nav        = navAll.slice(firstReal);
   // Portfolio-level external cash flows (see externalFlowAll above): detected
-  // deposits funding purchases, plus the net closed-position flow. Genuine equity
-  // rotations net to zero across equity and cash and do not appear here. Modified
-  // Dietz uses these to strip external funding from the return so flow-driven NAV
-  // jumps do not read as performance.
+  // deposits funding purchases, plus the net flow of residual unpriceable
+  // names. Genuine equity rotations — including entries and exits of names
+  // since closed — net to zero across equity and cash and do not appear here.
+  // Modified Dietz uses these to strip external funding from the return so
+  // flow-driven NAV jumps do not read as performance.
   const cf         = externalFlowAll.slice(firstReal);
   dates.length = 0;
   trimmedDates.forEach(d => dates.push(d));
@@ -5862,6 +5972,7 @@ async function bootstrap() {
     // future explicit cash-event rows (deposits/withdrawals) stay inert here.
     TRADES_YTD = trades.filter(t => t.a === 'B' || t.a === 'S');
     PRE_YTD_BASIS = book.epochCloses || {};
+    LEDGER_BOOK = book;
     POSITIONS = replayLedger(book, trades);
     // Theses are optional and non-critical: fetch separately so a missing/
     // not-yet-baked theses.json never blanks the dashboard.
