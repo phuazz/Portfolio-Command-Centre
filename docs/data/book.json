@@ -160,6 +160,16 @@
       "theme": "Gold Miners",
       "type": "ETF"
     },
+    "SIL.US": {
+      "yf": "SIL",
+      "name": "Global X Silver Miners",
+      "exchange": "ARCA",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 60,
+      "theme": "Silver/Precious Metals",
+      "type": "ETF"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
