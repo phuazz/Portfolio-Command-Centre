@@ -283,6 +283,16 @@
       "theme": "US Semis",
       "type": "Stock"
     },
+    "MU.US": {
+      "yf": "MU",
+      "name": "Micron Technology",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "US Semis",
+      "type": "Stock"
+    },
     "DELL.US": {
       "yf": "DELL",
       "name": "Dell Technologies",
@@ -293,6 +303,16 @@
       "theme": "US Tech",
       "type": "Stock",
       "mktPriceSnap": 387.885
+    },
+    "AKAM.US": {
+      "yf": "AKAM",
+      "name": "Akamai Technologies",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "US Tech",
+      "type": "Stock"
     },
     "OXY.US": {
       "yf": "OXY",
