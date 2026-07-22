@@ -122,5 +122,7 @@
   {"d": "2026-07-16", "t": "CPRX.US", "a": "S", "q": 280, "p": 31.5, "ccy": "USD", "yf": "CPRX", "th": "US Pharma"},
   {"d": "2026-07-21", "t": "AKAM.US", "a": "B", "q": 70, "p": 126.2, "ccy": "USD", "yf": "AKAM", "th": "US Tech"},
   {"d": "2026-07-21", "t": "MU.US", "a": "B", "q": 10, "p": 916.82, "ccy": "USD", "yf": "MU", "th": "US Semis"},
-  {"d": "2026-07-21", "t": "SIL.US", "a": "B", "q": 100, "p": 73.8384, "ccy": "USD", "yf": "SIL", "th": "Silver/Precious Metals"}
+  {"d": "2026-07-21", "t": "SIL.US", "a": "B", "q": 100, "p": 73.8384, "ccy": "USD", "yf": "SIL", "th": "Silver/Precious Metals"},
+  {"d": "2026-07-22", "t": "IGV.US", "a": "S", "q": 100, "p": 89.61, "ccy": "USD", "yf": "IGV", "th": "US Tech"},
+  {"d": "2026-07-22", "t": "INTC.US", "a": "B", "q": 80, "p": 106.3, "ccy": "USD", "yf": "INTC", "th": "US Semis"}
 ]
