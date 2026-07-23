@@ -3770,17 +3770,27 @@ function _effectiveReturnGlobalDay(p, mode) {
   return { closeNow, closeThen, rawNow: raw(h[iU]), rawThen: raw(h[iP]), snapshotFresher: false, refDate: iso(h[iP]), endFxDate: iso(h[iU]) };
 }
 
-function calcAttribution(ps, bars) {
+function calcAttribution(ps, bars, trades) {
   // Total-return attribution. effectiveReturn() handles both the
   // adjclose-vs-raw choice (use adjclose, includes dividends) and the
   // snapshot-aware closeNow shift so 1D / 1W / 1M reflect today's move
   // even when the pipeline has not yet appended today's bar to history.
+  //
+  // ID/1D are FLOW-AWARE (when `trades` is supplied): a position opened or
+  // resized during the window is credited only with the move from its
+  // transacted price, not the full prior-close-to-now move. This mirrors the
+  // hero engine calcSplitDayPnL (see ~line 1968/1975) — quantity is anchored at
+  // the window boundary and the intraday flow leg is valued at the fill price —
+  // so the per-position contributions re-tie to the header intraday figure.
+  // 1W/1M keep the simple two-point method on current quantity (a milder,
+  // longer-window version of the same approximation).
   const rows = [];
   let totalStart = 0;
+  const isDayMode = (bars === 'ID' || bars === '1D');
   for (const p of ps) {
     // 'ID' and '1D' run on the global trading day anchored at the US close
     // (matching the hero cards); 1W/1M keep the per-ticker bar lookback.
-    const r = (bars === 'ID' || bars === '1D') ? _effectiveReturnGlobalDay(p, bars) : effectiveReturn(p, bars);
+    const r = isDayMode ? _effectiveReturnGlobalDay(p, bars) : effectiveReturn(p, bars);
     if (!r) continue;
     // FX-as-of-date: closeThen converted at the historical FX rate; closeNow
     // converted at today's rate — unless the window ends at a historical
@@ -3788,26 +3798,70 @@ function calcAttribution(ps, bars) {
     // date's rate. Falls back to p.fxRate when FX_HISTORY lacks the date.
     const fxThen    = fxAtDate(p.ccy, r.refDate);
     const fxNow     = r.endFxDate ? fxAtDate(p.ccy, r.endFxDate) : (p.fxRate || 1);
-    const startSGD  = r.closeThen * p.qty * fxThen;
-    const endSGD    = r.closeNow  * p.qty * fxNow;
-    const dollar    = endSGD - startSGD;
-    if (!isFinite(startSGD) || startSGD === 0) continue;
-    // Exact two-point FX decomposition: local move valued at the start FX,
-    // currency move valued at the end local price; localDollar + fxDollar
-    // === dollar. SGD positions have fxThen === fxNow so fxDollar === 0.
-    const localDollar = p.qty * fxThen * (r.closeNow - r.closeThen);
-    const fxDollar    = p.qty * r.closeNow * (fxNow - fxThen);
-    // Split the local (total-return) move into price and income (dividends):
-    // priceDollar uses the raw close move; income is the remainder, i.e. the
-    // dividend uplift that adjclose carries over close. price + income = local.
     const rawNow = r.rawNow != null ? r.rawNow : r.closeNow;
     const rawThen = r.rawThen != null ? r.rawThen : r.closeThen;
-    const priceDollar = p.qty * fxThen * (rawNow - rawThen);
-    const incomeDollar = localDollar - priceDollar;
+    let startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar, retPct;
+    if (isDayMode && trades) {
+      // ── Flow-aware day attribution ──
+      const ccy = p.ccy;
+      const tradesOf = trades.filter(t => t.t === p.ticker);
+      const net     = arr => arr.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
+      const flowFx  = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d), 0);
+      const flowLoc = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p, 0);   // shares×fill price; FX applied once outside
+      // Boundary quantity and the flow window. For ID the window is
+      // (prior US close, now]; for 1D it is the prior complete global day
+      // (dateP, dateU], with current quantity rolled back past any later
+      // (intraday) trades to recover the holding at dateU.
+      let qEnd, qStart, w;
+      if (bars === 'ID') {
+        const boundaryDate = r.refDate;                 // dateU (prior US close)
+        w = tradesOf.filter(t => t.d > boundaryDate);   // (boundary, now]
+        qEnd = p.qty;                                    // current holding
+        qStart = qEnd - net(w);                          // holding at the boundary
+      } else {
+        const dateU = r.endFxDate;                       // window end (prior close)
+        const qAtU = p.qty - net(tradesOf.filter(t => t.d > dateU));
+        w = tradesOf.filter(t => t.d > r.refDate && t.d <= dateU);   // (dateP, dateU]
+        qEnd = qAtU;
+        qStart = qEnd - net(w);
+      }
+      endSGD   = qEnd * r.closeNow * fxNow;
+      dollar   = qEnd * r.closeNow * fxNow - qStart * r.closeThen * fxThen - flowFx(w);
+      // Capital at risk over the window = boundary value of the start holding
+      // plus intraday capital deployed (buys add, sells return). Algebraically
+      // endSGD − dollar, and Σ over positions equals the hero intraday equity
+      // denominator, so contributions sum to the header intraday return.
+      startSGD = endSGD - dollar;
+      const fl = flowLoc(w);
+      localDollar = fxThen * (qEnd * r.closeNow - qStart * r.closeThen - fl);
+      fxDollar    = dollar - localDollar;
+      priceDollar = fxThen * (qEnd * rawNow - qStart * rawThen - fl);   // fills are raw prices; no intraday dividend
+      incomeDollar = localDollar - priceDollar;
+      // Effective local return on capital at risk (guarded — a line trimmed
+      // into a large intraday gain can drive the basis non-positive).
+      retPct = startSGD > 0 ? (localDollar / startSGD) * 100 : null;
+      if (!isFinite(dollar) || startSGD === 0) continue;
+    } else {
+      startSGD  = r.closeThen * p.qty * fxThen;
+      endSGD    = r.closeNow  * p.qty * fxNow;
+      dollar    = endSGD - startSGD;
+      if (!isFinite(startSGD) || startSGD === 0) continue;
+      // Exact two-point FX decomposition: local move valued at the start FX,
+      // currency move valued at the end local price; localDollar + fxDollar
+      // === dollar. SGD positions have fxThen === fxNow so fxDollar === 0.
+      localDollar = p.qty * fxThen * (r.closeNow - r.closeThen);
+      fxDollar    = p.qty * r.closeNow * (fxNow - fxThen);
+      // Split the local (total-return) move into price and income (dividends):
+      // priceDollar uses the raw close move; income is the remainder, i.e. the
+      // dividend uplift that adjclose carries over close. price + income = local.
+      priceDollar = p.qty * fxThen * (rawNow - rawThen);
+      incomeDollar = localDollar - priceDollar;
+      retPct = ((r.closeNow - r.closeThen) / r.closeThen) * 100;
+    }
     rows.push({
       pos: p,
       startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar,
-      retPct: ((r.closeNow - r.closeThen) / r.closeThen) * 100,
+      retPct,
     });
     totalStart += startSGD;
   }
@@ -5073,7 +5127,7 @@ function renderAttribution(el) {
     try {
       byHorizon[h.key] = h.ytd
         ? calcYtdAttribution(ps, TRADES_YTD)
-        : calcAttribution(ps, h.bars);
+        : calcAttribution(ps, h.bars, TRADES_YTD);
     } catch (err) {
       console.error('Attribution failed for horizon', h.key, err);
       byHorizon[h.key] = { error: err.message || String(err), bars: h.bars, totalStart: 0, totalDollar: 0, portfolioRetPct: 0, rows: [], themes: [], covered: 0, skipped: ps.length };
