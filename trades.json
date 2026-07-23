@@ -127,5 +127,8 @@
   {"d": "2026-07-22", "t": "INTC.US", "a": "B", "q": 80, "p": 106.3, "ccy": "USD", "yf": "INTC", "th": "US Semis"},
   {"d": "2026-07-22", "t": "DELL.US", "a": "B", "q": 20, "p": 440, "ccy": "USD", "yf": "DELL", "th": "US Tech"},
   {"d": "2026-07-23", "t": "4004.JP", "a": "B", "q": 100, "p": 15650, "ccy": "JPY", "yf": "4004.T", "th": "Japan Chemicals"},
-  {"d": "2026-07-23", "t": "SOI.FR", "a": "B", "q": 75, "p": 117.85, "ccy": "EUR", "yf": "SOI.PA", "th": "Europe Semis"}
+  {"d": "2026-07-23", "t": "SOI.FR", "a": "B", "q": 75, "p": 117.85, "ccy": "EUR", "yf": "SOI.PA", "th": "Europe Semis"},
+  {"d": "2026-07-23", "t": "MU.US", "a": "B", "q": 9, "p": 997, "ccy": "USD", "yf": "MU", "th": "US Semis"},
+  {"d": "2026-07-23", "t": "NVDA.US", "a": "B", "q": 40, "p": 209, "ccy": "USD", "yf": "NVDA", "th": "US Semis"},
+  {"d": "2026-07-23", "t": "LIT.US", "a": "B", "q": 120, "p": 69.45, "ccy": "USD", "yf": "LIT", "th": "Lithium/Battery Tech"}
 ]

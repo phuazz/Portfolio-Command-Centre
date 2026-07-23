@@ -170,6 +170,16 @@
       "theme": "Silver/Precious Metals",
       "type": "ETF"
     },
+    "LIT.US": {
+      "yf": "LIT",
+      "name": "Global X Lithium & Battery Tech",
+      "exchange": "ARCA",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 70,
+      "theme": "Lithium/Battery Tech",
+      "type": "ETF"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
@@ -300,6 +310,16 @@
       "ccy": "USD",
       "fee": 0,
       "availLTV": 0,
+      "theme": "US Semis",
+      "type": "Stock"
+    },
+    "NVDA.US": {
+      "yf": "NVDA",
+      "name": "NVIDIA",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 50,
       "theme": "US Semis",
       "type": "Stock"
     },
