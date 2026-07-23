@@ -3912,38 +3912,64 @@ function calcAttribution(ps, bars, trades) {
 
 // ─── 1W / 1M ATTRIBUTION: FLOW-AWARE FIFO ON A ROLLING WINDOW ───────
 // Same output shape as calcAttribution's two-point path, but flow-exact.
-// For each position the window start is the bar `bars` sessions back —
-// anchored identically to effectiveReturn()/calcPortfolioPeriodPnL(), so a
-// position held unchanged across the window reproduces the two-point result.
-// A seed lot equal to the holding at the window start (cost = the window-start
-// close) is replayed FIFO against the in-window trades: a mid-window buy adds a
-// lot at its fill, a mid-window sell realises against the seed/earlier lots, and
-// the remainder is marked to the current price. So a name opened during the
-// window contributes only its post-fill move (not the pre-hold move the
-// current-quantity two-point method over-credits), and a name trimmed during the
-// window keeps the realised gain the two-point method drops. This is the
-// rolling-window twin of calcYtdAttribution (fixed 2026-01-01 epoch); the FX and
-// price/income decomposition mirror it exactly. Universe is the current
-// positions array (as calcAttribution) — a name FULLY closed inside the window
-// has already left POSITIONS and is out of scope here, unchanged from before.
+// For each name the window start is the bar `bars` sessions back — anchored
+// identically to effectiveReturn()/calcPortfolioPeriodPnL(), so a position held
+// unchanged across the window reproduces the two-point result. A seed lot equal
+// to the holding at the window start (cost = the window-start close) is replayed
+// FIFO against the in-window trades: a mid-window buy adds a lot at its fill, a
+// mid-window sell realises against the seed/earlier lots, and the remainder is
+// marked to the current price. So a name opened during the window contributes
+// only its post-fill move (not the pre-hold move the current-quantity two-point
+// method over-credits), and a name trimmed — or FULLY closed — during the window
+// keeps the realised gain the two-point method drops.
+//
+// Universe = current positions UNION every traded ticker, mirroring
+// calcYtdAttribution and the header period engine (calcPortfolioPeriodPnL): a
+// name sold to zero inside the window has left POSITIONS but is still in the
+// trade ledger, so it is walked from its live-data history and emitted as an
+// isClosed row rather than silently dropped. A ticker with no window-start
+// holding and no in-window trade produces no row (the startSGD guard skips it),
+// so names closed BEFORE the window cost nothing. This is the rolling-window
+// twin of calcYtdAttribution (fixed 2026-01-01 epoch); the FX and price/income
+// decomposition mirror it exactly.
 function calcWindowAttribution(ps, bars, trades) {
+  const liveData = state.liveData || {};
+  const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
+  const posByTicker = {};
+  ps.forEach(p => { posByTicker[p.ticker] = p; });
+
+  // Universe: current non-cash positions plus every traded ticker (so closed
+  // names in). Cash carries no price history and is out of the equity sleeve.
+  const meta = {};
+  const addMeta = (tk, yf, ccy, th) => { if (tk && !meta[tk]) meta[tk] = { yf, ccy, th }; };
+  ps.forEach(p => { if (p.type !== 'Cash') addMeta(p.ticker, p.yf, p.ccy, p.theme); });
+  trades.forEach(t => addMeta(t.t, t.yf, t.ccy, t.th));
+
   const rows = [];
   let totalStart = 0;
-  for (const p of ps) {
-    if (!p.history || p.history.length < 2) continue;
-    const h = p.history, n = h.length, ccy = p.ccy;
+  for (const tk of Object.keys(meta)) {
+    const pos = posByTicker[tk] || null;
+    const h = pos ? pos.history : histOf(meta[tk].yf);
+    if (!h || h.length < 2) continue;
+    const n = h.length, ccy = pos ? pos.ccy : meta[tk].ccy;
     const lastBar = h[n - 1];
     const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
     if (!isFinite(lastAdj) || lastAdj <= 0) continue;
+    // Current holding, price and FX resolve from the live position when the name
+    // is still held, else from live data / the base FX table for a closed name
+    // (qty now zero, so it contributes realised P&L only).
+    const qtyNow   = pos ? pos.qty : 0;
+    const mktPrice = pos ? pos.mktPrice : (liveData[meta[tk].yf] ? liveData[meta[tk].yf].price : null);
+    const fxNow    = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
 
     // Window-start bar and the live-snapshot-as-virtual-today rule, identical to
     // effectiveReturn(): the snapshot stands in as "today" only when it genuinely
     // differs from the last baked bar, and the lookback is counted in this
     // ticker's own bars. closeNow/closeThen are adjclose (total return, u=1
     // today); rawNow/rawThen are the raw close, for the price/income split.
-    const snapshotFresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6;
-    const closeNow = snapshotFresher ? p.mktPrice : lastAdj;
-    const rawNow   = snapshotFresher ? p.mktPrice : (lastBar.close != null ? lastBar.close : lastAdj);
+    const snapshotFresher = mktPrice != null && Math.abs(mktPrice - lastAdj) > 1e-6;
+    const closeNow = snapshotFresher ? mktPrice : lastAdj;
+    const rawNow   = snapshotFresher ? mktPrice : (lastBar.close != null ? lastBar.close : lastAdj);
     const refIdx   = snapshotFresher ? Math.max(0, n - bars) : Math.max(0, n - 1 - bars);
     const startBar = h[refIdx];
     const adjThen  = startBar.adjclose != null ? startBar.adjclose : startBar.close;
@@ -3952,7 +3978,6 @@ function calcWindowAttribution(ps, bars, trades) {
     const sd = startBar.date instanceof Date ? startBar.date : new Date(startBar.date);
     const startDate = sd.toISOString().slice(0, 10);
     const fxThen = fxAtDate(ccy, startDate);
-    const fxNow  = p.fxRate || 1;
 
     // Dividend uplift u(d) = close/adjclose at the history bar on or before
     // isoDate (>= 1, 1 at today). Total-return mark of a lot held to today = raw
@@ -3972,10 +3997,10 @@ function calcWindowAttribution(ps, bars, trades) {
 
     // In-window trades (after the start mark), chronological. qtyStart rolls the
     // current holding back past them to recover the holding at the window start.
-    const wTrades = trades.filter(t => t.t === p.ticker && t.d > startDate)
+    const wTrades = trades.filter(t => t.t === tk && t.d > startDate)
                           .sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
     const net = wTrades.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
-    const qtyStart = p.qty - net;
+    const qtyStart = qtyNow - net;
 
     // Seed lot = holding at window start, cost = window-start RAW close, carrying
     // the window-start uplift so its total-return mark is dividend-consistent.
@@ -4032,10 +4057,18 @@ function calcWindowAttribution(ps, bars, trades) {
     const windowBuyCostSGD = wTrades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
     const startSGD = windowStartValueSGD + windowBuyCostSGD;
     if (!(startSGD > 0)) continue;
-    const endSGD = p.qty * closeNow * fxNow;
+    const endSGD = qtyNow * closeNow * fxNow;
     const retPct = (localDollar / startSGD) * 100;
 
-    rows.push({ pos: p, startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar, retPct });
+    // Held names carry their live position; a name closed inside the window gets
+    // a synthetic pos (qty 0, theme/ccy from the trade ledger) and isClosed, the
+    // same shape calcYtdAttribution emits so renderAttribution shows it identically.
+    const theme = pos ? pos.theme : (meta[tk].th || '(Unclassified)');
+    rows.push({
+      pos: pos || { ticker: tk, name: tk, theme, account: 'Brokerage', ccy, qty: 0 },
+      isClosed: !pos,
+      startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar, retPct,
+    });
     totalStart += startSGD;
   }
 
@@ -4075,7 +4108,9 @@ function calcWindowAttribution(ps, bars, trades) {
     priceContribPp: totalStart > 0 ? (totalPriceDollar / totalStart) * 100 : 0,
     rows, themes,
     covered: rows.length,
-    skipped: ps.length - rows.length,
+    // Exclude closed names from the skip count — skipped counts current positions
+    // without enough price history, not names deliberately walked from the ledger.
+    skipped: ps.length - rows.filter(r => !r.isClosed).length,
   };
 }
 
@@ -5395,11 +5430,16 @@ function renderAttribution(el) {
   // Portfolio Return headline = trade-aware equity+cash book return, identical to
   // the hero P&L cards. For period horizons it comes from the trade-aware engine
   // (captures positions closed within the window); for YTD it is the FIFO total
-  // return (already trade-aware). The theme decomposition below stays on CURRENT
-  // HOLDINGS, so it reconciles to the held-equity return — for period horizons
-  // that differs from the headline by the realised P&L of positions closed in the
-  // window plus the cash effect.
-  const heldEquityRetPct = A.portfolioRetPct;             // what the theme contributions sum to (held equity)
+  // return (already trade-aware). The theme decomposition below covers the full
+  // equity sleeve — current holdings AND names closed within the window — for YTD
+  // and the 1W/1M FIFO horizons, so it captures the realised P&L of closed names
+  // and differs from the equity+cash headline only by the cash effect (and, on
+  // the percentage, by the denominator basis). The ID/1D day engine still walks
+  // current holdings only (its contributions tie to the hero intraday
+  // denominator), so on those two horizons the gap also carries closed-name
+  // realised P&L. decompCoversClosed captures which case applies.
+  const heldEquityRetPct = A.portfolioRetPct;             // what the theme contributions sum to (equity sleeve)
+  const decompCoversClosed = isYtd || typeof horizonDef.bars === 'number';   // YTD + 1W/1M walk the trade ledger
   const periodTA = isYtd ? null
     : (horizonDef.bars === 'ID' || horizonDef.bars === '1D')
       ? (horizonDef.bars === 'ID' ? calcSplitDayPnL(ps, TRADES_YTD).intraday : calcSplitDayPnL(ps, TRADES_YTD).prevDay)
@@ -5416,7 +5456,7 @@ function renderAttribution(el) {
       </div>
       <div class="card-body" style="padding-top:8px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
-          <div title="${isYtd ? 'Money-weighted (Modified Dietz) return: total P&L over the average capital employed — opening market value plus each flow weighted by the time it was invested. This is the rigorous version of return-on-capital; it differs from the equity TWRR alongside by flow timing (money- vs time-weighting) and by the cash scope. Equity + cash basis, bonds excluded.' : 'Equity + cash book return (bonds excluded), trade-aware and identical to the hero P&L cards. The theme decomposition below covers current holdings and reconciles to the held-equity return, which differs from this headline by the realised P&L of positions closed in the window plus the cash effect.'}">
+          <div title="${isYtd ? 'Money-weighted (Modified Dietz) return: total P&L over the average capital employed — opening market value plus each flow weighted by the time it was invested. This is the rigorous version of return-on-capital; it differs from the equity TWRR alongside by flow timing (money- vs time-weighting) and by the cash scope. Equity + cash basis, bonds excluded.' : 'Equity + cash book return (bonds excluded), trade-aware and identical to the hero P&L cards. ' + (decompCoversClosed ? 'The theme decomposition below covers the full equity sleeve — current holdings and names closed within the window — so it captures closed-name realised P&L and differs from this headline only by the cash effect.' : 'The theme decomposition below covers current holdings and reconciles to the held-equity return, which differs from this headline by the realised P&L of positions closed in the window plus the cash effect.')}">
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Portfolio Return · ${horizonDef.label}${isYtd ? ' (MWR)' : ''}</div>
             <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${bookRetPct>=0?'var(--g)':'var(--r)'}">${fmtPct(bookRetPct)}</div>
             <div style="font-size:12px;color:var(--t2)">${fmtPL(headlineDollar)} · ${isYtd ? 'money-weighted · equity + cash' : 'equity + cash basis · trade-aware'}</div>
@@ -5445,7 +5485,7 @@ function renderAttribution(el) {
           <div>
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600">Reconciliation</div>
             <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${reconciles?'var(--g)':'var(--r)'}">${fmtPct(sumContrib)}</div>
-            <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(heldEquityRetPct)} held-equity return</div>
+            <div style="font-size:12px;color:var(--t2)">Σ contribs vs ${fmtPct(heldEquityRetPct)} ${decompCoversClosed ? 'equity-sleeve' : 'held-equity'} return</div>
           </div>
           ${isYtd ? `
           <div>
@@ -5634,7 +5674,7 @@ function renderAttribution(el) {
           </tbody>
         </table>
         ${(A.skipped > 0 || !isYtd) ? `<div style="padding:10px 14px;font-size:10px;color:var(--t3);background:var(--bg3);border-top:1px solid var(--bd);line-height:1.5">
-          ${A.skipped > 0 ? `${A.skipped} position${A.skipped>1?'s':''} excluded from the ${horizonDef.label} theme decomposition — insufficient price history (typically savings bonds and recent listings). ` : ''}The Σ-contribution figure reconciles to the <strong>held-equity</strong> return over current holdings.${!isYtd ? ` The headline <strong>Portfolio Return</strong> above is trade-aware — equity + cash, and it includes the realised P&amp;L of positions <em>closed</em> within the window — so it differs from this decomposition total, which by construction only covers names still held. The headline matches the landing-page ${horizonDef.label} P&amp;L card exactly.` : ''}
+          ${A.skipped > 0 ? `${A.skipped} position${A.skipped>1?'s':''} excluded from the ${horizonDef.label} theme decomposition — insufficient price history (typically savings bonds and recent listings). ` : ''}The Σ-contribution figure reconciles to the <strong>${decompCoversClosed ? 'equity-sleeve' : 'held-equity'}</strong> return over ${decompCoversClosed ? 'every name active in the period — current holdings plus those closed within it' : 'current holdings'}.${!isYtd ? (decompCoversClosed ? ` The headline <strong>Portfolio Return</strong> above is trade-aware — equity + cash — and this decomposition now covers the same equity names, including any <em>closed</em> within the window, so the two differ only by the cash effect. The headline matches the landing-page ${horizonDef.label} P&amp;L card exactly.` : ` The headline <strong>Portfolio Return</strong> above is trade-aware — equity + cash, and it includes the realised P&amp;L of positions <em>closed</em> within the window — so it differs from this decomposition total, which by construction only covers names still held. The headline matches the landing-page ${horizonDef.label} P&amp;L card exactly.`) : ''}
         </div>` : ''}
       </div>
     </div>`;
