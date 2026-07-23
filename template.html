@@ -3782,8 +3782,13 @@ function calcAttribution(ps, bars, trades) {
   // hero engine calcSplitDayPnL (see ~line 1968/1975) — quantity is anchored at
   // the window boundary and the intraday flow leg is valued at the fill price —
   // so the per-position contributions re-tie to the header intraday figure.
-  // 1W/1M keep the simple two-point method on current quantity (a milder,
-  // longer-window version of the same approximation).
+  // 1W (bars=5) and 1M (bars=21) route to the flow-aware FIFO window engine
+  // (calcWindowAttribution below): a position opened or resized inside the window
+  // is credited only with its in-window move, and shares sold inside the window
+  // keep their realised in-window gain — neither of which the two-point method on
+  // current quantity gets right. ID/1D stay on the global-day engine here. The
+  // two-point branch below now serves only as a no-trades fallback.
+  if (typeof bars === 'number') return calcWindowAttribution(ps, bars, trades);
   const rows = [];
   let totalStart = 0;
   const isDayMode = (bars === 'ID' || bars === '1D');
@@ -3892,6 +3897,175 @@ function calcAttribution(ps, bars, trades) {
   const totalLocalDollar = rows.reduce((s,r) => s + (r.localDollar || 0), 0);
   const totalIncomeDollar = rows.reduce((s,r) => s + (r.incomeDollar || 0), 0);
   const totalPriceDollar = rows.reduce((s,r) => s + (r.priceDollar || 0), 0);
+  return {
+    bars,
+    totalStart, totalDollar, totalFxDollar, totalLocalDollar, totalIncomeDollar, totalPriceDollar,
+    portfolioRetPct: totalStart > 0 ? (totalDollar / totalStart) * 100 : 0,
+    fxContribPp: totalStart > 0 ? (totalFxDollar / totalStart) * 100 : 0,
+    incomeContribPp: totalStart > 0 ? (totalIncomeDollar / totalStart) * 100 : 0,
+    priceContribPp: totalStart > 0 ? (totalPriceDollar / totalStart) * 100 : 0,
+    rows, themes,
+    covered: rows.length,
+    skipped: ps.length - rows.length,
+  };
+}
+
+// ─── 1W / 1M ATTRIBUTION: FLOW-AWARE FIFO ON A ROLLING WINDOW ───────
+// Same output shape as calcAttribution's two-point path, but flow-exact.
+// For each position the window start is the bar `bars` sessions back —
+// anchored identically to effectiveReturn()/calcPortfolioPeriodPnL(), so a
+// position held unchanged across the window reproduces the two-point result.
+// A seed lot equal to the holding at the window start (cost = the window-start
+// close) is replayed FIFO against the in-window trades: a mid-window buy adds a
+// lot at its fill, a mid-window sell realises against the seed/earlier lots, and
+// the remainder is marked to the current price. So a name opened during the
+// window contributes only its post-fill move (not the pre-hold move the
+// current-quantity two-point method over-credits), and a name trimmed during the
+// window keeps the realised gain the two-point method drops. This is the
+// rolling-window twin of calcYtdAttribution (fixed 2026-01-01 epoch); the FX and
+// price/income decomposition mirror it exactly. Universe is the current
+// positions array (as calcAttribution) — a name FULLY closed inside the window
+// has already left POSITIONS and is out of scope here, unchanged from before.
+function calcWindowAttribution(ps, bars, trades) {
+  const rows = [];
+  let totalStart = 0;
+  for (const p of ps) {
+    if (!p.history || p.history.length < 2) continue;
+    const h = p.history, n = h.length, ccy = p.ccy;
+    const lastBar = h[n - 1];
+    const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
+    if (!isFinite(lastAdj) || lastAdj <= 0) continue;
+
+    // Window-start bar and the live-snapshot-as-virtual-today rule, identical to
+    // effectiveReturn(): the snapshot stands in as "today" only when it genuinely
+    // differs from the last baked bar, and the lookback is counted in this
+    // ticker's own bars. closeNow/closeThen are adjclose (total return, u=1
+    // today); rawNow/rawThen are the raw close, for the price/income split.
+    const snapshotFresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6;
+    const closeNow = snapshotFresher ? p.mktPrice : lastAdj;
+    const rawNow   = snapshotFresher ? p.mktPrice : (lastBar.close != null ? lastBar.close : lastAdj);
+    const refIdx   = snapshotFresher ? Math.max(0, n - bars) : Math.max(0, n - 1 - bars);
+    const startBar = h[refIdx];
+    const adjThen  = startBar.adjclose != null ? startBar.adjclose : startBar.close;
+    const rawThen  = startBar.close != null ? startBar.close : adjThen;
+    if (!isFinite(adjThen) || adjThen <= 0) continue;
+    const sd = startBar.date instanceof Date ? startBar.date : new Date(startBar.date);
+    const startDate = sd.toISOString().slice(0, 10);
+    const fxThen = fxAtDate(ccy, startDate);
+    const fxNow  = p.fxRate || 1;
+
+    // Dividend uplift u(d) = close/adjclose at the history bar on or before
+    // isoDate (>= 1, 1 at today). Total-return mark of a lot held to today = raw
+    // price today x u(entry); a sale's proceeds carry u(entry)/u(sell). Mirrors
+    // calcYtdAttribution.uFactorAt / getJan1U on this position's own history.
+    const uAt = (isoDate) => {
+      let chosen = null;
+      for (const bar of h) {
+        const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
+        if (d.toISOString().slice(0, 10) <= isoDate) chosen = bar; else break;   // ascending
+      }
+      if (!chosen) chosen = h[0];
+      const c = chosen.close, a = chosen.adjclose;
+      return (c != null && a != null && a !== 0) ? c / a : 1;
+    };
+    const uThen = (() => { const c = startBar.close, a = startBar.adjclose; return (c != null && a != null && a !== 0) ? c / a : 1; })();
+
+    // In-window trades (after the start mark), chronological. qtyStart rolls the
+    // current holding back past them to recover the holding at the window start.
+    const wTrades = trades.filter(t => t.t === p.ticker && t.d > startDate)
+                          .sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+    const net = wTrades.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
+    const qtyStart = p.qty - net;
+
+    // Seed lot = holding at window start, cost = window-start RAW close, carrying
+    // the window-start uplift so its total-return mark is dividend-consistent.
+    // Each lot records its entry FX for the FX-as-of-date decomposition.
+    const lots = [];
+    if (qtyStart > 1e-9) lots.push({ qty: qtyStart, cost: rawThen, u: uThen, fxEntry: fxThen });
+
+    // FIFO replay. realised* are local ccy; realisedSGD accrues per-flow with FX
+    // as of each leg (proceeds at the sell-date rate, cost at the lot entry rate).
+    // realisedPrice strips the dividend uplift (u = 1) to isolate the price leg.
+    let realised = 0, realisedPrice = 0, realisedSGD = 0;
+    for (const t of wTrades) {
+      if (t.a === 'B') {
+        lots.push({ qty: t.q, cost: t.p, u: uAt(t.d), fxEntry: fxAtDate(ccy, t.d) });
+      } else {
+        const uSell = uAt(t.d), fxSell = fxAtDate(ccy, t.d);
+        let rem = t.q;
+        while (rem > 1e-9 && lots.length > 0) {
+          const lot = lots[0];
+          const take = Math.min(lot.qty, rem);
+          const procLocal = t.p * ((lot.u || 1) / uSell) * take;
+          realised      += procLocal - lot.cost * take;
+          realisedPrice += t.p * take - lot.cost * take;
+          realisedSGD   += procLocal * fxSell - lot.cost * take * (lot.fxEntry || fxNow);
+          lot.qty -= take; rem -= take;
+          if (lot.qty <= 1e-9) lots.shift();
+        }
+      }
+    }
+
+    // Mark remaining lots to the current price (u_today = 1).
+    let unrealised = 0, unrealisedPrice = 0, unrealisedSGD = 0;
+    for (const lot of lots) {
+      const markLocal = rawNow * (lot.u || 1) * lot.qty;
+      unrealised      += markLocal - lot.cost * lot.qty;
+      unrealisedPrice += rawNow * lot.qty - lot.cost * lot.qty;
+      unrealisedSGD   += markLocal * fxNow - lot.cost * lot.qty * (lot.fxEntry || fxNow);
+    }
+
+    // FX-aware assembly, identical in shape to calcYtdAttribution: dollar is
+    // FX-inclusive; localDollar marks the local P&L at today's FX; fxDollar is the
+    // residual currency effect; price + income = local.
+    const dollar       = realisedSGD + unrealisedSGD;
+    const localDollar  = (realised + unrealised) * fxNow;
+    const fxDollar     = dollar - localDollar;
+    const priceDollar  = (realisedPrice + unrealisedPrice) * fxNow;
+    const incomeDollar = localDollar - priceDollar;
+
+    // Denominator = capital at risk over the window: the window-start book value
+    // of the opening holding (adjclose, so a held-through name matches the
+    // two-point startSGD exactly) plus the cost of capital deployed by in-window
+    // buys (so a name opened mid-window carries weight rather than a zero base).
+    const windowStartValueSGD = Math.max(0, qtyStart) * adjThen * fxThen;
+    const windowBuyCostSGD = wTrades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
+    const startSGD = windowStartValueSGD + windowBuyCostSGD;
+    if (!(startSGD > 0)) continue;
+    const endSGD = p.qty * closeNow * fxNow;
+    const retPct = (localDollar / startSGD) * 100;
+
+    rows.push({ pos: p, startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar, retPct });
+    totalStart += startSGD;
+  }
+
+  rows.forEach(r => {
+    r.weightPct = totalStart > 0 ? (r.startSGD / totalStart) * 100 : 0;
+    r.contribPp = totalStart > 0 ? (r.dollar   / totalStart) * 100 : 0;
+  });
+  const themeMap = {};
+  rows.forEach(r => {
+    const t = r.pos.theme || '(Unclassified)';
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, localDollar:0, fxDollar:0, priceDollar:0, incomeDollar:0, contribPp:0, weightPct:0, positions:[] };
+    themeMap[t].startSGD     += r.startSGD;
+    themeMap[t].dollar       += r.dollar;
+    themeMap[t].localDollar  += r.localDollar;
+    themeMap[t].fxDollar     += r.fxDollar;
+    themeMap[t].priceDollar  += r.priceDollar;
+    themeMap[t].incomeDollar += r.incomeDollar;
+    themeMap[t].contribPp    += r.contribPp;
+    themeMap[t].weightPct    += r.weightPct;
+    themeMap[t].positions.push(r);
+  });
+  const themes = Object.values(themeMap).map(t => ({
+    ...t,
+    retPct: t.startSGD > 0 ? (t.dollar / t.startSGD) * 100 : 0,
+  }));
+  const totalDollar = rows.reduce((s, r) => s + r.dollar, 0);
+  const totalFxDollar = rows.reduce((s, r) => s + (r.fxDollar || 0), 0);
+  const totalLocalDollar = rows.reduce((s, r) => s + (r.localDollar || 0), 0);
+  const totalIncomeDollar = rows.reduce((s, r) => s + (r.incomeDollar || 0), 0);
+  const totalPriceDollar = rows.reduce((s, r) => s + (r.priceDollar || 0), 0);
   return {
     bars,
     totalStart, totalDollar, totalFxDollar, totalLocalDollar, totalIncomeDollar, totalPriceDollar,
