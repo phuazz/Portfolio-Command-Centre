@@ -130,5 +130,7 @@
   {"d": "2026-07-23", "t": "SOI.FR", "a": "B", "q": 75, "p": 117.85, "ccy": "EUR", "yf": "SOI.PA", "th": "Europe Semis"},
   {"d": "2026-07-23", "t": "MU.US", "a": "B", "q": 9, "p": 997, "ccy": "USD", "yf": "MU", "th": "US Semis"},
   {"d": "2026-07-23", "t": "NVDA.US", "a": "B", "q": 40, "p": 209, "ccy": "USD", "yf": "NVDA", "th": "US Semis"},
-  {"d": "2026-07-23", "t": "LIT.US", "a": "B", "q": 120, "p": 69.45, "ccy": "USD", "yf": "LIT", "th": "Lithium/Battery Tech"}
+  {"d": "2026-07-23", "t": "LIT.US", "a": "B", "q": 120, "p": 69.45, "ccy": "USD", "yf": "LIT", "th": "Lithium/Battery Tech"},
+  {"d": "2026-07-24", "t": "MU.US", "a": "S", "q": 9, "p": 948.67, "ccy": "USD", "yf": "MU", "th": "US Semis"},
+  {"d": "2026-07-24", "t": "INTC.US", "a": "S", "q": 80, "p": 97.25, "ccy": "USD", "yf": "INTC", "th": "US Semis"}
 ]
