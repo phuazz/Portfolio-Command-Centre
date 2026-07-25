@@ -3805,7 +3805,7 @@ function calcAttribution(ps, bars, trades) {
     const fxNow     = r.endFxDate ? fxAtDate(p.ccy, r.endFxDate) : (p.fxRate || 1);
     const rawNow = r.rawNow != null ? r.rawNow : r.closeNow;
     const rawThen = r.rawThen != null ? r.rawThen : r.closeThen;
-    let startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar, retPct;
+    let startSGD, basisSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar, retPct;
     if (isDayMode && trades) {
       // ── Flow-aware day attribution ──
       const ccy = p.ccy;
@@ -3842,13 +3842,24 @@ function calcAttribution(ps, bars, trades) {
       fxDollar    = dollar - localDollar;
       priceDollar = fxThen * (qEnd * rawNow - qStart * rawThen - fl);   // fills are raw prices; no intraday dividend
       incomeDollar = localDollar - priceDollar;
-      // Effective local return on capital at risk (guarded — a line trimmed
-      // into a large intraday gain can drive the basis non-positive).
-      retPct = startSGD > 0 ? (localDollar / startSGD) * 100 : null;
+      // Displayed return runs on capital COMMITTED — opening value plus buy
+      // fills, with sells leaving the basis untouched — so a row's return is
+      // the share-weighted blend of its fill-to-close legs and always lies
+      // between them: a trim above the close reads better than the session
+      // move, never worse. Sale-proceeds removal stays confined to startSGD,
+      // which the Σ-to-hero reconciliation requires; it no longer distorts
+      // the displayed rate. Computed in local currency throughout (the FX leg
+      // renders separately); basisSGD carries the same basis — opening leg at
+      // start FX, buys at trade-date FX — up to the theme aggregate.
+      const buyLoc = w.reduce((s, t) => s + (t.a === 'B' ? t.q * t.p : 0), 0);
+      const basisLoc = qStart * r.closeThen + buyLoc;
+      basisSGD = qStart * r.closeThen * fxThen + w.reduce((s, t) => s + (t.a === 'B' ? t.q * t.p * fxAtDate(ccy, t.d) : 0), 0);
+      retPct = basisLoc > 0 ? ((qEnd * r.closeNow - qStart * r.closeThen - fl) / basisLoc) * 100 : null;
       if (!isFinite(dollar) || startSGD === 0) continue;
     } else {
       startSGD  = r.closeThen * p.qty * fxThen;
       endSGD    = r.closeNow  * p.qty * fxNow;
+      basisSGD  = startSGD;   // no in-window flows — capital committed is the opening value
       dollar    = endSGD - startSGD;
       if (!isFinite(startSGD) || startSGD === 0) continue;
       // Exact two-point FX decomposition: local move valued at the start FX,
@@ -3865,7 +3876,7 @@ function calcAttribution(ps, bars, trades) {
     }
     rows.push({
       pos: p,
-      startSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar,
+      startSGD, basisSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar,
       retPct,
     });
     totalStart += startSGD;
@@ -3877,8 +3888,9 @@ function calcAttribution(ps, bars, trades) {
   const themeMap = {};
   rows.forEach(r => {
     const t = r.pos.theme || '(Unclassified)';
-    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, dollar:0, localDollar:0, fxDollar:0, priceDollar:0, incomeDollar:0, contribPp:0, weightPct:0, positions:[] };
+    if (!themeMap[t]) themeMap[t] = { theme:t, startSGD:0, basisSGD:0, dollar:0, localDollar:0, fxDollar:0, priceDollar:0, incomeDollar:0, contribPp:0, weightPct:0, positions:[] };
     themeMap[t].startSGD   += r.startSGD;
+    themeMap[t].basisSGD   += r.basisSGD;
     themeMap[t].dollar     += r.dollar;
     themeMap[t].localDollar += r.localDollar;
     themeMap[t].fxDollar   += r.fxDollar;
@@ -3890,7 +3902,8 @@ function calcAttribution(ps, bars, trades) {
   });
   const themes = Object.values(themeMap).map(t => ({
     ...t,
-    retPct: t.startSGD > 0 ? (t.dollar / t.startSGD) * 100 : 0,
+    // Theme return on the same capital-committed basis as its rows.
+    retPct: t.basisSGD > 0 ? (t.dollar / t.basisSGD) * 100 : 0,
   }));
   const totalDollar = rows.reduce((s,r) => s + r.dollar, 0);
   const totalFxDollar = rows.reduce((s,r) => s + (r.fxDollar || 0), 0);
