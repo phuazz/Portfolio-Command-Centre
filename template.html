@@ -3782,6 +3782,9 @@ function calcAttribution(ps, bars, trades) {
   // hero engine calcSplitDayPnL (see ~line 1968/1975) — quantity is anchored at
   // the window boundary and the intraday flow leg is valued at the fill price —
   // so the per-position contributions re-tie to the header intraday figure.
+  // Their universe is positions UNION traded tickers (built below), so a name
+  // sold to zero inside the day window keeps an isClosed row carrying its
+  // realised day P&L — the hero counts that P&L, so the panel must show it.
   // 1W (bars=5) and 1M (bars=21) route to the flow-aware FIFO window engine
   // (calcWindowAttribution below): a position opened or resized inside the window
   // is credited only with its in-window move, and shares sold inside the window
@@ -3792,7 +3795,39 @@ function calcAttribution(ps, bars, trades) {
   const rows = [];
   let totalStart = 0;
   const isDayMode = (bars === 'ID' || bars === '1D');
-  for (const p of ps) {
+  // Universe for the flow-aware day modes: current positions UNION every traded
+  // ticker, mirroring calcWindowAttribution / calcYtdAttribution and the hero
+  // engine (calcSplitDayPnL builds its meta from the trade ledger too). A name
+  // sold to zero inside the day window has left POSITIONS but its realised day
+  // P&L is already in the hero figure, so it must surface here as an isClosed
+  // row rather than vanish from the panel. Each closed name gets a synthetic
+  // position — qty 0; history, quote and FX from the same live-data sources the
+  // hero uses for closed names — and flows through the unchanged day walk
+  // below, where the qty-0 end leg drops out and the row carries realised P&L
+  // only. A ticker with no trade inside the day window nets to dollar === 0 and
+  // startSGD === 0, so the existing guard drops names closed before the window
+  // at no cost. Without `trades` (the no-trades fallback) the universe stays
+  // as POSITIONS.
+  let universe = ps;
+  if (isDayMode && trades) {
+    const liveData = state.liveData || {};
+    const held = new Set(ps.map(p => p.ticker));
+    const closedByTicker = {};
+    trades.forEach(t => {
+      if (!t.t || held.has(t.t) || closedByTicker[t.t]) return;
+      const live = t.yf ? liveData[t.yf] : null;
+      closedByTicker[t.t] = {
+        ticker: t.t, name: t.t, theme: t.th || '(Unclassified)', account: 'Brokerage',
+        ccy: t.ccy, qty: 0, isClosed: true,
+        history: live ? live.history : null,
+        mktPrice: live ? live.price : null,
+        quoteTime: live ? live.quoteTime : null,
+        fxRate: FX[t.ccy] || 1,
+      };
+    });
+    universe = ps.concat(Object.values(closedByTicker));
+  }
+  for (const p of universe) {
     // 'ID' and '1D' run on the global trading day anchored at the US close
     // (matching the hero cards); 1W/1M keep the per-ticker bar lookback.
     const r = isDayMode ? _effectiveReturnGlobalDay(p, bars) : effectiveReturn(p, bars);
@@ -3876,6 +3911,7 @@ function calcAttribution(ps, bars, trades) {
     }
     rows.push({
       pos: p,
+      isClosed: !!p.isClosed,
       startSGD, basisSGD, endSGD, dollar, localDollar, fxDollar, priceDollar, incomeDollar,
       retPct,
     });
@@ -3919,7 +3955,10 @@ function calcAttribution(ps, bars, trades) {
     priceContribPp: totalStart > 0 ? (totalPriceDollar / totalStart) * 100 : 0,
     rows, themes,
     covered: rows.length,
-    skipped: ps.length - rows.length,
+    // Closed names walked from the ledger sit outside POSITIONS — exclude them
+    // so skipped keeps counting current positions without usable price history,
+    // mirroring calcWindowAttribution.
+    skipped: ps.length - rows.filter(r => !r.isClosed).length,
   };
 }
 
@@ -5444,15 +5483,16 @@ function renderAttribution(el) {
   // the hero P&L cards. For period horizons it comes from the trade-aware engine
   // (captures positions closed within the window); for YTD it is the FIFO total
   // return (already trade-aware). The theme decomposition below covers the full
-  // equity sleeve — current holdings AND names closed within the window — for YTD
-  // and the 1W/1M FIFO horizons, so it captures the realised P&L of closed names
-  // and differs from the equity+cash headline only by the cash effect (and, on
-  // the percentage, by the denominator basis). The ID/1D day engine still walks
-  // current holdings only (its contributions tie to the hero intraday
-  // denominator), so on those two horizons the gap also carries closed-name
-  // realised P&L. decompCoversClosed captures which case applies.
+  // equity sleeve — current holdings AND names closed within the window — on
+  // every horizon: YTD and 1W/1M through their FIFO ledger walks, and ID/1D
+  // through the day engine's closed-name rows (calcAttribution extends its
+  // universe to traded tickers, emitting a name sold to zero inside the day
+  // window as a realised-only isClosed row that still ties to the hero intraday
+  // figure). The decomposition therefore captures closed-name realised P&L
+  // everywhere and differs from the equity+cash headline only by the cash
+  // effect (and, on the percentage, by the denominator basis).
   const heldEquityRetPct = A.portfolioRetPct;             // what the theme contributions sum to (equity sleeve)
-  const decompCoversClosed = isYtd || typeof horizonDef.bars === 'number';   // YTD + 1W/1M walk the trade ledger
+  const decompCoversClosed = true;   // every horizon now walks the trade ledger, so closed names are always covered
   const periodTA = isYtd ? null
     : (horizonDef.bars === 'ID' || horizonDef.bars === '1D')
       ? (horizonDef.bars === 'ID' ? calcSplitDayPnL(ps, TRADES_YTD).intraday : calcSplitDayPnL(ps, TRADES_YTD).prevDay)
