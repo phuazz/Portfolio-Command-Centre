@@ -5515,15 +5515,21 @@ function renderAttribution(el) {
       </div>
     </div>`;
 
+  // Height tracks the theme count so every category tick has room to render;
+  // dtick 1 on the axis then forbids Plotly from thinning labels, which
+  // otherwise drops them by index parity — the largest bar can lose its name
+  // while ±0.00 pp rows keep theirs. The list card alongside shares the
+  // height so the grid pair stays level.
+  const wfHeight = Math.max(380, (themesByContrib.length + 1) * 15 + 90);
   const waterfallAndList = `
     <div class="g2 mb">
       <div class="card">
         <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>Theme Waterfall — ranked contribution to ${horizonDef.label} return</div></div>
-        <div id="attrWaterfall" style="height:420px"></div>
+        <div id="attrWaterfall" style="height:${wfHeight}px"></div>
       </div>
       <div class="card">
         <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Theme Contribution — Local / FX / Total (pp)</div></div>
-        <div class="card-body" style="max-height:420px;overflow-y:auto">
+        <div class="card-body" style="max-height:${wfHeight}px;overflow-y:auto">
           ${(() => { const ts = A.totalStart || 0; return themesByContrib.map(t => {
             const w = Math.min(100, (Math.abs(t.contribPp || 0) / (maxAbsContrib || 1)) * 100);
             const col = (t.contribPp || 0) >= 0 ? 'var(--g)' : 'var(--r)';
@@ -5774,7 +5780,7 @@ function renderAttribution(el) {
       paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
       font: { family: 'DM Sans', size: 11, color: '#5c5c56' },
       xaxis: { title: { text: 'Contribution to portfolio return (pp)', font: { size: 10 } }, gridcolor: '#e2e0d8', zerolinecolor: '#9a9890', zerolinewidth: 1 },
-      yaxis: { automargin: true, autorange: 'reversed', tickfont: { size: 10 } },
+      yaxis: { automargin: true, autorange: 'reversed', tickfont: { size: 10 }, tickmode: 'linear', dtick: 1 },
     }, { displayModeBar: false, responsive: true });
   }, 60);
 }
