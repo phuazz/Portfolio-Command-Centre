@@ -52,6 +52,17 @@
   --pk: #be185d;
   --pk-bg: rgba(190,24,93,0.06);
 
+  /* -text variants for small text (contrast-safe per design.md 2026-07-17):
+     base colours are for fills, borders, chart lines and >=24px type only. */
+  --g-text: #146c43;
+  --r-text: #a93226;
+  --b-text: #1d4ed8;
+  --a-text: #92400e;
+  --p-text: #7c3aed;
+  --c-text: #0e7490;
+  --pk-text: #be185d;
+  --t3-text: #66665e;
+
   --serif: 'Instrument Serif', Georgia, serif;
   --sans: 'DM Sans', -apple-system, sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
@@ -88,6 +99,13 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 .pill-live { background:var(--g-bg); color:var(--g); border:1px solid rgba(26,135,84,0.2); }
 .pill-loading { background:var(--a-bg); color:var(--a); border:1px solid rgba(180,83,9,0.2); animation:pulse 1.5s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+/* ─── HEADLINE SENTENCE ───────────────── */
+.headline-sent { margin:-8px 0 20px; font-size:15px; line-height:1.55; color:var(--t2); letter-spacing:0.1px; }
+.headline-sent .hs-num { font-family:var(--mono); font-weight:600; font-variant-numeric:tabular-nums; }
+.headline-sent .hs-pos { color:var(--g-text); }
+.headline-sent .hs-neg { color:var(--r-text); }
+.headline-sent .hs-risk { font-size:12px; color:var(--t3-text); margin-top:3px; }
 
 /* ─── KPI STRIP ───────────────────────── */
 .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:var(--radius-lg); overflow:hidden; margin-bottom:28px; }
@@ -222,6 +240,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
   .masthead-left h1 { font-size:24px; }
   .masthead-sub { font-size:12px; }
   .masthead-right { width:100%; justify-content:flex-start; }
+  .headline-sent { font-size:14px; margin:-2px 0 16px; }
   .kpi-strip { grid-template-columns:repeat(2,1fr); }
   .kpi { padding:14px 12px; }
   .kpi-val { font-size:20px; }
@@ -309,6 +328,9 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
       <span class="pill pill-date" style="cursor:pointer;font-size:9px;opacity:0.7" onclick="localStorage.removeItem('pcc_cache_v5');location.reload()" title="Clear cache and re-fetch all max history">↻ Full Refresh</span>
     </div>
   </div>
+
+  <!-- Plain-language headline — populated by renderHeadline() alongside the KPI strip -->
+  <div id="headlineSent" class="headline-sent fu fu1" style="display:none"></div>
 
   <!-- Inline progress bar — visible during background fetch -->
   <div id="fetchProgress" style="display:none;margin-bottom:16px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)">
@@ -2010,6 +2032,68 @@ function calcSplitDayPnL(ps, trades) {
   };
 }
 
+// ─── Headline sentence ─────────────────────────────────────────────────
+// Plain-language synthesis line between the masthead and the KPI strip.
+// Basis discipline: the S$ and % YTD figures are the money-weighted FIFO
+// numbers from the YTD KPI; the "vs benchmark" clause is TWRR-basis
+// (getEquityCurve vs getBenchmarkCurve, shared anchor), matching the
+// Performance tab's "vs STI" KPI. The two bases never enter a single
+// arithmetic step — a Dietz-minus-index excess would mix money-weighted
+// with time-weighted and be silently wrong. buildDailyBook is memoised
+// on _dataVersion, so the TWRR call is cheap on live ticks.
+function renderHeadline(split, ytd) {
+  const el = document.getElementById('headlineSent');
+  if (!el) return;
+  const ps = state.positions;
+  if (!ps || !ps.length) return;
+
+  let line = '';
+  if (ytd && isFinite(ytd.totalDollar) && isFinite(ytd.portfolioRetPct)) {
+    const cls = ytd.totalDollar >= 0 ? 'hs-pos' : 'hs-neg';
+    line += `Portfolio ${ytd.totalDollar >= 0 ? 'up' : 'down'} <span class="hs-num ${cls}">${fmtSGD(Math.abs(ytd.totalDollar))} (${fmtPct(ytd.portfolioRetPct)})</span> YTD`;
+  }
+
+  // Benchmark clause — TWRR on both sides, same anchor date.
+  try {
+    const startDate = _perfWindowStart('YTD');
+    const curve = getEquityCurve(ps, TRADES_YTD, startDate);
+    if (curve && !curve.error && isFinite(curve.totalReturnPct)) {
+      const benchSel = state.perfBenchmark || 'STI';
+      const bench = getBenchmarkCurve(ps, benchSel, startDate);
+      if (bench && isFinite(bench.endReturn)) {
+        const alpha = curve.totalReturnPct - bench.endReturn;
+        const tip = `TWRR basis, matching the Performance tab: portfolio ${fmtPct(curve.totalReturnPct)} vs ${benchSel} ${fmtPct(bench.endReturn)} since 1 Jan. The S$ figure is the money-weighted FIFO YTD P&amp;L from the KPI strip; the two bases are shown side by side, never differenced.`;
+        line += line ? ', ' : '';
+        if (Math.abs(alpha) < 0.005) {
+          line += `<span title="${tip}">level with the ${benchSel}</span>`;
+        } else {
+          line += `<span class="hs-num ${alpha >= 0 ? 'hs-pos' : 'hs-neg'}" title="${tip}">${(alpha >= 0 ? '+' : '') + alpha.toFixed(2)} pp</span><span title="${tip}"> ${alpha >= 0 ? 'ahead of' : 'behind'} the ${benchSel}</span>`;
+        }
+      }
+    }
+  } catch (e) { console.error('headline benchmark clause failed:', e); }
+
+  if (split && split.intraday && isFinite(split.intraday.pnl)) {
+    line += line ? '; ' : '';
+    line += `intraday <span class="hs-num ${split.intraday.pnl >= 0 ? 'hs-pos' : 'hs-neg'}">${fmtPL(split.intraday.pnl)}</span>`;
+  }
+  if (!line) return;
+
+  // Risk facts line — computed state only, no invented policy limits.
+  const bits = [];
+  const cs = getCrisisStatus();
+  if (cs) bits.push(`Crisis overlay ${cs.label} (${cs.metCount}/3 triggers)`);
+  const drawn = ps.filter(p => p.type === 'Cash').reduce((s, p) => s + Math.min(0, p.mktValueSGD || 0), 0);
+  const capacity = ps.filter(p => p.availLTV > 0).reduce((s, p) => s + p.mktValueSGD * p.availLTV / 100, 0);
+  const marginTip = 'Available LTV offered by the broker across marginable positions — borrowing capacity, not leverage in use.';
+  if (drawn < -0.5) bits.push(`margin drawn ${fmtSGD(-drawn)}`);
+  else bits.push('margin facility undrawn');
+  if (capacity > 0) bits.push(`<span title="${marginTip}">${fmtSGD(capacity)} borrowing capacity</span>`);
+
+  el.style.display = '';
+  el.innerHTML = `<div>${line}.</div>` + (bits.length ? `<div class="hs-risk">${bits.join(' · ')}</div>` : '');
+}
+
 function renderKPIs() {
   const ps = state.positions;
   const cdpPs = ps.filter(p=>p.account==='CDP');
@@ -2076,6 +2160,8 @@ function renderKPIs() {
     }
     window._kpiPrev[k.label] = k.num;
   });
+
+  renderHeadline(split, ytd);
 }
 
 // Animate a DOM element's numeric text from `from` to `to` over `dur` ms with an
@@ -3497,11 +3583,34 @@ function runBacktest(positions) {
     </div>
   `;
 
-  // Update KPI crisis status after backtest completes
+  // Update KPI crisis status after backtest completes, then refresh the
+  // header strip so the headline sentence picks up the crisis clause now —
+  // the 10-second poll tick is paused on hidden tabs and at weekends, so
+  // waiting for the next tick would leave the clause missing indefinitely.
   updateCrisisKPI();
+  renderKPIs();
 }
 
 // Live crisis status KPI (called after backtest computes indicators)
+// Shared crisis-overlay status: single source for the threshold logic used by
+// the crisis KPI card and the masthead headline sentence. Thresholds mirror
+// the signals engine: breadth > 60%, 3-month return < −10%, Supertrend
+// bearish > 50%; amber = within 75% of a threshold not yet breached.
+function getCrisisStatus() {
+  const ci = window._crisisIndicators;
+  if (!ci) return null;
+  let metCount = 0;
+  if (ci.breadth > 0.60) metCount++;
+  if (ci.ret3m < -0.10) metCount++;
+  if (ci.stBear > 0.50) metCount++;
+  let amberCount = 0;
+  if (ci.breadth <= 0.60 && ci.breadth > 0.45) amberCount++; // 75% of 60%
+  if (ci.ret3m >= -0.10 && ci.ret3m < -0.075) amberCount++; // 75% of -10%
+  if (ci.stBear <= 0.50 && ci.stBear > 0.375) amberCount++; // 75% of 50%
+  const label = metCount >= 3 ? 'CRISIS' : metCount === 2 ? 'WARNING' : metCount === 1 ? 'WATCH' : amberCount > 0 ? 'ELEVATED' : 'ALL CLEAR';
+  return { metCount, amberCount, label };
+}
+
 function updateCrisisKPI() {
   const ci = window._crisisIndicators;
   if (!ci) return;
@@ -3511,20 +3620,12 @@ function updateCrisisKPI() {
   const ret3mPct = ci.ret3m * 100;
   const stBearPct = ci.stBear * 100;
 
-  let metCount = 0;
-  if (ci.breadth > 0.60) metCount++;
-  if (ci.ret3m < -0.10) metCount++;
-  if (ci.stBear > 0.50) metCount++;
-
-  // Count indicators in amber zone (≥75% of threshold but not yet breached)
-  let amberCount = 0;
-  if (ci.breadth <= 0.60 && ci.breadth > 0.45) amberCount++; // 75% of 60%
-  if (ci.ret3m >= -0.10 && ci.ret3m < -0.075) amberCount++; // 75% of -10%
-  if (ci.stBear <= 0.50 && ci.stBear > 0.375) amberCount++; // 75% of 50%
+  const cs = getCrisisStatus();
+  const metCount = cs.metCount, amberCount = cs.amberCount;
 
   // Status: CRISIS (3/3) > WARNING (2/3) > WATCH (1/3) > ELEVATED (0 met but amber) > ALL CLEAR
   const statusColor = metCount >= 3 ? '#7f1d1d' : metCount === 2 ? '#dc2626' : metCount === 1 ? '#b45309' : amberCount > 0 ? '#92400e' : 'var(--g)';
-  const statusLabel = metCount >= 3 ? 'CRISIS' : metCount === 2 ? 'WARNING' : metCount === 1 ? 'WATCH' : amberCount > 0 ? 'ELEVATED' : 'ALL CLEAR';
+  const statusLabel = cs.label;
   const statusBg = metCount >= 3 ? 'var(--r-bg)' : metCount >= 1 ? 'var(--a-bg)' : amberCount > 0 ? 'rgba(251,191,36,0.08)' : 'var(--g-bg)';
   const statusSub = metCount >= 3 ? `${metCount}/3 triggers met — exposure reduced to 25%`
     : metCount > 0 ? `${metCount}/3 triggers met`
