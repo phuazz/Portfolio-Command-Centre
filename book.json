@@ -425,6 +425,16 @@
       "theme": "Europe Semis",
       "type": "Stock"
     },
+    "EXV3.DE": {
+      "yf": "EXV3.DE",
+      "name": "iShares STOXX Europe 600 Technology",
+      "exchange": "XETR",
+      "ccy": "EUR",
+      "fee": 0,
+      "availLTV": 70,
+      "theme": "Europe Tech",
+      "type": "ETF"
+    },
     "GAB": {
       "yf": "GAB.SI",
       "name": "AMOVA STI SGDA",
@@ -472,6 +482,18 @@
       "type": "Stock",
       "account": "CDP",
       "mktPriceSnap": 57.25
+    },
+    "T6I": {
+      "yf": "T6I.SI",
+      "name": "ValueMax",
+      "exchange": "SGX",
+      "ccy": "SGD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "SG Consumer Finance",
+      "type": "Stock",
+      "account": "SRS",
+      "mktPriceSnap": 0.9693
     },
     "J69U": {
       "yf": "J69U.SI",

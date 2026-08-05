@@ -134,5 +134,7 @@
   {"d": "2026-07-24", "t": "MU.US", "a": "S", "q": 9, "p": 948.67, "ccy": "USD", "yf": "MU", "th": "US Semis"},
   {"d": "2026-07-24", "t": "INTC.US", "a": "S", "q": 80, "p": 97.25, "ccy": "USD", "yf": "INTC", "th": "US Semis"},
   {"d": "2026-07-27", "t": "TLN.US", "a": "S", "q": 20, "p": 347.03, "ccy": "USD", "yf": "TLN", "th": "Nuclear Power"},
-  {"d": "2026-07-29", "t": "AKAM.US", "a": "S", "q": 70, "p": 107.8, "ccy": "USD", "yf": "AKAM", "th": "US Tech"}
+  {"d": "2026-07-29", "t": "AKAM.US", "a": "S", "q": 70, "p": 107.8, "ccy": "USD", "yf": "AKAM", "th": "US Tech"},
+  {"d": "2026-08-05", "t": "EXV3.DE", "a": "B", "q": 61, "p": 97.39, "ccy": "EUR", "yf": "EXV3.DE", "th": "Europe Tech"},
+  {"d": "2026-08-05", "t": "T6I", "a": "B", "q": 7400, "p": 0.9693, "ccy": "SGD", "yf": "T6I.SI", "th": "SG Consumer Finance"}
 ]
