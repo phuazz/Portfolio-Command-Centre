@@ -3355,22 +3355,24 @@ function renderSignals(el) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  BACKTEST: CRISIS RISK OVERLAY (Triple Filter)
-//  Buy-and-hold by default. Reduces to 25% during systemic stress.
-//  Entry: ALL of >60% <SMA200 + 3M ret<-10% + >50% bearish ST
-//  Exit: ANY of <40% <SMA200 or 1M ret>+5% or >50% bullish ST
+//  CRISIS INDICATOR ENGINE (shared)
+//  Computes the crisis-overlay indicator state — breadth below
+//  SMA200, 3-month portfolio return, Supertrend bearish share and
+//  the NORMAL/CRISIS regime series — from position histories alone,
+//  and publishes the latest snapshot on window._crisisIndicators.
+//  Deliberately DOM-free: called deferred at boot so the header
+//  dial strip and the headline crisis clause populate without a
+//  visit to the Trend Signals tab, and called by runBacktest() so
+//  a single code path owns the indicator arithmetic.
+//  Returns null when fewer than three eligible equity histories
+//  exist; otherwise returns the shared precomputes for the
+//  simulation. runBacktest() must keep its per-date stockData gate
+//  (WARMUP, activeN >= 3) identical to the gate here — the regime
+//  map is keyed by exactly the dates that pass that gate.
 // ═══════════════════════════════════════════════════════════════
-function runBacktest(positions) {
-  const chartEl = document.getElementById('backtestChart');
-  const statsEl = document.getElementById('backtestStats');
-  if (!chartEl || !statsEl) return;
-
-  const TC = 0.0020;
-  const eligible = positions.filter(p => p.type !== 'Bond' && p.history && p.history.length >= 80);
-  if (eligible.length < 3) {
-    statsEl.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:12px">Need ≥3 equity positions with data</div>';
-    return;
-  }
+function computeCrisisIndicators(positions) {
+  const eligible = (positions || []).filter(p => p.type !== 'Bond' && p.history && p.history.length >= 80);
+  if (eligible.length < 3) return null;
   const N = eligible.length;
   const stockCloses = eligible.map(p => p.history.map(h => h.close));
 
@@ -3410,6 +3412,106 @@ function runBacktest(positions) {
     return dir;
   });
 
+  const allDatesSet = new Set();
+  eligible.forEach(p => p.history.forEach(h => {
+    allDatesSet.add(h.date instanceof Date ? h.date.toISOString().slice(0,10) : String(h.date));
+  }));
+  const allDatesSorted = [...allDatesSet].sort();
+  const stockByDate = eligible.map(p => {
+    const map = new Map();
+    p.history.forEach((h,i) => {
+      map.set(h.date instanceof Date ? h.date.toISOString().slice(0,10) : String(h.date), i);
+    });
+    return map;
+  });
+
+  const WARMUP = 50;
+  const regimeByDate = new Map();
+  const portRetWindow = [];
+  let regime = 'NORMAL';
+  let crisisEvents = 0, crisisDays = 0, gatedDays = 0;
+  let lastBreadth = 0, lastRet3m = 0, lastStBear = 0;
+
+  for (const dateStr of allDatesSorted) {
+    let bhSum = 0, activeN = 0;
+    const stockData = [];
+    for (let j = 0; j < N; j++) {
+      const idx = stockByDate[j].get(dateStr);
+      if (idx == null || idx < WARMUP) continue;
+      const hist = eligible[j].history;
+      const dailyRet = hist[idx].close / hist[idx-1].close - 1;
+      activeN++;
+      bhSum += dailyRet;
+      stockData.push({ j, idx, dailyRet });
+    }
+    if (activeN < 3) continue;
+    const bhDayRet = bhSum / activeN;
+
+    portRetWindow.push(bhDayRet);
+    if (portRetWindow.length > 63) portRetWindow.shift();
+    const ret3m = portRetWindow.length >= 20 ? portRetWindow.reduce((c,r)=>c*(1+r),1) - 1 : 0;
+    const ret1m = portRetWindow.length >= 20 ? portRetWindow.slice(-20).reduce((c,r)=>c*(1+r),1) - 1 : 0;
+
+    let belowSMA200 = 0, totalWithSMA = 0, bearishST = 0, bullishST = 0, stTotal = 0;
+    for (const sd of stockData) {
+      const sma = stockSMA200[sd.j][sd.idx-1];
+      if (sma > 0) { totalWithSMA++; if (stockCloses[sd.j][sd.idx-1] < sma) belowSMA200++; }
+      stTotal++;
+      if (stockSTDir[sd.j][sd.idx-1] === -1) bearishST++;
+      if (stockSTDir[sd.j][sd.idx-1] === 1) bullishST++;
+    }
+    const breadth = totalWithSMA > 0 ? belowSMA200/totalWithSMA : 0;
+    const stBear = stTotal > 0 ? bearishST/stTotal : 0;
+    const stBull = stTotal > 0 ? bullishST/stTotal : 0;
+
+    lastBreadth = breadth; lastRet3m = ret3m; lastStBear = stBear;
+
+    if (regime === 'NORMAL') {
+      if (breadth > 0.60 && ret3m < -0.10 && stBear > 0.50) { regime = 'CRISIS'; crisisEvents++; }
+    } else {
+      if (breadth < 0.40 || ret1m > 0.05 || stBull > 0.50) regime = 'NORMAL';
+    }
+    regimeByDate.set(dateStr, regime);
+    gatedDays++;
+    if (regime === 'CRISIS') crisisDays++;
+  }
+
+  // Publish only past the same 20-day floor the backtest applies, mirroring
+  // the pre-refactor ordering in which the snapshot was stored after that
+  // guard. Below the floor the header simply keeps its empty state.
+  if (gatedDays >= 20) {
+    window._crisisIndicators = {
+      regime, breadth: lastBreadth, ret3m: lastRet3m, stBear: lastStBear,
+      crisisEvents, crisisDays, totalDays: gatedDays
+    };
+  }
+
+  return { eligible, stockCloses, stockSMA200, stockByDate, allDatesSorted, regimeByDate, crisisEvents };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BACKTEST: CRISIS RISK OVERLAY (Triple Filter)
+//  Buy-and-hold by default. Reduces to 25% during systemic stress.
+//  Entry: ALL of >60% <SMA200 + 3M ret<-10% + >50% bearish ST
+//  Exit: ANY of <40% <SMA200 or 1M ret>+5% or >50% bullish ST
+// ═══════════════════════════════════════════════════════════════
+function runBacktest(positions) {
+  const chartEl = document.getElementById('backtestChart');
+  const statsEl = document.getElementById('backtestStats');
+  if (!chartEl || !statsEl) return;
+
+  const TC = 0.0020;
+  // Shared crisis engine: computes the indicator series and the regime map
+  // once, publishes window._crisisIndicators, and hands back the precomputed
+  // per-ticker arrays so the simulation below does not repeat the work.
+  const crisis = computeCrisisIndicators(positions);
+  if (!crisis) {
+    statsEl.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:12px">Need ≥3 equity positions with data</div>';
+    return;
+  }
+  const { eligible, stockCloses, stockSMA200, stockByDate, allDatesSorted, regimeByDate, crisisEvents } = crisis;
+  const N = eligible.length;
+
   // Pre-compute SMA50 for monthly vote strategy
   const stockSMA50 = eligible.map((p, j) => {
     const cls = stockCloses[j], L = cls.length;
@@ -3428,28 +3530,10 @@ function runBacktest(positions) {
   // Track votes per stock for display
   let stockVoteTrades = 0;
 
-  const allDatesSet = new Set();
-  eligible.forEach(p => p.history.forEach(h => {
-    allDatesSet.add(h.date instanceof Date ? h.date.toISOString().slice(0,10) : String(h.date));
-  }));
-  const allDatesSorted = [...allDatesSet].sort();
-  const stockByDate = eligible.map(p => {
-    const map = new Map();
-    p.history.forEach((h,i) => {
-      map.set(h.date instanceof Date ? h.date.toISOString().slice(0,10) : String(h.date), i);
-    });
-    return map;
-  });
-
   const WARMUP = 50;
   const dates=[], bhReturns=[], overlayReturns=[], voteReturns=[], combReturns=[];
   const regimeHistory=[];
-  let totalTrades=0, crisisEvents=0;
   let regime='NORMAL';
-  const portRetWindow=[];
-
-  // Track live crisis indicators for KPI display
-  let lastBreadth=0, lastRet3m=0, lastStBear=0;
   let prevDateStr = '';
 
   for (const dateStr of allDatesSorted) {
@@ -3523,31 +3607,11 @@ function runBacktest(positions) {
     }
     const voteDayRet = voteActive > 0 ? voteSum / voteActive - voteTCtoday / Math.max(voteActive, 1) : 0;
 
-    portRetWindow.push(bhDayRet);
-    if(portRetWindow.length>63) portRetWindow.shift();
-    const ret3m=portRetWindow.length>=20?portRetWindow.reduce((c,r)=>c*(1+r),1)-1:0;
-    const ret1m=portRetWindow.length>=20?portRetWindow.slice(-20).reduce((c,r)=>c*(1+r),1)-1:0;
-
-    let belowSMA200=0,totalWithSMA=0,bearishST=0,bullishST=0,stTotal=0;
-    for(const sd of stockData){
-      const sma=stockSMA200[sd.j][sd.idx-1];
-      if(sma>0){totalWithSMA++;if(stockCloses[sd.j][sd.idx-1]<sma)belowSMA200++;}
-      stTotal++;
-      if(stockSTDir[sd.j][sd.idx-1]===-1)bearishST++;
-      if(stockSTDir[sd.j][sd.idx-1]===1)bullishST++;
-    }
-    const breadth=totalWithSMA>0?belowSMA200/totalWithSMA:0;
-    const stBear=stTotal>0?bearishST/stTotal:0;
-    const stBull=stTotal>0?bullishST/stTotal:0;
-
-    lastBreadth=breadth; lastRet3m=ret3m; lastStBear=stBear;
-
+    // Regime comes from the shared crisis engine. The engine gates each date
+    // on the same activeN >= 3 rule over the same inputs as this loop, so
+    // every date reaching this point has an entry in the map.
     const prevRegime=regime;
-    if(regime==='NORMAL'){
-      if(breadth>0.60&&ret3m<-0.10&&stBear>0.50){regime='CRISIS';crisisEvents++;totalTrades+=2;}
-    } else {
-      if(breadth<0.40||ret1m>0.05||stBull>0.50) regime='NORMAL';
-    }
+    regime=regimeByDate.get(dateStr);
     let dayRet=bhDayRet;
     if(regime==='CRISIS') dayRet=bhDayRet*0.25+0.00016*0.75;
     if(prevRegime!==regime) dayRet-=TC;
@@ -3567,13 +3631,6 @@ function runBacktest(positions) {
   }
 
   if(dates.length<20){statsEl.innerHTML='<div>Insufficient data</div>';return;}
-
-  // Store latest crisis indicators on state for KPI display
-  window._crisisIndicators = {
-    regime, breadth: lastBreadth, ret3m: lastRet3m, stBear: lastStBear,
-    crisisEvents, crisisDays: regimeHistory.filter(r=>r==='CRISIS').length,
-    totalDays: dates.length
-  };
 
   let cumB=100, cumO=100, cumV=100, cumC=100;
   const cB=[100], cO=[100], cV=[100], cC=[100];
@@ -3692,7 +3749,8 @@ function runBacktest(positions) {
   renderKPIs();
 }
 
-// Live crisis status KPI (called after backtest computes indicators)
+// Live crisis status KPI (called whenever the shared crisis engine has
+// published indicators — deferred at boot and again after each backtest)
 // Shared crisis-overlay status: single source for the threshold logic used by
 // the crisis KPI card and the masthead headline sentence. Thresholds mirror
 // the signals engine: breadth > 60%, 3-month return < −10%, Supertrend
@@ -6333,6 +6391,18 @@ async function init() {
       refreshPrices();              // initial upgrade; values tween to live
       startLivePolling();           // then refresh every 60s while the tab is visible
     }
+
+    // Boot-time crisis indicators. Previously the header dial strip and the
+    // headline crisis clause stayed empty until the Trend Signals tab ran
+    // the backtest once per session. Compute the shared indicator state
+    // here, deferred so it does not delay first paint, then refresh the
+    // dial strip and the KPI strip (whose tail re-renders the headline
+    // sentence) exactly as the backtest tail does.
+    setTimeout(() => {
+      computeCrisisIndicators(state.positions);
+      updateCrisisKPI();
+      renderKPIs();
+    }, 0);
     return;
   }
 
@@ -6369,6 +6439,14 @@ async function init() {
       enrichAll();
       renderKPIs();
       invalidateAllPanes();
+
+      // Same boot-time crisis computation as the preloaded path, for the
+      // localhost live-fetch fallback.
+      setTimeout(() => {
+        computeCrisisIndicators(state.positions);
+        updateCrisisKPI();
+        renderKPIs();
+      }, 0);
 
       const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
       const pill = document.getElementById('statusPill');
