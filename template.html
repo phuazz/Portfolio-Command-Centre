@@ -2053,23 +2053,27 @@ function renderHeadline(split, ytd) {
     line += `Portfolio ${ytd.totalDollar >= 0 ? 'up' : 'down'} <span class="hs-num ${cls}">${fmtSGD(Math.abs(ytd.totalDollar))} (${fmtPct(ytd.portfolioRetPct)})</span> YTD`;
   }
 
-  // Benchmark clause — TWRR on both sides, same anchor date.
+  // Benchmark clauses — TWRR on both sides, same anchor date. Both house
+  // benchmarks are shown: STI and the S&amp;P 500 via the SGD-listed S27
+  // proxy, so the comparison stays in SGD terms like the portfolio curve.
   try {
     const startDate = _perfWindowStart('YTD');
     const curve = getEquityCurve(ps, TRADES_YTD, startDate);
     if (curve && !curve.error && isFinite(curve.totalReturnPct)) {
-      const benchSel = state.perfBenchmark || 'STI';
-      const bench = getBenchmarkCurve(ps, benchSel, startDate);
-      if (bench && isFinite(bench.endReturn)) {
+      const names = { STI: 'STI', SPX: 'S&amp;P 500' };
+      const frags = [];
+      for (const sym of ['STI', 'SPX']) {
+        const bench = getBenchmarkCurve(ps, sym, startDate);
+        if (!bench || !isFinite(bench.endReturn)) continue;
         const alpha = curve.totalReturnPct - bench.endReturn;
-        const tip = `TWRR basis, matching the Performance tab: portfolio ${fmtPct(curve.totalReturnPct)} vs ${benchSel} ${fmtPct(bench.endReturn)} since 1 Jan. The S$ figure is the money-weighted FIFO YTD P&amp;L from the KPI strip; the two bases are shown side by side, never differenced.`;
-        line += line ? ', ' : '';
+        const tip = `TWRR basis, matching the Performance tab: portfolio ${fmtPct(curve.totalReturnPct)} vs ${bench.label} ${fmtPct(bench.endReturn)} since 1 Jan. The S$ figure is the money-weighted FIFO YTD P&amp;L from the KPI strip; the two bases are shown side by side, never differenced.`;
         if (Math.abs(alpha) < 0.005) {
-          line += `<span title="${tip}">level with the ${benchSel}</span>`;
+          frags.push(`<span title="${tip}">level with the ${names[sym]}</span>`);
         } else {
-          line += `<span class="hs-num ${alpha >= 0 ? 'hs-pos' : 'hs-neg'}" title="${tip}">${(alpha >= 0 ? '+' : '') + alpha.toFixed(2)} pp</span><span title="${tip}"> ${alpha >= 0 ? 'ahead of' : 'behind'} the ${benchSel}</span>`;
+          frags.push(`<span class="hs-num ${alpha >= 0 ? 'hs-pos' : 'hs-neg'}" title="${tip}">${(alpha >= 0 ? '+' : '') + alpha.toFixed(2)} pp</span><span title="${tip}"> ${alpha >= 0 ? 'ahead of' : 'behind'} the ${names[sym]}</span>`);
         }
       }
+      if (frags.length) line += (line ? ', ' : '') + frags.join(', ');
     }
   } catch (e) { console.error('headline benchmark clause failed:', e); }
 
