@@ -107,6 +107,17 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 .headline-sent .hs-neg { color:var(--r-text); }
 .headline-sent .hs-risk { font-size:12px; color:var(--t3-text); margin-top:3px; }
 
+/* ─── WHAT CHANGED CARD ───────────────── */
+.wc-row { display:flex; align-items:baseline; gap:8px; padding:5px 0; font-size:13px; line-height:1.5; color:var(--t2); border-bottom:1px solid var(--bg3); }
+.wc-row:last-child { border-bottom:none; }
+.wc-row strong { color:var(--t1); font-weight:600; }
+.wc-icon { width:14px; text-align:center; font-size:11px; flex-shrink:0; }
+.wc-icon.pos { color:var(--g-text); } .wc-icon.neg { color:var(--r-text); }
+.wc-num { font-family:var(--mono); font-weight:600; font-variant-numeric:tabular-nums; }
+.wc-num.pos { color:var(--g-text); } .wc-num.neg { color:var(--r-text); }
+.wc-sub { font-size:11px; color:var(--t3-text); font-weight:400; letter-spacing:0.2px; margin-left:8px; text-transform:none; }
+.wc-dim { color:var(--t3-text); font-size:12px; }
+
 /* ─── KPI STRIP ───────────────────────── */
 .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:var(--radius-lg); overflow:hidden; margin-bottom:28px; }
 .kpi { background:var(--bg2); padding:18px 20px; position:relative; }
@@ -241,6 +252,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
   .masthead-sub { font-size:12px; }
   .masthead-right { width:100%; justify-content:flex-start; }
   .headline-sent { font-size:14px; margin:-2px 0 16px; }
+  .wc-row { font-size:12px; }
   .kpi-strip { grid-template-columns:repeat(2,1fr); }
   .kpi { padding:14px 12px; }
   .kpi-val { font-size:20px; }
@@ -2193,6 +2205,90 @@ function tweenNumber(el, from, to, fmt, dur) {
 }
 
 // ─── TAB: POSITIONS ──────────────────────
+// ─── WHAT CHANGED — prior-global-day digest ────────────────────────────
+// Ranked digest of the prior complete global trading day (the 1-Day KPI
+// window): movers via calcAttribution '1D' (flow-aware; ties to the EQUITY
+// sleeve of the header card — the cash-FX leg lives only in calcSplitDayPnL,
+// measured gap ~S$22 on ~S$10k), ledger fills since the window start (so
+// this morning's fills show),
+// the aggregate FX translation effect when material, and any vote exit or
+// re-entry that fired at a month-end inside the window. Noise floors are
+// deliberate — 10 bp of portfolio contribution for movers, 5 bp for the FX
+// line; below them the card renders nothing rather than manufacturing news.
+function renderWhatChanged() {
+  const ps = state.positions;
+  if (!ps || !ps.length) return '';
+  let out;
+  try { out = calcAttribution(ps, '1D', TRADES_YTD); }
+  catch (e) { console.error('What Changed attribution failed:', e); return ''; }
+  if (!out || !out.rows || !out.rows.length) return '';
+
+  let windowStart = null;   // fills and signal-event window: (prev weekday anchor, now]
+  try { windowStart = _prevWeekdayAnchor(_usCloseBoundary()); } catch (e) {}
+
+  const MOVER_PP = 0.10, FX_PP = 0.05;
+  const items = [];
+
+  const movers = out.rows
+    .filter(r => isFinite(r.contribPp) && Math.abs(r.contribPp) >= MOVER_PP)
+    .sort((a, b) => Math.abs(b.contribPp) - Math.abs(a.contribPp))
+    .slice(0, 4);
+  for (const r of movers) {
+    const up = r.contribPp > 0;
+    const ret = (r.retPct != null && isFinite(r.retPct)) ? ` · ${fmtPct(r.retPct)} on the day` : '';
+    items.push({ icon: up ? '▲' : '▼', cls: up ? 'pos' : 'neg',
+      html: `<strong>${r.pos.ticker}</strong>${r.isClosed ? ' (closed in window)' : ''} ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(r.dollar)}</span> (${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${ret})` });
+  }
+
+  if (Math.abs(out.fxContribPp) >= FX_PP) {
+    const up = out.totalFxDollar >= 0;
+    items.push({ icon: '◆', cls: up ? 'pos' : 'neg',
+      html: `FX translation ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(out.totalFxDollar)}</span> (${(out.fxContribPp >= 0 ? '+' : '') + out.fxContribPp.toFixed(2)} pp) across the book` });
+  }
+
+  if (windowStart) {
+    for (const t of TRADES_YTD.filter(t => t.d > windowStart)) {
+      const buy = t.a === 'B';
+      items.push({ icon: '●', cls: buy ? 'pos' : 'neg',
+        html: `${buy ? 'Bought' : 'Sold'} <strong>${(t.q || 0).toLocaleString('en-US')} ${t.t}</strong> @ <span class="wc-num">${(t.p || 0).toLocaleString('en-US')}</span>${t.th ? ` <span class="wc-dim">(${t.th})</span>` : ''} · ${t.d}` });
+    }
+    for (const p of ps) {
+      const d = p.trendSignals && p.trendSignals.details;
+      if (!d || !p.history || !p.history.length) continue;
+      const last = arr => (arr && arr.length) ? arr[arr.length - 1] : null;
+      for (const ev of [['Vote exit', last(d.exitPoints)], ['Vote re-entry', last(d.reEntryPoints)]]) {
+        const kind = ev[0], idx = ev[1];
+        if (idx == null || !p.history[idx]) continue;
+        // Only true month-end triggers are events. calcTrendSignals also
+        // evaluates on the latest bar as an advisory preview; that trigger
+        // re-stamps onto each new latest bar until the next real month-end,
+        // so surfacing it here would nag daily. The rule itself is monthly.
+        // (JavaScript getMonth() is 0-indexed; only inequality is used.)
+        const bar = p.history[idx], nb = p.history[idx + 1];
+        if (!nb) continue;
+        const bd = bar.date instanceof Date ? bar.date : new Date(bar.date);
+        const nd = nb.date instanceof Date ? nb.date : new Date(nb.date);
+        if (bd.getMonth() === nd.getMonth() && bd.getFullYear() === nd.getFullYear()) continue;
+        const dISO = bd.toISOString().slice(0, 10);
+        if (dISO > windowStart) {
+          const exit = kind === 'Vote exit';
+          items.push({ icon: '⚑', cls: exit ? 'neg' : 'pos',
+            html: `<strong>${p.ticker}</strong> ${kind.toLowerCase()} triggered at the ${dISO} month-end evaluation (${d.votes}/3 votes)` });
+        }
+      }
+    }
+  }
+
+  if (!items.length) return '';
+  return `
+    <div class="card mb" id="whatChangedCard">
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>What Changed<span class="wc-sub">prior global day · equity sleeve of the 1-Day P&amp;L card</span></div></div>
+      <div class="card-body" style="padding:8px 16px">
+        ${items.map(i => `<div class="wc-row"><span class="wc-icon ${i.cls}">${i.icon}</span><span style="flex:1;min-width:0">${i.html}</span></div>`).join('')}
+      </div>
+    </div>`;
+}
+
 function renderPositions(el) {
   const isBond = p => p.type === 'Bond';
   const allFiltered = state.filter === 'ALL' ? [...state.positions] :
@@ -2339,6 +2435,7 @@ function renderPositions(el) {
   ` : '';
 
   el.innerHTML = `
+    ${renderWhatChanged()}
     ${signalPanel}
     <div class="mb">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
