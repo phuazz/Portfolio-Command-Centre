@@ -57,9 +57,22 @@ function readLedger() {
   const trades = JSON.parse(fs.readFileSync(TRADES_SRC, 'utf-8'));
   const book = JSON.parse(fs.readFileSync(BOOK_SRC, 'utf-8'));
   const symbols = new Set();
+  // Symbols carrying a noQuote note are held out of the fetch universe: the
+  // price source has no data for them and never will, so fetching only
+  // manufactures a permanent failure line that trains the reader to ignore a
+  // real break. Each exclusion states its reason and verification date in
+  // book.json and is priced from mktPriceSnap instead. The skipped names are
+  // logged on every bake — a silent exclusion would be worse than the noise
+  // it replaces.
+  const noQuote = [], noQuoteYf = new Set();
+  for (const [tk, m] of Object.entries(book.meta || {})) {
+    if (m.yf && m.noQuote) { noQuote.push(`${tk} (${m.yf})`); noQuoteYf.add(m.yf); }
+  }
   for (const m of Object.values(book.meta || {})) if (m.yf) symbols.add(m.yf);
   for (const t of trades) if (t.yf) symbols.add(t.yf);
-  return { trades, book, symbols: [...symbols] };
+  // Applied after both loops so a trade row cannot re-admit an excluded symbol.
+  for (const yf of noQuoteYf) symbols.delete(yf);
+  return { trades, book, symbols: [...symbols], noQuote };
 }
 
 // Replay validation: the ledger must never sell more than is held (opening
@@ -254,9 +267,10 @@ async function main() {
   const html = fs.readFileSync(TEMPLATE_FILE, 'utf-8');
 
   // Ledger-first universe + integrity gate
-  const { trades, book, symbols } = readLedger();
+  const { trades, book, symbols, noQuote } = readLedger();
   validateLedger(book, trades);
   console.log(`📋 Universe from ledger: ${symbols.length} tickers (${trades.length} trades, ${(book.positions || []).length} opening positions)`);
+  if (noQuote.length) console.log(`🚫 Held out of the fetch (no quote source, priced from mktPriceSnap): ${noQuote.join(', ')}`);
   console.log(`💱 Plus ${FX_SYMBOLS.length} FX rates\n`);
 
   // Fetch stock data
