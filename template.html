@@ -120,7 +120,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 .wc-sect { font-size:9px; color:var(--t3-text); text-transform:uppercase; letter-spacing:0.6px; font-weight:600; padding:7px 0 3px; }
 .wc-sect:first-child { padding-top:0; }
 .wc-id { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 15px; padding:2px 0 7px; font-size:13px; line-height:1.6; color:var(--t2); border-bottom:1px solid var(--bg3); }
-.wc-id-item { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
+.wc-id-item { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; max-width:100%; }
 .wc-id-item strong { color:var(--t1); font-weight:600; }
 .wc-id:last-child { border-bottom:none; }
 
@@ -2316,9 +2316,15 @@ function renderWhatChanged() {
     idDn = idRows.filter(r => r.contribPp < 0).sort((a, b) => a.contribPp - b.contribPp).slice(0, 5);
   } catch (e) { console.error('What Changed intraday strip failed:', e); }
 
+  // Labelled by holding name, not ticker: this card is read at a glance and
+  // "Lenovo Group" parses where "992.HK" has to be decoded. The ticker moves
+  // to the tooltip alongside the theme. No truncation — the longest holding
+  // name in the book is 33 characters, which still fits the card at 390 px,
+  // and the chips are nowrap so a long one takes its own flex line rather
+  // than overflowing.
   const idChip = r => {
     const hasRet = r.retPct != null && isFinite(r.retPct);
-    return `<span class="wc-id-item"><strong>${r.pos.ticker}</strong>`
+    return `<span class="wc-id-item" title="${r.pos.ticker}${r.pos.theme ? ' · ' + r.pos.theme : ''}"><strong>${r.pos.name || r.pos.ticker}</strong>`
       + (hasRet ? `<span class="wc-num ${r.retPct >= 0 ? 'pos' : 'neg'}">${fmtPct(r.retPct)}</span>` : '')
       + `<span class="wc-dim">${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${r.isClosed ? ' · closed' : ''}</span></span>`;
   };
