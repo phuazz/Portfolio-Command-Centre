@@ -734,7 +734,10 @@ async function fetchAllPrices() {
   }
 
   const results = {};
-  const symbols = [...new Set(POSITIONS.map(p => p.yf).filter(Boolean))];
+  // Positions flagged noQuote in book.json are held out: the quote source has
+  // no data for them, so polling only burns CORS-proxy quota on a request that
+  // cannot succeed. They price from mktPriceSnap via the enrichAll fallback.
+  const symbols = [...new Set(POSITIONS.filter(p => !p.noQuote).map(p => p.yf).filter(Boolean))];
   // JPYSGD=X is intentionally omitted: Yahoo's direct cross is unreliable (often
   // a single imprecise bar). The accurate JPY rate is derived from SGDJPY=X at
   // bake time (see build.js) and loaded into FX/FX_HISTORY; a live refresh leaves
@@ -2446,7 +2449,7 @@ function renderPositions(el) {
 
     return `<tr id="pos-row-${safeId}" class="${clickable?'clickable':''}" ${clickable?`onclick="toggleChart('${p.ticker}')"`:''}  title="${hoverTitle}">
       <td><span class="tag ${exchTags[p.exchange]}">${p.exchange}</span><span style="font-size:8px;color:var(--t4);display:block">${acct}</span></td>
-      <td><strong>${p.ticker}</strong>${p.isStale?'<span style="display:inline-block;font-size:8px;font-weight:700;color:#fff;background:#b45309;padding:1px 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Live data unavailable — displayed price is the baked snapshot, may be stale">STALE</span>':''}${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
+      <td><strong>${p.ticker}</strong>${p.noQuote?'<span style="display:inline-block;font-size:8px;font-weight:700;color:var(--t3-text);background:var(--bg3);border:1px solid var(--bd);padding:0 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Priced by hand, as designed — no quote source carries this symbol, so the price comes from the book snapshot and is refreshed at the monthly statement reconciliation. This is not a data failure.">MANUAL</span>':(p.isStale?'<span style="display:inline-block;font-size:8px;font-weight:700;color:#fff;background:#b45309;padding:1px 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Live data unavailable — displayed price is the baked snapshot, may be stale">STALE</span>':'')}${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${ytdTxt?`<br>${ytdTxt}`:''}${m1Txt?`<br>${m1Txt}`:''}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>

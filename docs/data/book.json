@@ -469,7 +469,8 @@
       "theme": "SG PE Bond",
       "type": "Bond",
       "account": "CDP",
-      "mktPriceSnap": 1.034
+      "mktPriceSnap": 1.034,
+      "noQuote": "Yahoo Finance carries no data for V7AB.SI and never has (every bake from 5 Aug 2026 onward failed on it). The symbol is correct and the bond is live: SGX lists it as Astrea7A1 4.125%320527, callable 27 May 2027, maturing 27 May 2032 - verified against sgx.com on 2026-08-07. SGX retail bonds are thinly covered by Yahoo. Excluded from both fetch universes so the failure line keeps meaning something; priced from mktPriceSnap, refreshed by hand at the monthly statement reconciliation."
     },
     "D05": {
       "yf": "D05.SI",
