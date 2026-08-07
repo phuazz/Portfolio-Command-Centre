@@ -117,6 +117,12 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 .wc-num.pos { color:var(--g-text); } .wc-num.neg { color:var(--r-text); }
 .wc-sub { font-size:11px; color:var(--t3-text); font-weight:400; letter-spacing:0.2px; margin-left:8px; text-transform:none; }
 .wc-dim { color:var(--t3-text); font-size:12px; }
+.wc-sect { font-size:9px; color:var(--t3-text); text-transform:uppercase; letter-spacing:0.6px; font-weight:600; padding:7px 0 3px; }
+.wc-sect:first-child { padding-top:0; }
+.wc-id { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 15px; padding:2px 0 7px; font-size:13px; line-height:1.6; color:var(--t2); border-bottom:1px solid var(--bg3); }
+.wc-id-item { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
+.wc-id-item strong { color:var(--t1); font-weight:600; }
+.wc-id:last-child { border-bottom:none; }
 
 /* ─── KPI STRIP ───────────────────────── */
 .kpi-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--bd); border:1px solid var(--bd); border-radius:var(--radius-lg); overflow:hidden; margin-bottom:28px; }
@@ -253,6 +259,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
   .masthead-right { width:100%; justify-content:flex-start; }
   .headline-sent { font-size:14px; margin:-2px 0 16px; }
   .wc-row { font-size:12px; }
+  .wc-id { font-size:12px; gap:3px 12px; }
   .kpi-strip { grid-template-columns:repeat(2,1fr); }
   .kpi { padding:14px 12px; }
   .kpi-val { font-size:20px; }
@@ -2205,7 +2212,12 @@ function tweenNumber(el, from, to, fmt, dur) {
 }
 
 // ─── TAB: POSITIONS ──────────────────────
-// ─── WHAT CHANGED — prior-global-day digest ────────────────────────────
+// ─── WHAT CHANGED — live session + prior-global-day digest ─────────────
+// Two windows, one card, answering the same question at two scales. The
+// upper strip is the live session (ID horizon, US-close boundary to the
+// latest tick); the digest below it is the prior complete global day.
+// Section labels carry the windows so neither is read as the other.
+//
 // Ranked digest of the prior complete global trading day (the 1-Day KPI
 // window): movers via calcAttribution '1D' (flow-aware; ties to the EQUITY
 // sleeve of the header card — the cash-FX leg lives only in calcSplitDayPnL,
@@ -2218,18 +2230,22 @@ function tweenNumber(el, from, to, fmt, dur) {
 function renderWhatChanged() {
   const ps = state.positions;
   if (!ps || !ps.length) return '';
-  let out;
+  // The two windows are computed independently and each renders on its own
+  // merit. An empty or failed prior-day attribution must not suppress a live
+  // intraday strip, and vice versa — they answer the same question at
+  // different scales, but neither is a precondition for the other.
+  let out = null;
   try { out = calcAttribution(ps, '1D', TRADES_YTD); }
-  catch (e) { console.error('What Changed attribution failed:', e); return ''; }
-  if (!out || !out.rows || !out.rows.length) return '';
-
-  let windowStart = null;   // fills and signal-event window: (prev weekday anchor, now]
-  try { windowStart = _prevWeekdayAnchor(_usCloseBoundary()); } catch (e) {}
+  catch (e) { console.error('What Changed attribution failed:', e); }
+  const haveDigest = !!(out && out.rows && out.rows.length);
 
   const MOVER_PP = 0.10, FX_PP = 0.05;
   const items = [];
 
-  const movers = out.rows
+  let windowStart = null;   // fills and signal-event window: (prev weekday anchor, now]
+  if (haveDigest) { try { windowStart = _prevWeekdayAnchor(_usCloseBoundary()); } catch (e) {} }
+
+  const movers = !haveDigest ? [] : out.rows
     .filter(r => isFinite(r.contribPp) && Math.abs(r.contribPp) >= MOVER_PP)
     .sort((a, b) => Math.abs(b.contribPp) - Math.abs(a.contribPp))
     .slice(0, 4);
@@ -2240,7 +2256,7 @@ function renderWhatChanged() {
       html: `<strong>${r.pos.ticker}</strong>${r.isClosed ? ' (closed in window)' : ''} ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(r.dollar)}</span> (${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${ret})` });
   }
 
-  if (Math.abs(out.fxContribPp) >= FX_PP) {
+  if (haveDigest && Math.abs(out.fxContribPp) >= FX_PP) {
     const up = out.totalFxDollar >= 0;
     items.push({ icon: '◆', cls: up ? 'pos' : 'neg',
       html: `FX translation ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(out.totalFxDollar)}</span> (${(out.fxContribPp >= 0 ? '+' : '') + out.fxContribPp.toFixed(2)} pp) across the book` });
@@ -2279,12 +2295,48 @@ function renderWhatChanged() {
     }
   }
 
-  if (!items.length) return '';
+  // ── Intraday strip — the same question, one window earlier ───────────
+  // The ID horizon runs from the US-close boundary to the latest tick, so
+  // this is the live session rather than the completed day below it. Rows
+  // are ranked by contribution, which is the portfolio impact, but LED by
+  // return: at intraday scale +8.33% is legible where +0.18 pp is not.
+  // The floor is 3 bp of contribution rather than the 10 bp used for the
+  // digest, because intraday contributions run an order of magnitude
+  // smaller — a quiet session prints two names, or none, instead of five
+  // rounding errors. Same principle as the floors above: render nothing
+  // rather than manufacture news. Names closed inside the window are
+  // marked, matching the mover rows below.
+  const ID_PP = 0.03;
+  let idUp = [], idDn = [];
+  try {
+    const idOut = calcAttribution(ps, 'ID', TRADES_YTD);
+    const idRows = ((idOut && idOut.rows) || [])
+      .filter(r => isFinite(r.contribPp) && Math.abs(r.contribPp) >= ID_PP);
+    idUp = idRows.filter(r => r.contribPp > 0).sort((a, b) => b.contribPp - a.contribPp).slice(0, 5);
+    idDn = idRows.filter(r => r.contribPp < 0).sort((a, b) => a.contribPp - b.contribPp).slice(0, 5);
+  } catch (e) { console.error('What Changed intraday strip failed:', e); }
+
+  const idChip = r => {
+    const hasRet = r.retPct != null && isFinite(r.retPct);
+    return `<span class="wc-id-item"><strong>${r.pos.ticker}</strong>`
+      + (hasRet ? `<span class="wc-num ${r.retPct >= 0 ? 'pos' : 'neg'}">${fmtPct(r.retPct)}</span>` : '')
+      + `<span class="wc-dim">${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${r.isClosed ? ' · closed' : ''}</span></span>`;
+  };
+  const idLine = (arr, icon, cls) => `<div class="wc-id"><span class="wc-icon ${cls}">${icon}</span>${arr.map(idChip).join('')}</div>`;
+  const intradayHtml = (idUp.length || idDn.length)
+    ? `<div class="wc-sect">Today so far · since the US close</div>`
+      + (idUp.length ? idLine(idUp, '▲', 'pos') : '')
+      + (idDn.length ? idLine(idDn, '▼', 'neg') : '')
+    : '';
+
+  if (!items.length && !intradayHtml) return '';
   return `
     <div class="card mb" id="whatChangedCard">
-      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>What Changed<span class="wc-sub">prior global day · equity sleeve of the 1-Day P&amp;L card</span></div></div>
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>What Changed<span class="wc-sub">equity sleeve</span></div></div>
       <div class="card-body" style="padding:8px 16px">
-        ${items.map(i => `<div class="wc-row"><span class="wc-icon ${i.cls}">${i.icon}</span><span style="flex:1;min-width:0">${i.html}</span></div>`).join('')}
+        ${intradayHtml}
+        ${items.length ? `<div class="wc-sect">Prior global day · equity sleeve of the 1-Day P&amp;L card</div>`
+          + items.map(i => `<div class="wc-row"><span class="wc-icon ${i.cls}">${i.icon}</span><span style="flex:1;min-width:0">${i.html}</span></div>`).join('') : ''}
       </div>
     </div>`;
 }
