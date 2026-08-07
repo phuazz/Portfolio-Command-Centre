@@ -1445,6 +1445,19 @@ function renderStockChart(containerId, position) {
   if (!h || h.length < 15) {
     const c = document.getElementById(containerId);
     if (!c) return;
+    // Cash has no price series to chart and never will: it is carried at 1.00
+    // by definition and is in no fetch universe. Say so plainly rather than
+    // falling through to the "awaiting next bake" wait message, which promises
+    // data that is not coming.
+    if (position.type === 'Cash') {
+      c.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--t3);line-height:1.55">
+           <div style="font-size:13px;font-weight:600;color:var(--t2);margin-bottom:4px">No price history — cash is carried at 1.00</div>
+           <div style="font-size:11px;max-width:420px;margin:0 auto">
+             <strong>${position.ticker}</strong> is a ledger-derived cash bucket, not a quoted instrument. The balance moves with trades and the monthly statement re-anchor; there is no price series to chart and no trend signal to compute.
+           </div>
+         </div>`;
+      return;
+    }
     const isPending = !h || h.length === 0;
     c.innerHTML = isPending
       ? `<div style="padding:32px 24px;text-align:center;color:var(--t3);line-height:1.55">
@@ -2451,11 +2464,17 @@ function renderPositions(el) {
     // history yet) still expand into the position-detail panel. renderStockChart
     // degrades to an "awaiting next bake" message when history is missing.
     const clickable = p.type !== 'Bond';
-    const hoverTitle = !clickable ? 'Bond — no chart' : (hasChart ? 'Click for chart + signal analysis' : 'Click for position detail (price history pending next bake)');
+    // The pending-bake marker is a wait indicator, so it belongs only where a
+    // bake is actually coming. Cash is carried at 1.00 and is never fetched, so
+    // its history is not pending — it will never arrive. Marking it would be a
+    // permanent false wait, for the same reason cash is exempt from the stale
+    // badge above. Cash stays clickable; only the marker and its wording go.
+    const awaitingBake = clickable && !hasChart && p.type !== 'Cash';
+    const hoverTitle = !clickable ? 'Bond — no chart' : (hasChart ? 'Click for chart + signal analysis' : (awaitingBake ? 'Click for position detail (price history pending next bake)' : 'Click for position detail'));
 
     return `<tr id="pos-row-${safeId}" class="${clickable?'clickable':''}" ${clickable?`onclick="toggleChart('${p.ticker}')"`:''}  title="${hoverTitle}">
       <td><span class="tag ${exchTags[p.exchange]}">${p.exchange}</span><span style="font-size:8px;color:var(--t4);display:block">${acct}</span></td>
-      <td><strong>${p.ticker}</strong>${p.noQuote?'<span style="display:inline-block;font-size:8px;font-weight:700;color:var(--t3-text);background:var(--bg3);border:1px solid var(--bd);padding:0 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Priced by hand, as designed — no quote source carries this symbol, so the price comes from the book snapshot and is refreshed at the monthly statement reconciliation. This is not a data failure.">MANUAL</span>':(p.isStale?'<span style="display:inline-block;font-size:8px;font-weight:700;color:#fff;background:#b45309;padding:1px 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Live data unavailable — displayed price is the baked snapshot, may be stale">STALE</span>':'')}${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(clickable?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
+      <td><strong>${p.ticker}</strong>${p.noQuote?'<span style="display:inline-block;font-size:8px;font-weight:700;color:var(--t3-text);background:var(--bg3);border:1px solid var(--bd);padding:0 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Priced by hand, as designed — no quote source carries this symbol, so the price comes from the book snapshot and is refreshed at the monthly statement reconciliation. This is not a data failure.">MANUAL</span>':(p.isStale?'<span style="display:inline-block;font-size:8px;font-weight:700;color:#fff;background:#b45309;padding:1px 5px;border-radius:3px;margin-left:4px;letter-spacing:0.3px" title="Live data unavailable — displayed price is the baked snapshot, may be stale">STALE</span>':'')}${hasChart?'<span style="font-size:9px;color:var(--b);margin-left:4px" title="Chart available">📈</span>':(awaitingBake?'<span style="font-size:9px;color:var(--t4);margin-left:4px" title="Awaiting next price bake">⏳</span>':'')}<br><span style="font-size:10px;color:var(--t3)">${p.name}</span></td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmt(p.qty,0)}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px;font-weight:600">${fmt(p.mktPrice,p.mktPrice<10?3:2)}${ytdTxt?`<br>${ytdTxt}`:''}${m1Txt?`<br>${m1Txt}`:''}</td>
       <td class="r" style="font-family:var(--mono);font-size:11px">${fmtSGD(p.mktValueSGD)}</td>
