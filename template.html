@@ -1417,7 +1417,13 @@ function enrichAll() {
     // Stale-data flag: true when the live fetch did not return a usable
     // price for this position and we are falling back to the baked mktPriceSnap
     // (or another offline source). Used by the Positions tab to badge the row.
-    const isStale = !(live && live.price);
+    // Two classes are exempt because no live quote is expected in the first
+    // place: cash, which is carried at 1.00 by definition and so has no price
+    // that can go stale, and symbols flagged noQuote in book.json, which are
+    // held out of the fetch universe on purpose and carry the neutral MANUAL
+    // badge instead. Badging either amber is a permanent false alarm that
+    // buries the one case the badge exists to surface — a quote that failed.
+    const isStale = p.type !== 'Cash' && !p.noQuote && !(live && live.price);
     return { ...p, mktPrice, quoteTime, mktValue, mktValueSGD, investedSGD, pnl, pnlSGD, pnlPct, fxRate, dayChange, dayChangePct, ytdRet, m1Ret, history, trendSignals, hasCost, region, sector, assetClass, isStale };
   });
 
