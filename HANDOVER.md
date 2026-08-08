@@ -133,6 +133,23 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   the next sale. Dividends remain non-ledger per the Phase C
   contraindication; all five June dividend receipts (US$143 in total) were
   swept out within days of landing.
+- July fills reconciled against the July statement on 2026-08-08: all 22
+  statement fills matched the ledger 1:1 on date, quantity and price — no
+  missing or extra fills — and explicit fees were backfilled from the
+  statement cash movements. Replayed brokerage holdings tie to the 31 July
+  statement exactly on quantity and within broker rounding on average across
+  all 33 open positions. One fee of note: the 23 July SOI.FR buy was cancelled
+  and re-executed, and its settled cash line excluded the French FTT
+  (EUR 35.36), so the `|cash| − q×p` formula understated the fee; the row
+  carries fee 57.81 to match the broker holding average (118.6208) and the
+  original order screen, with the FTT expected to cash on a separate later
+  line. `cashAnchor` was deliberately NOT re-anchored this cycle (decision
+  2026-08-08): with T+1/T+2 settlement the statement's month-end zero C/F is a
+  snapshot artefact, so the cash buckets are left as modelled from the trades
+  and the anchor remains 2026-06-30. EXV3.DE and T6I (both 5 August,
+  post-statement) are out of scope for the July pass and reconcile in the
+  August cycle. The Astrea 7A (V7AB) hand-mark refresh was out of scope — it is
+  a CDP holding, not on the SCB statement.
 - Engine architecture: the NAV-series engines (equity curve, TWRR,
   allocation risk) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
