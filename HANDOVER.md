@@ -255,8 +255,12 @@ visible on cash. The four status reasons (`Insufficient data`, `Awaiting live
 data`, `Warming up`, `Calc error`) are latent — no position currently carries
 one — so any change to them must be verified by forcing them onto a live
 position rather than by reading the code. And `template.html` measured
-388,269 bytes on 8 Aug 2026, against the ~332 KB recorded in `CLAUDE.md` from
-2 July; the size discipline still applies, but the stated figure has drifted.
+388,269 bytes (~379 KB, 6,723 lines) on 8 Aug 2026, against the ~332 KB then
+recorded from 2 July; both this repository's `CLAUDE.md` and the vault
+`CLAUDE.md` at `C:\dev` were corrected to the measured figure in the same
+session, the latter also carrying a stale `PRELOADED_HISTORY` line reference
+(~453, now 496). The size discipline is unchanged — the template has simply
+grown, and `docs/index.html` remains byte-identical to it.
 
 ### The defect
 
