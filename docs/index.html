@@ -2274,6 +2274,16 @@ function renderWhatChanged() {
   const MOVER_PP = 0.10, FX_PP = 0.05;
   const items = [];
 
+  // Labelled by holding name throughout, for the same reason as the intraday
+  // chips: the card is read at a glance and a name parses where a ticker has
+  // to be decoded. The ticker stays available on hover. Resolution prefers the
+  // book meta so that names still appear for positions closed inside the
+  // window, which are no longer in state.positions; falls back to the ticker
+  // when the book has no meta entry at all.
+  const nameOf = tk => ((LEDGER_BOOK && LEDGER_BOOK.meta && LEDGER_BOOK.meta[tk] && LEDGER_BOOK.meta[tk].name)
+    || (ps.find(p => p.ticker === tk) || {}).name || tk);
+  const label = (tk, nm) => `<strong title="${tk}">${nm || nameOf(tk)}</strong>`;
+
   let windowStart = null;   // fills and signal-event window: (prev weekday anchor, now]
   if (haveDigest) { try { windowStart = _prevWeekdayAnchor(_usCloseBoundary()); } catch (e) {} }
 
@@ -2285,7 +2295,7 @@ function renderWhatChanged() {
     const up = r.contribPp > 0;
     const ret = (r.retPct != null && isFinite(r.retPct)) ? ` · ${fmtPct(r.retPct)} on the day` : '';
     items.push({ icon: up ? '▲' : '▼', cls: up ? 'pos' : 'neg',
-      html: `<strong>${r.pos.ticker}</strong>${r.isClosed ? ' (closed in window)' : ''} ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(r.dollar)}</span> (${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${ret})` });
+      html: `${label(r.pos.ticker, r.pos.name)}${r.isClosed ? ' (closed in window)' : ''} ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(r.dollar)}</span> (${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${ret})` });
   }
 
   if (haveDigest && Math.abs(out.fxContribPp) >= FX_PP) {
@@ -2298,7 +2308,7 @@ function renderWhatChanged() {
     for (const t of TRADES_YTD.filter(t => t.d > windowStart)) {
       const buy = t.a === 'B';
       items.push({ icon: '●', cls: buy ? 'pos' : 'neg',
-        html: `${buy ? 'Bought' : 'Sold'} <strong>${(t.q || 0).toLocaleString('en-US')} ${t.t}</strong> @ <span class="wc-num">${(t.p || 0).toLocaleString('en-US')}</span>${t.th ? ` <span class="wc-dim">(${t.th})</span>` : ''} · ${t.d}` });
+        html: `${buy ? 'Bought' : 'Sold'} <strong title="${t.t}">${(t.q || 0).toLocaleString('en-US')} ${nameOf(t.t)}</strong> @ <span class="wc-num">${(t.p || 0).toLocaleString('en-US')}</span>${t.th ? ` <span class="wc-dim">(${t.th})</span>` : ''} · ${t.d}` });
     }
     for (const p of ps) {
       const d = p.trendSignals && p.trendSignals.details;
@@ -2321,7 +2331,7 @@ function renderWhatChanged() {
         if (dISO > windowStart) {
           const exit = kind === 'Vote exit';
           items.push({ icon: '⚑', cls: exit ? 'neg' : 'pos',
-            html: `<strong>${p.ticker}</strong> ${kind.toLowerCase()} triggered at the ${dISO} month-end evaluation (${d.votes}/3 votes)` });
+            html: `${label(p.ticker, p.name)} ${kind.toLowerCase()} triggered at the ${dISO} month-end evaluation (${d.votes}/3 votes)` });
         }
       }
     }
