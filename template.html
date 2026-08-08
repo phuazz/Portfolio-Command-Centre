@@ -1444,10 +1444,16 @@ function enrichAll() {
 //  STOCK CHART — Click-to-expand with SMA, Supertrend overlays
 // ═══════════════════════════════════════════════════════════════
 function renderStockChart(containerId, position) {
+  // The panel owning this container may already be gone. Both toggleChart and
+  // toggleSignalChart defer this call by 50ms, and collapsing the row, opening
+  // a different one, or a table repaint inside that window removes the node.
+  // Plotly throws on a missing element rather than no-opping, so bail before
+  // doing any work. The no-history branch below already checked this; the
+  // drawing path did not, which is where the uncaught error came from.
+  const c = document.getElementById(containerId);
+  if (!c) return;
   const h = position.history;
   if (!h || h.length < 15) {
-    const c = document.getElementById(containerId);
-    if (!c) return;
     // Cash has no price series to chart and never will: it is carried at 1.00
     // by definition and is in no fetch universe. Say so plainly rather than
     // falling through to the "awaiting next bake" wait message, which promises
