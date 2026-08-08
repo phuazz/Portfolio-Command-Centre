@@ -1665,14 +1665,20 @@ window.toggleChart = function(ticker) {
         </div>
         <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
           ${reasons.map(r=>{
-            // A bare instrument type is a statement of what the position is,
-            // not a directional call. The bull test below has no opinion on it
-            // and would default it to the bearish red, so render it neutral —
-            // the same treatment the ADX and ATR chips beside it get.
-            const isType = r === 'Cash' || r === 'Bond';
+            // Three kinds of claim share this row and they are not the same
+            // kind of statement. A directional signal earns green or red. What
+            // the position is, or why no signal was computed, is information
+            // rather than a view: it renders neutral, like the ADX and ATR
+            // chips beside it, because the bull test below has no opinion on it
+            // and would otherwise default it to the bearish red. A calc error
+            // is a genuine fault and takes the warning amber, so that red is
+            // left meaning one thing only — the engine ran and came back bearish.
+            const isNeutral = r === 'Cash' || r === 'Bond' || r === 'Insufficient data'
+                           || r === 'Awaiting live data' || r === 'Warming up';
+            const isFault = r.startsWith('Calc error');
             const isBull = r.includes('>') || r.includes('Golden') || r.includes('▲');
-            const bg = isType ? 'var(--bg4)' : (isBull ? 'var(--g-bg)' : 'var(--r-bg)');
-            const fg = isType ? 'var(--t2)'  : (isBull ? 'var(--g)'    : 'var(--r)');
+            const bg = isNeutral ? 'var(--bg4)' : isFault ? 'var(--a-bg)' : (isBull ? 'var(--g-bg)' : 'var(--r-bg)');
+            const fg = isNeutral ? 'var(--t2)'  : isFault ? 'var(--a)'    : (isBull ? 'var(--g)'    : 'var(--r)');
             return `<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${bg};color:${fg}">${r}</span>`;
           }).join('')}
           ${d.adx!=null?`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2)">ADX: ${typeof d.adx==='number'?d.adx.toFixed(0):d.adx}</span>`:''}
