@@ -1382,7 +1382,10 @@ function enrichAll() {
 
     // Compute trend signals
     if (p.type === 'Bond' || p.type === 'Cash') {
-      trendSignals = { score: 0, signal: '—', reasons: ['Bond'], details: {}, source: 'none' };
+      // Both types sit outside the trend engine, but they are not the same
+      // instrument: label the reason by actual type rather than calling every
+      // exempt position a bond.
+      trendSignals = { score: 0, signal: '—', reasons: [p.type], details: {}, source: 'none' };
     } else if (history && history.length >= 15) {
       try {
         trendSignals = calcTrendSignals(history);
@@ -1657,8 +1660,15 @@ window.toggleChart = function(ticker) {
         </div>
         <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
           ${reasons.map(r=>{
+            // A bare instrument type is a statement of what the position is,
+            // not a directional call. The bull test below has no opinion on it
+            // and would default it to the bearish red, so render it neutral —
+            // the same treatment the ADX and ATR chips beside it get.
+            const isType = r === 'Cash' || r === 'Bond';
             const isBull = r.includes('>') || r.includes('Golden') || r.includes('▲');
-            return `<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${isBull?'var(--g-bg)':'var(--r-bg)'};color:${isBull?'var(--g)':'var(--r)'}">${r}</span>`;
+            const bg = isType ? 'var(--bg4)' : (isBull ? 'var(--g-bg)' : 'var(--r-bg)');
+            const fg = isType ? 'var(--t2)'  : (isBull ? 'var(--g)'    : 'var(--r)');
+            return `<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${bg};color:${fg}">${r}</span>`;
           }).join('')}
           ${d.adx!=null?`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2)">ADX: ${typeof d.adx==='number'?d.adx.toFixed(0):d.adx}</span>`:''}
           ${d.atrPct?`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg4);color:var(--t2)">ATR: ${d.atrPct.toFixed(1)}%</span>`:''}
