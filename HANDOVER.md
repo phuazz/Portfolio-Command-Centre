@@ -203,6 +203,107 @@ docs-only sessions do not modify it. Separately, the master `CLAUDE.md` at
 needs the same size correction; it lives outside this repository and was
 not edited from this session.
 
+## Positions tab: unearned signals removed (8 August 2026)
+
+Opened on a report that the five cash rows carried a permanent amber STALE
+badge. The badge was the visible end of a wider pattern: the Positions tab
+asserted several things it had not established, and every one of them fired
+on cash, which is carried at 1.00 by definition and is in no fetch universe.
+Five permanent amber warnings on every load meant a genuinely stale equity
+price would not have stood out — the badge cost more than it bought.
+
+Six commits, five of them one theme and the last a real defect the testing
+turned up. The rules now in place, all in `template.html`:
+
+- `isStale` exempts `type === 'Cash'` and any symbol flagged `noQuote` in
+  `book.json`. The latter reuses the mechanism added 7 Aug 2026 rather than
+  introducing a second one, so a quote-less symbol keeps its neutral MANUAL
+  badge and cannot also take amber.
+- The pending-bake hourglass and the row title are gated on `awaitingBake`
+  (clickable, no chart, not cash). Cash rows stay clickable; only the marker
+  and the wording went.
+- `renderStockChart` has a cash branch stating plainly that there is no price
+  history, instead of falling through to the "added recently, will pick up its
+  OHLC history on the next scheduled bake" message, which was false in every
+  clause for a permanent ledger-derived bucket.
+- The signal-panel reason is the position's actual type, not a hardcoded
+  `'Bond'` for both exempt types.
+- The vote count renders only where a vote exists. It previously defaulted a
+  missing value to zero, so cash opened on a red `0/3 votes` — `voteCol(0)` is
+  `var(--r)`, the engine's most bearish verdict, printed against a position the
+  engine never evaluated. Absent is not zero.
+- The chart legend is gated on the same fifteen-bar test `renderStockChart`
+  uses to decide whether to draw, so it appears exactly when the series it
+  describes does.
+- Reason chips are coloured three ways rather than two: directional signals
+  keep green and red; statements of what a position is, or of why no signal
+  was computed, render in the neutral ADX/ATR tokens; a calc error takes the
+  warning amber. Red is now left meaning one thing only — the engine ran and
+  came back bearish.
+
+The vote and legend gates are conditioned on the data, not on the type, so
+they also clear two false readings on a newly-added equity awaiting its first
+bake. Its hourglass and pending-bake message are untouched, which for an
+equity are both true.
+
+Four facts the investigation established, recorded so they are not
+rediscovered. The bond table renders no badge column at all, so the twelve
+quote-less SGS and SSB holdings have never badged — that is why the reported
+symptom was five rows and not seventeen. Bond rows are not clickable, so the
+bond detail panel never opens and the `'Bond'` reason chip was only ever
+visible on cash. The four status reasons (`Insufficient data`, `Awaiting live
+data`, `Warming up`, `Calc error`) are latent — no position currently carries
+one — so any change to them must be verified by forcing them onto a live
+position rather than by reading the code. And `template.html` measured
+388,269 bytes on 8 Aug 2026, against the ~332 KB recorded in `CLAUDE.md` from
+2 July; the size discipline still applies, but the stated figure has drifted.
+
+### The defect
+
+`renderStockChart` drew into containers that had already been removed.
+`toggleChart` and `toggleSignalChart` both defer the draw by 50 ms, and
+collapsing the row, opening a different one, or a table repaint inside that
+window removes the node; Plotly throws on a missing element rather than
+no-opping. The no-history branch guarded for this and returned, the drawing
+path did not. The container lookup is now hoisted to the top of the function
+and guards every path, covering all three call sites at once. This was
+pre-existing and reproduced on the build deployed before the session's other
+changes. `toggleSignalChart` could not be exercised end-to-end because the
+Signals tab has no trade-plan rows at present; it calls the same guarded
+function with the same defer, so that call site is covered by construction
+rather than by observation.
+
+### Verification traps met on the way
+
+Three, all of which produced a wrong reading before being caught, and all of
+which will recur.
+
+Searching `document.body.innerHTML` for badge or message text matches the
+inline script source, not rendered output — this repository inlines its
+JavaScript in the body. Query rendered elements and read `textContent`.
+
+The live page's auto-refresh repaints the positions table and removes any
+open chart panel, so an injected panel can vanish between the toggle and the
+read. Pin `localStorage.pccAutoRefresh = 'off'` on the origin under test
+before checking anything injected into that table.
+
+The browser tool's console buffer persists across navigations within a tab,
+so stale errors from earlier interaction appear on what looks like a clean
+load. Open a fresh tab before making any clean-console claim.
+
+### Operational note
+
+A concurrent `update.yml` dispatch rejected one run's push: another session
+pushed between that run's checkout and its push, the push failed, and the
+deploy step never ran, leaving the live site on the previous build while the
+commit sat safely on `main`. Re-triggering cleared it. If a bake fails at
+"Commit and push", check for an interleaved commit before looking for a
+problem in the change itself.
+
+Commits: `9b6f393` stale badge, `8f7c677` hourglass and pending-bake wording,
+`c5a245c` reason chip label and colour, `7a86b73` vote count and legend,
+`3037449` status reason colours, `ef60ecd` chart-container race.
+
 ## Session rituals
 
 Start: `git pull --rebase origin main`. End: `git checkout -- docs/` to drop
