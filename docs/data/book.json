@@ -180,6 +180,16 @@
       "theme": "Lithium/Battery Tech",
       "type": "ETF"
     },
+    "CIBR.US": {
+      "yf": "CIBR",
+      "name": "First Trust NASDAQ Cybersecurity",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Cybersecurity",
+      "type": "ETF"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
@@ -320,6 +330,16 @@
       "ccy": "USD",
       "fee": 0,
       "availLTV": 50,
+      "theme": "US Semis",
+      "type": "Stock"
+    },
+    "SNDK.US": {
+      "yf": "SNDK",
+      "name": "SanDisk",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 30,
       "theme": "US Semis",
       "type": "Stock"
     },
