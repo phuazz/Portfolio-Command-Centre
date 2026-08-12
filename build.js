@@ -75,6 +75,21 @@ function readLedger() {
   return { trades, book, symbols: [...symbols], noQuote };
 }
 
+// Yahoo symbols currently held in non-zero size, by replaying the ledger the
+// same way validateLedger does. The session audit polices only these: a
+// closed-out ticker stays in the universe for attribution history but cannot
+// move a P&L card, so a feed gap on one is not worth stopping a bake for.
+function heldYahooSymbols(book, trades) {
+  const qty = {};
+  for (const op of book.positions || []) qty[op.ticker] = op.qty;
+  for (const t of trades) if (t.a === 'B' || t.a === 'S') qty[t.t] = (qty[t.t] || 0) + (t.a === 'B' ? t.q : -t.q);
+  const held = new Set();
+  for (const [tk, m] of Object.entries(book.meta || {})) {
+    if (m.yf && Math.abs(qty[tk] || 0) > 1e-9) held.add(m.yf);
+  }
+  return held;
+}
+
 // Replay validation: the ledger must never sell more than is held (opening
 // quantity plus prior buys), unless a named ledgerOverride covers the gap.
 // A hard failure here stops the bake — a red Actions run beats silently
@@ -130,6 +145,11 @@ async function fetchTicker(symbol, range = '10y') {
       const opens = quotes?.open || [];
       const highs = quotes?.high || [];
       const lows = quotes?.low || [];
+      // Volume is carried on each bar for the session audit only and is stripped
+      // before history.json is written — it is the sole reliable discriminator
+      // between a real session and a fabricated one, but the client never needs
+      // it and the file is already ~11 MB.
+      const volumes = quotes?.volume || [];
 
       const price = meta.regularMarketPrice || closes.filter(c => c != null).pop();
 
@@ -144,7 +164,8 @@ async function fetchTicker(symbol, range = '10y') {
             ac: +ac.toFixed(4),
             o: +(opens[i] || closes[i]).toFixed(4),
             h: +(highs[i] || closes[i]).toFixed(4),
-            l: +(lows[i] || closes[i]).toFixed(4)
+            l: +(lows[i] || closes[i]).toFixed(4),
+            v: (volumes[i] == null || isNaN(volumes[i])) ? 0 : volumes[i]
           });
         }
       }
@@ -169,6 +190,7 @@ async function fetchTicker(symbol, range = '10y') {
             o: +(opens[lastIdx] || px).toFixed(4),
             h: +(highs[lastIdx] || px).toFixed(4),
             l: +(lows[lastIdx] || px).toFixed(4),
+            v: (volumes[lastIdx] == null || isNaN(volumes[lastIdx])) ? 0 : volumes[lastIdx],
             p: true,
           });
         }
@@ -199,12 +221,124 @@ async function fetchTicker(symbol, range = '10y') {
       // The dashboard's intraday engines gate on it — a print at or before the
       // prior US close is not a live tick, however much it differs from the
       // marked close (thinly traded SGX names routinely differ for days).
-      return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), quoteTime: meta.regularMarketTime || null, history };
+      // exchangeTz groups tickers by trading calendar for the session audit and,
+      // like volume, is stripped before the file is written.
+      return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), quoteTime: meta.regularMarketTime || null, exchangeTz: meta.exchangeTimezoneName || null, history };
     } catch (e) {
       // Try next proxy
     }
   }
   return null;
+}
+
+// ── Session audit ───────────────────────────────────────────────────────
+// Yahoo's daily series is not trustworthy around exchange holidays. Two
+// distinct defects have been observed, both silent:
+//
+//   1. A FABRICATED bar on a day the exchange was shut — zero volume, with
+//      open = high = low = close repeating the previous session. Observed on
+//      SGX for 2026-08-10 (National Day, 9 August 2026 falling on a Sunday)
+//      across ES3.SI, G3B.SI, GAB.SI, YYY.SI, S27.SI, D07.SI and ICU.SI.
+//   2. A DROPPED real session — the timestamp is present but every field is
+//      null. Observed on the same names for 2026-08-11, a full SGX session in
+//      which ES3.SI alone traded 1.9 m shares. The gap persists across every
+//      range and both Yahoo hosts, so it does not heal on a re-fetch.
+//
+// Together these move the day boundary: calcSplitDayPnL anchors the 1-Day
+// window on the fabricated bar, reads it as flat, and sweeps the lost session
+// into the Intraday card. On 2026-08-12 that misplaced S$4,169 between the two
+// headline cards and turned ES3 from the day's largest contributor into an
+// apparent one, with nothing on the page to signal it.
+//
+// Neither defect is detectable from a single ticker's series — a ticker cannot
+// tell you whether its own exchange was open. It is detectable across tickers:
+// if any name on the same trading calendar printed real volume that day, the
+// exchange was open. That cross-sectional vote is what both rules below rest
+// on, so a calendar group needs enough members to carry one.
+const MIN_CALENDAR_GROUP = 3;   // below this, one bad ticker outvotes the truth
+const AUDIT_WINDOW = 10;        // sessions back to police for missing bars
+const GAPS_FILE = path.join(__dirname, 'data_gaps.json');
+
+const barDateISO = b => new Date(b.d * 1000).toISOString().slice(0, 10);
+
+function auditSessions(stockData, heldSymbols) {
+  // Group by trading calendar. Symbols whose exchange never reported a
+  // timezone fall into their own bucket and simply go unguarded.
+  const groups = {};
+  for (const [sym, data] of Object.entries(stockData)) {
+    const tz = data.exchangeTz || `unknown:${sym}`;
+    (groups[tz] = groups[tz] || []).push(sym);
+  }
+
+  const dropped = [];      // fabricated bars removed
+  const gaps = [];         // real sessions missing from a held ticker
+  const unguarded = [];
+
+  for (const [tz, members] of Object.entries(groups)) {
+    if (members.length < MIN_CALENDAR_GROUP) { unguarded.push(`${tz} (${members.join(', ')})`); continue; }
+
+    // A date is a session if ANY member printed real volume on it.
+    const sessions = new Set();
+    for (const sym of members) {
+      for (const b of stockData[sym].history) if (b.v > 0) sessions.add(barDateISO(b));
+    }
+
+    // Rule 1 — remove fabricated holiday bars. All three conditions must hold:
+    // the exchange was shut, nothing traded, and the bar is a flat repeat.
+    // Provisional bars are never dropped; they stand in for a session that is
+    // still in progress, before any print has landed.
+    for (const sym of members) {
+      const h = stockData[sym].history;
+      const keep = [];
+      for (const b of h) {
+        const flat = b.o === b.h && b.h === b.l && b.l === b.c;
+        if (!b.p && b.v === 0 && flat && !sessions.has(barDateISO(b))) {
+          dropped.push({ sym, date: barDateISO(b), close: b.c });
+        } else {
+          keep.push(b);
+        }
+      }
+      if (keep.length !== h.length) stockData[sym].history = keep;
+    }
+
+    // Rule 2 — a held ticker with no bar on a date its exchange traded. The
+    // most recent session is excluded: it may still be in progress, and a name
+    // that has not printed yet today is not a gap. Only held names are policed
+    // — a closed-out ticker cannot move a P&L card, and its history is kept
+    // solely so attribution can look backwards.
+    const recent = [...sessions].sort().slice(-(AUDIT_WINDOW + 1)).slice(0, -1);
+    for (const sym of members) {
+      if (!heldSymbols.has(sym)) continue;
+      const h = stockData[sym].history;
+      if (!h.length) continue;
+      const have = new Set(h.map(barDateISO));
+      const first = barDateISO(h[0]), last = barDateISO(h[h.length - 1]);
+      for (const d of recent) {
+        if (d < first || d > last) continue;      // outside this ticker's listed life
+        if (!have.has(d)) gaps.push({ sym, date: d, tz });
+      }
+    }
+  }
+
+  return { dropped, gaps, unguarded };
+}
+
+// Acknowledged gaps. A missing session is a hard stop the first time it is
+// seen — publishing a dashboard whose day boundary is known to be wrong is
+// worse than publishing nothing. But Yahoo never backfills these, so an
+// unconditional failure would jam every subsequent bake for a fortnight until
+// the bad date aged out of the window. The latch resolves that: the bake fails
+// once, loudly, and proceeds after the gap is recorded in data_gaps.json with a
+// note. Acknowledging is a deliberate act that leaves a reviewable record.
+function readAcknowledgedGaps() {
+  if (!fs.existsSync(GAPS_FILE)) return new Set();
+  try {
+    const j = JSON.parse(fs.readFileSync(GAPS_FILE, 'utf-8'));
+    return new Set((j.acknowledged || []).map(g => `${g.yf}|${g.date}`));
+  } catch (e) {
+    console.error(`❌ data_gaps.json is present but unreadable (${e.message}) — refusing to bake on an unknown gap state.`);
+    process.exit(1);
+  }
 }
 
 // ── Concurrent fetcher with progress ──
@@ -277,8 +411,45 @@ async function main() {
   console.log(`📥 Fetching ${RANGE} history for ${symbols.length} tickers (concurrency: ${CONCURRENCY})...`);
   const stockData = await fetchAll(symbols, RANGE);
   const stockCount = Object.keys(stockData).length;
+  console.log(`  ✅ ${stockCount}/${symbols.length} tickers fetched\n`);
+
+  // ── Session audit (see auditSessions above) ──
+  console.log('🔍 Auditing exchange sessions...');
+  const { dropped, gaps, unguarded } = auditSessions(stockData, heldYahooSymbols(book, trades));
+  if (unguarded.length) {
+    console.log(`  ℹ️  unguarded calendars (fewer than ${MIN_CALENDAR_GROUP} tickers, no cross-sectional vote possible):`);
+    unguarded.forEach(u => console.log(`       ${u}`));
+  }
+  if (dropped.length) {
+    const byDate = {};
+    dropped.forEach(d => { (byDate[d.date] = byDate[d.date] || []).push(d.sym); });
+    console.log(`  🧹 dropped ${dropped.length} fabricated bars on ${Object.keys(byDate).length} non-session dates:`);
+    Object.entries(byDate).sort().forEach(([d, syms]) => console.log(`       ${d}  ${syms.length} bars  (${syms.slice(0, 6).join(', ')}${syms.length > 6 ? ', …' : ''})`));
+  } else {
+    console.log('  ✅ no fabricated holiday bars found');
+  }
+
+  const acknowledged = readAcknowledgedGaps();
+  const fresh = gaps.filter(g => !acknowledged.has(`${g.sym}|${g.date}`));
+  if (gaps.length) {
+    console.log(`  ⚠️  ${gaps.length} missing session(s) on held tickers within the last ${AUDIT_WINDOW} sessions:`);
+    gaps.forEach(g => console.log(`       ${g.sym.padEnd(10)} ${g.date}  ${acknowledged.has(`${g.sym}|${g.date}`) ? '(acknowledged)' : '<< NEW'}`));
+  } else {
+    console.log('  ✅ no missing sessions on held tickers');
+  }
+  if (fresh.length) {
+    console.error('\n❌ Bake stopped: the price feed is missing a real trading session for a held position.');
+    console.error('   The day boundary would be anchored on the wrong bar, so the Intraday and 1-Day');
+    console.error('   cards would report a wrong split without saying so. Verify each gap against the');
+    console.error('   intraday series (interval=5m recovers the session), then record it in');
+    console.error('   data_gaps.json to acknowledge it and allow the bake to proceed:\n');
+    fresh.forEach(g => console.error(`     { "yf": "${g.sym}", "date": "${g.date}", "note": "" }`));
+    process.exit(1);
+  }
+  console.log('');
+
   const totalBars = Object.values(stockData).reduce((s, d) => s + d.history.length, 0);
-  console.log(`  ✅ ${stockCount}/${symbols.length} tickers fetched (${totalBars.toLocaleString()} total bars)\n`);
+  console.log(`  📊 ${totalBars.toLocaleString()} bars after audit\n`);
 
   // Fetch FX
   console.log(`💱 Fetching FX rates...`);
@@ -299,8 +470,14 @@ async function main() {
   // Merge
   const allData = { ...stockData, ...fxData };
 
+  // Audit-only fields never reach the client: volume exists solely to tell a
+  // real session from a fabricated one, and exchangeTz solely to group tickers
+  // by trading calendar. Stripping at serialisation avoids copying an 11 MB
+  // structure just to delete two keys.
+  const stripAudit = (k, val) => (k === 'v' || k === 'exchangeTz') ? undefined : val;
+
   // Size estimate
-  const jsonStr = JSON.stringify(allData);
+  const jsonStr = JSON.stringify(allData, stripAudit);
   const sizeMB = (jsonStr.length / 1024 / 1024).toFixed(1);
   console.log(`📦 Data size: ${sizeMB} MB uncompressed (gzipped ~${(jsonStr.length / 1024 / 1024 * 0.2).toFixed(1)} MB)`);
 
@@ -329,10 +506,10 @@ async function main() {
   }
 
   // Write docs/data/history.json (stock OHLC only — FX goes to fx.json)
-  fs.writeFileSync(HISTORY_FILE, JSON.stringify(stockData), 'utf-8');
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(stockData, stripAudit), 'utf-8');
 
   // Write docs/data/fx.json (FX rates only)
-  fs.writeFileSync(FX_FILE, JSON.stringify(fxData), 'utf-8');
+  fs.writeFileSync(FX_FILE, JSON.stringify(fxData, stripAudit), 'utf-8');
 
   // Copy the user-authored ledger files into docs/data/ so the client can
   // fetch them alongside history.json. The root copies remain the source of
@@ -354,6 +531,10 @@ async function main() {
     tickerCount: stockCount,
     fxCount,
     totalBars,
+    // Known feed gaps carried through to the client so the dashboard can say so
+    // on the page rather than reporting a silently wrong day boundary. Each
+    // entry has already been acknowledged in data_gaps.json.
+    dataGaps: gaps.map(g => ({ yf: g.sym, date: g.date })),
   };
   fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2), 'utf-8');
 
