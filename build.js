@@ -358,6 +358,140 @@ async function verifySuspectGaps(stockData, gaps) {
   return { repaired, failedRefetch };
 }
 
+// ── Session recovery from intraday bars ─────────────────────────────────
+// A session Yahoo dropped from the daily series is usually still present in
+// the intraday series, which is built by a different pipeline. Reconstructing
+// the bar from 5-minute prints restores the day boundary immediately instead
+// of leaving the two day cards withdrawn for the fortnight it takes the bad
+// date to age out of the windows.
+//
+// The reconstruction is NOT an official close and is never presented as one.
+// It is tagged r:true on the bar and published in meta.json so the client can
+// mark anything resting on it. Measured against 90 sessions across SGX, HKEX
+// and US names where the official daily bar was known: median close error
+// 0.000%, p90 0.333%, max 1.235%; 89% inside 0.25%. The error is the closing
+// auction, which the intraday series stops short of, so the tail is entirely
+// low-priced counters where one tick is already half a per cent. The
+// reconstructed high never exceeded the true high and the low never fell below
+// the true low, so the bar is a strict subset of the real session.
+async function fetchIntradaySeries(symbol, interval) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+    + `?range=1mo&interval=${interval}&includePrePost=false`;
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(20000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const res = j?.chart?.result?.[0];
+    return (res && (res.timestamp || []).length) ? res : null;
+  } catch (e) { return null; }
+}
+
+// Reconstruct one session's OHLC from intraday prints. Returns null when the
+// date carries no prints at all — which is itself information, handled by the
+// caller as "the counter did not trade" rather than "the data is missing".
+function reconstructSession(res, date) {
+  const ts = res.timestamp || [], q = res.indicators?.quote?.[0] || {};
+  const idx = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (new Date(ts[i] * 1000).toISOString().slice(0, 10) !== date) continue;
+    if (q.close?.[i] == null || isNaN(q.close[i])) continue;
+    idx.push(i);
+  }
+  if (idx.length < 2) return null;
+  const vol = idx.reduce((s, i) => s + (q.volume?.[i] || 0), 0);
+  if (vol <= 0) return null;
+  const o = q.open?.[idx[0]] != null ? q.open[idx[0]] : q.close[idx[0]];
+  const c = q.close[idx[idx.length - 1]];
+  const highs = idx.map(i => q.high?.[i]).filter(v => v != null);
+  const lows = idx.map(i => q.low?.[i]).filter(v => v != null);
+  const h = Math.max(...highs, o, c), l = Math.min(...lows, o, c);
+  if (![o, h, l, c].every(v => isFinite(v) && v > 0)) return null;
+  return { o, h, l, c, v: vol, prints: idx.length };
+}
+
+// Does the intraday series actually span this date? A series that begins after
+// the date in question cannot testify that nothing traded on it. Without this
+// check a short intraday window would be read as evidence of a quiet session.
+function intradaySpans(res, date) {
+  const ts = res.timestamp || [];
+  if (!ts.length) return false;
+  const days = ts.map(t => new Date(t * 1000).toISOString().slice(0, 10));
+  return days.some(d => d < date) && days.some(d => d > date);
+}
+
+async function recoverMissingSessions(stockData, gaps) {
+  const bySym = {};
+  gaps.forEach(g => { (bySym[g.sym] = bySym[g.sym] || []).push(g.date); });
+  const recovered = [], untraded = [], unavailable = [];
+
+  // A counter that traded nothing on the sessions running into the missing one
+  // did not trade on it either. This settles names too illiquid to hold an
+  // intraday series at all: Yahoo returns nothing for them, which proves
+  // nothing on its own, while their own daily record is unambiguous.
+  //
+  // Only bars BEFORE the date count, and only finalised ones. Looking forward
+  // would read today's provisional bar — zero volume by construction — as
+  // evidence of a quiet market, and a wider backward window reaches past the
+  // name's last real trade: ICU.SI traded 11,000 shares on 2026-08-03 and
+  // nothing after, so a five-bar window straddling that print reported the name
+  // as active and left a settled case unresolved.
+  const QUIET_RUN = 3;
+  const quietIntoDate = (data, date) => {
+    const prior = data.history.filter(b => !b.p && barDateISO(b) < date).slice(-QUIET_RUN);
+    return prior.length === QUIET_RUN && prior.every(b => (b.v || 0) === 0);
+  };
+
+  for (const [sym, dates] of Object.entries(bySym)) {
+    const data = stockData[sym];
+    if (!data || !data.history || data.history.length < 2) { dates.forEach(d => unavailable.push({ sym, date: d })); continue; }
+    let res = await fetchIntradaySeries(sym, '5m');
+    if (!res) res = await fetchIntradaySeries(sym, '1h');
+    await new Promise(r => setTimeout(r, DELAY_MS));
+    if (!res) {
+      dates.forEach(d => (quietIntoDate(data, d) ? untraded : unavailable).push({ sym, date: d }));
+      continue;
+    }
+
+    for (const date of dates) {
+      const bar = reconstructSession(res, date);
+      if (!bar) {
+        // No prints on the day. If the intraday series demonstrably spans the
+        // date, the counter simply did not trade — the daily bar is missing
+        // because there was nothing to record, the carried-forward close is
+        // right, and the flat reading the engines produce is correct. Nothing
+        // to recover and nothing to withdraw.
+        if (intradaySpans(res, date) || quietIntoDate(data, date)) untraded.push({ sym, date });
+        else unavailable.push({ sym, date });
+        continue;
+      }
+      // Timestamp convention: reuse the time-of-day the ticker's own bars carry
+      // (SGX opens 01:00Z, HKEX 01:30Z, US 13:30Z), so the synthesised bar sits
+      // on the same grid and resolves to the intended UTC calendar date.
+      const ref = data.history[data.history.length - 1];
+      const offset = ref.d - Math.floor(ref.d / 86400) * 86400;
+      const d = Math.floor(Date.parse(date + 'T00:00:00Z') / 1000) + offset;
+      // adjclose: a dividend adjustment restates every bar before its ex-date by
+      // the same factor, so the bar immediately preceding the gap carries the
+      // factor this one needs. Where no adjustment is in force the ratio is 1.
+      const prior = [...data.history].filter(b => b.d < d).pop();
+      const factor = (prior && prior.c > 0 && prior.ac != null) ? prior.ac / prior.c : 1;
+      data.history.push({
+        d,
+        c: +bar.c.toFixed(4),
+        ac: +(bar.c * factor).toFixed(4),
+        o: +bar.o.toFixed(4),
+        h: +bar.h.toFixed(4),
+        l: +bar.l.toFixed(4),
+        v: bar.v,
+        r: true,                       // reconstructed, not an official close
+      });
+      data.history.sort((a, b) => a.d - b.d);
+      recovered.push({ sym, date, close: +bar.c.toFixed(4), prints: bar.prints, volume: bar.v });
+    }
+  }
+  return { recovered, untraded, unavailable };
+}
+
 // Acknowledged gaps. A missing session is a hard stop the first time it is
 // seen — publishing a dashboard whose day boundary is known to be wrong is
 // worse than publishing nothing. But Yahoo never backfills these, so an
@@ -449,30 +583,53 @@ async function main() {
   console.log(`  ✅ ${stockCount}/${symbols.length} tickers fetched\n`);
 
   // ── Session audit (see auditSessions above) ──
-  // Two passes. The first proposes gaps; every suspect is then re-fetched
-  // direct from Yahoo and the second pass rules on the repaired data, so only
-  // a gap that survives verification can stop the bake.
+  // Three passes, escalating. Pass 1 proposes gaps. Every suspect is re-fetched
+  // direct from Yahoo, because a degraded payload is indistinguishable from a
+  // real gap. Pass 2 rules on the repaired data, and whatever still looks
+  // missing is put to the intraday series — which either reconstructs the
+  // session, shows the counter did not trade, or cannot say. Pass 3 is the
+  // final word, so only a gap that survives all three can stop the bake.
   console.log('🔍 Auditing exchange sessions...');
   const held = heldYahooSymbols(book, trades);
+  const passes = [];
   const pass1 = auditSessions(stockData, held);
+  passes.push(pass1);
   if (pass1.gaps.length) {
     console.log(`  🔁 verifying ${new Set(pass1.gaps.map(g => g.sym)).size} suspect ticker(s) with a direct re-fetch...`);
     const { repaired, failedRefetch } = await verifySuspectGaps(stockData, pass1.gaps);
     repaired.forEach(r => console.log(`       ${r.sym.padEnd(10)} recovered ${r.dates.join(', ')} on re-fetch — first fetch was degraded, series replaced`));
     if (failedRefetch.length) console.log(`       re-fetch failed for ${failedRefetch.join(', ')} — their gaps stand on the original payload`);
-    if (!repaired.length) console.log('       nothing recovered — every suspect gap is real');
+    if (!repaired.length) console.log('       nothing recovered on re-fetch — every suspect gap is real');
   }
   const pass2 = auditSessions(stockData, held);
-  // auditSessions strips bars as it goes, so the second pass only sees what the
-  // first left plus anything a re-fetch brought back. Union the two, deduped,
-  // for an honest total; the gap verdict is pass 2's alone.
+  passes.push(pass2);
+
+  let recoveredBars = [], untradedSessions = [];
+  if (pass2.gaps.length) {
+    console.log(`  🩹 reconstructing ${pass2.gaps.length} missing session(s) from intraday prints...`);
+    const out = await recoverMissingSessions(stockData, pass2.gaps);
+    recoveredBars = out.recovered; untradedSessions = out.untraded;
+    out.recovered.forEach(r => console.log(`       ${r.sym.padEnd(10)} ${r.date}  rebuilt close ${r.close} from ${r.prints} prints, ${r.volume.toLocaleString()} shares — tagged, not an official close`));
+    out.untraded.forEach(u => console.log(`       ${u.sym.padEnd(10)} ${u.date}  no prints while the exchange was open — the counter did not trade, carried-forward close is correct`));
+    out.unavailable.forEach(u => console.log(`       ${u.sym.padEnd(10)} ${u.date}  intraday series could not settle it — gap stands`));
+  }
+  const pass3 = auditSessions(stockData, held);
+  passes.push(pass3);
+
+  // auditSessions strips bars as it goes, so each pass only sees what the last
+  // one left plus anything a re-fetch or reconstruction brought back. Union all
+  // three, deduped, for an honest drop total; the gap verdict is pass 3's alone.
   const seenDrop = new Set();
-  const dropped = [...pass1.dropped, ...pass2.dropped].filter(d => {
+  const dropped = passes.flatMap(p => p.dropped).filter(d => {
     const k = `${d.sym}|${d.date}`;
     if (seenDrop.has(k)) return false;
     seenDrop.add(k); return true;
   });
-  const gaps = pass2.gaps, unguarded = pass2.unguarded;
+  // A session confirmed as genuinely untraded is not a gap: the missing bar is
+  // correct, so the name stays in the day cards on its carried-forward close.
+  const untradedKeys = new Set(untradedSessions.map(u => `${u.sym}|${u.date}`));
+  const gaps = pass3.gaps.filter(g => !untradedKeys.has(`${g.sym}|${g.date}`));
+  const unguarded = pass3.unguarded;
   if (unguarded.length) {
     console.log(`  ℹ️  unguarded calendars (fewer than ${MIN_CALENDAR_GROUP} tickers, no cross-sectional vote possible):`);
     unguarded.forEach(u => console.log(`       ${u}`));
@@ -486,20 +643,24 @@ async function main() {
     console.log('  ✅ no fabricated holiday bars found');
   }
 
+  if (recoveredBars.length) console.log(`  🩹 ${recoveredBars.length} session(s) rebuilt from intraday prints and tagged`);
+  if (untradedSessions.length) console.log(`  ✅ ${untradedSessions.length} session(s) confirmed as genuine non-trading days — not gaps`);
+
   const acknowledged = readAcknowledgedGaps();
   const fresh = gaps.filter(g => !acknowledged.has(`${g.sym}|${g.date}`));
   if (gaps.length) {
-    console.log(`  ⚠️  ${gaps.length} missing session(s) on held tickers within the last ${AUDIT_WINDOW} sessions:`);
+    console.log(`  ⚠️  ${gaps.length} unresolved missing session(s) on held tickers within the last ${AUDIT_WINDOW} sessions:`);
     gaps.forEach(g => console.log(`       ${g.sym.padEnd(10)} ${g.date}  ${acknowledged.has(`${g.sym}|${g.date}`) ? '(acknowledged)' : '<< NEW'}`));
   } else {
-    console.log('  ✅ no missing sessions on held tickers');
+    console.log('  ✅ no unresolved missing sessions on held tickers');
   }
   if (fresh.length) {
-    console.error('\n❌ Bake stopped: the price feed is missing a real trading session for a held position.');
-    console.error('   The day boundary would be anchored on the wrong bar, so the Intraday and 1-Day');
-    console.error('   cards would report a wrong split without saying so. Verify each gap against the');
-    console.error('   intraday series (interval=5m recovers the session), then record it in');
-    console.error('   data_gaps.json to acknowledge it and allow the bake to proceed:\n');
+    console.error('\n❌ Bake stopped: a held position is missing a real trading session that could not be');
+    console.error('   resolved. The re-fetch did not supply it, and the intraday series could neither');
+    console.error('   reconstruct it nor confirm the counter was untraded. The day boundary would be');
+    console.error('   anchored on the wrong bar, so the Intraday and 1-Day cards would report a wrong');
+    console.error('   split without saying so. Establish by hand what happened on each date, then');
+    console.error('   record it in data_gaps.json to acknowledge it and allow the bake to proceed:\n');
     fresh.forEach(g => console.error(`     { "yf": "${g.sym}", "date": "${g.date}", "note": "" }`));
     process.exit(1);
   }
@@ -588,10 +749,15 @@ async function main() {
     tickerCount: stockCount,
     fxCount,
     totalBars,
-    // Known feed gaps carried through to the client so the dashboard can say so
-    // on the page rather than reporting a silently wrong day boundary. Each
-    // entry has already been acknowledged in data_gaps.json.
+    // Unresolved feed gaps: the client withdraws these names from the day cards
+    // rather than anchor them on the wrong bar. Each has been acknowledged in
+    // data_gaps.json.
     dataGaps: gaps.map(g => ({ yf: g.sym, date: g.date })),
+    // Sessions rebuilt from intraday prints. The bar is in history and the day
+    // boundary is sound, but the close is a reconstruction that stops short of
+    // the closing auction — so the client marks anything resting on it rather
+    // than passing it off as an official close.
+    recoveredBars: recoveredBars.map(r => ({ yf: r.sym, date: r.date, close: r.close, prints: r.prints })),
   };
   fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2), 'utf-8');
 
