@@ -500,10 +500,17 @@ let PRELOADED_HISTORY = {};
 let PRELOADED_DATE = '';
 // Known price-feed gaps, published by the bake in meta.json after being
 // acknowledged in data_gaps.json. Each entry is { yf, date }: a session the
-// exchange demonstrably traded for which the feed carries no bar. The day
-// engines use this to withdraw a name from the Intraday / 1-Day split rather
-// than anchor it on the wrong bar — see _hasDayWindowGap.
+// exchange demonstrably traded for which the feed carries no bar and which the
+// bake could neither reconstruct nor confirm as untraded. The day engines
+// withdraw these names from the Intraday / 1-Day split rather than anchor them
+// on the wrong bar — see _hasDayWindowGap.
 let DATA_GAPS = [];
+// Sessions the bake rebuilt from intraday prints, { yf, date, close, prints }.
+// The bar is present and the day boundary is sound, so these names stay in the
+// cards — but the close stops short of the closing auction (measured median
+// error 0.000%, p90 0.333%, max 1.235% against known sessions), so anything
+// resting on one says so rather than passing it off as an official close.
+let RECOVERED_BARS = [];
 
 // ═══════════════════════════════════════════════════════════════
 //  LIVE DATA FETCHER — Cached + Incremental Updates
@@ -2027,6 +2034,15 @@ function _hasDayWindowGap(yf, boundary, prevAnchor) {
   return false;
 }
 
+// Names whose day windows rest on a reconstructed close. Unlike a gap this does
+// not disqualify the number — the boundary is in the right place and the move
+// spans the right sessions — it qualifies its precision, so the name stays in
+// and the card carries the provenance.
+function _dayWindowRecovered(boundary, prevAnchor) {
+  if (!RECOVERED_BARS.length) return [];
+  return RECOVERED_BARS.filter(r => r.date >= prevAnchor && r.date <= boundary);
+}
+
 function calcSplitDayPnL(ps, trades) {
   const liveData = state.liveData || {};
   const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
@@ -2131,9 +2147,18 @@ function calcSplitDayPnL(ps, trades) {
   const dIntraBook = nonBondNow - intraday, dPrevBook = nonBondNow - intraday - prevDay;
   const dIntraEq = equityNow - intradayEq, dPrevEq = equityNow - intradayEq - prevEq;
   const gaps = { count: gapped.size, value: gappedValue, tickers: [...gapped] };
+  // Positions whose windows lean on a reconstructed close. Counted, not
+  // excluded — the figure is sound, its last decimal is not.
+  const recoveredYf = new Set(_dayWindowRecovered(boundary, prevAnchor).map(r => r.yf));
+  const recoveredPs = ps.filter(p => recoveredYf.has(p.yf) && !gapped.has(p.ticker));
+  const recovery = {
+    count: recoveredPs.length,
+    value: recoveredPs.reduce((s, p) => s + (p.mktValueSGD || 0), 0),
+    tickers: recoveredPs.map(p => p.ticker),
+  };
   return {
-    intraday: { pnl: intraday, pct: dIntraBook > 0 ? (intraday / dIntraBook) * 100 : 0, equityPct: dIntraEq > 0 ? (intradayEq / dIntraEq) * 100 : 0, liveCount, gaps },
-    prevDay:  { pnl: prevDay,  pct: dPrevBook  > 0 ? (prevDay  / dPrevBook)  * 100 : 0, equityPct: dPrevEq  > 0 ? (prevEq  / dPrevEq)  * 100 : 0, gaps },
+    intraday: { pnl: intraday, pct: dIntraBook > 0 ? (intraday / dIntraBook) * 100 : 0, equityPct: dIntraEq > 0 ? (intradayEq / dIntraEq) * 100 : 0, liveCount, gaps, recovery },
+    prevDay:  { pnl: prevDay,  pct: dPrevBook  > 0 ? (prevDay  / dPrevBook)  * 100 : 0, equityPct: dPrevEq  > 0 ? (prevEq  / dPrevEq)  * 100 : 0, gaps, recovery },
   };
 }
 
@@ -2233,10 +2258,16 @@ function renderKPIs() {
   // from the numerator and the denominator alike, so the reader has to be told
   // what the percentage is a percentage OF. Provenance travels with the number.
   const dayGaps = (split.intraday.gaps && split.intraday.gaps.count) ? split.intraday.gaps : null;
-  const gapSub = dayGaps ? ` · <span class="kpi-warn">${dayGaps.count} excluded</span>` : '';
-  const gapTitle = dayGaps
-    ? `\n\nEXCLUDED (${dayGaps.count}, ${fmtSGD(dayGaps.value)}): ${dayGaps.tickers.join(', ')}. The price feed is missing a session these exchanges traded, so the day boundary cannot be placed for them. They are withdrawn from both the P&L and the base rather than assumed flat. Longer windows are unaffected. See data_gaps.json.`
-    : '';
+  const dayRec = (split.intraday.recovery && split.intraday.recovery.count) ? split.intraday.recovery : null;
+  const gapSub = (dayGaps ? ` · <span class="kpi-warn">${dayGaps.count} excluded</span>` : '')
+               + (dayRec ? ` · <span class="kpi-warn">${dayRec.count} rebuilt</span>` : '');
+  const gapTitle =
+    (dayGaps
+      ? `\n\nEXCLUDED (${dayGaps.count}, ${fmtSGD(dayGaps.value)}): ${dayGaps.tickers.join(', ')}. The price feed is missing a session these exchanges traded and the bake could not reconstruct it, so the day boundary cannot be placed for them. They are withdrawn from both the P&L and the base rather than assumed flat. Longer windows are unaffected. See data_gaps.json.`
+      : '')
+    + (dayRec
+      ? `\n\nREBUILT (${dayRec.count}, ${fmtSGD(dayRec.value)}): ${dayRec.tickers.join(', ')}. The price feed dropped a session for these names; the bake reconstructed it from intraday prints, so the window spans the right sessions and they are counted in full. The rebuilt close stops short of the closing auction — measured against known sessions, median error 0.000%, 89% inside 0.25%, worst case 1.24% on low-priced counters. Treat the last decimal as approximate, not the direction.`
+      : '');
 
   const kpis = [
     { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} (${scPs.length}) · CDP ${fmtSGD(cdpValue)} (${cdpPs.length})` },
@@ -6751,6 +6782,7 @@ async function bootstrap() {
     PRELOADED_HISTORY = Object.assign({}, hist, fx);
     PRELOADED_DATE = (meta && meta.date) ? meta.date : '';
     DATA_GAPS = (meta && Array.isArray(meta.dataGaps)) ? meta.dataGaps : [];
+    RECOVERED_BARS = (meta && Array.isArray(meta.recoveredBars)) ? meta.recoveredBars : [];
     // Ledger-first derivation: the engines consume only buy/sell rows, so
     // future explicit cash-event rows (deposits/withdrawals) stay inert here.
     TRADES_YTD = trades.filter(t => t.a === 'B' || t.a === 'S');
