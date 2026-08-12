@@ -132,6 +132,9 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 .kpi-label { font-size:11px; color:var(--t3); text-transform:uppercase; letter-spacing:1px; font-weight:600; margin-bottom:6px; }
 .kpi-val { font-size:24px; font-weight:700; letter-spacing:-0.5px; font-family:var(--sans); }
 .kpi-sub { font-size:12px; color:var(--t3); margin-top:3px; font-weight:400; }
+/* Feed-gap notice on the two day cards. Amber, not red: the number shown is
+   sound for the book it covers — the caveat is what it does not cover. */
+.kpi-sub .kpi-warn { color:var(--a-text); font-weight:600; }
 .kpi-val.pos { color:var(--g); }
 .kpi-val.neg { color:var(--r); }
 .kpi-change { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:700; margin-top:5px; }
@@ -495,6 +498,12 @@ const FX = { HKD:0.1624, JPY:0.008240, USD:1.2672, AUD:0.8986, EUR:1.4914, SGD:1
 // ═══════════════════════════════════════════════════════════════
 let PRELOADED_HISTORY = {};
 let PRELOADED_DATE = '';
+// Known price-feed gaps, published by the bake in meta.json after being
+// acknowledged in data_gaps.json. Each entry is { yf, date }: a session the
+// exchange demonstrably traded for which the feed carries no bar. The day
+// engines use this to withdraw a name from the Intraday / 1-Day split rather
+// than anchor it on the wrong bar — see _hasDayWindowGap.
+let DATA_GAPS = [];
 
 // ═══════════════════════════════════════════════════════════════
 //  LIVE DATA FETCHER — Cached + Incremental Updates
@@ -2001,6 +2010,23 @@ function _prevWeekdayAnchor(boundary) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+// True when a known feed gap falls inside the two windows the day engines
+// span, so neither the boundary close nor the start leg can be trusted for
+// this ticker. Both legs of the split rest on "the last bar at or before date
+// X"; if the bar that should sit at X is missing, that search silently returns
+// an older one and the window quietly lengthens — the 1-Day move collapses to
+// flat and the missing session reappears inside Intraday. There is no honest
+// number to show in that state, so the name is withdrawn from both windows and
+// counted, rather than shown wrong. Detection lives in the bake (build.js
+// auditSessions); this only consumes the acknowledged list.
+function _hasDayWindowGap(yf, boundary, prevAnchor) {
+  if (!yf || !DATA_GAPS.length) return false;
+  for (const g of DATA_GAPS) {
+    if (g.yf === yf && g.date >= prevAnchor && g.date <= boundary) return true;
+  }
+  return false;
+}
+
 function calcSplitDayPnL(ps, trades) {
   const liveData = state.liveData || {};
   const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
@@ -2015,8 +2041,14 @@ function calcSplitDayPnL(ps, trades) {
   const prevAnchor = _prevWeekdayAnchor(boundary);
 
   let intradayEq = 0, prevEq = 0, liveCount = 0;
+  const gapped = new Set();
   for (const tk of Object.keys(meta)) {
     const { yf, ccy } = meta[tk];
+    // Withdrawn, not zeroed: a gapped name is removed from the numerator AND
+    // the denominator below, so the card reports the return of the book it can
+    // actually measure. Leaving it in the denominator at zero P&L would assert
+    // it was flat, which is the very claim the gap makes unsupportable.
+    if (_hasDayWindowGap(yf, boundary, prevAnchor)) { gapped.add(tk); continue; }
     const h = histOf(yf);
     if (!h || h.length < 2) continue;
     const n = h.length;
@@ -2087,16 +2119,21 @@ function calcSplitDayPnL(ps, trades) {
     }
   }
 
-  const nonBondNow = ps.filter(p => p.type !== 'Bond').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
-  const equityNow  = ps.filter(p => p.type !== 'Bond' && p.type !== 'Cash').reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  // Denominators exclude gapped names on both sides, so numerator and
+  // denominator describe the same book — the like-for-like rule applied to a
+  // partial universe rather than a partial numerator over a whole one.
+  const nonBondNow = ps.filter(p => p.type !== 'Bond' && !gapped.has(p.ticker)).reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const equityNow  = ps.filter(p => p.type !== 'Bond' && p.type !== 'Cash' && !gapped.has(p.ticker)).reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const gappedValue = ps.filter(p => gapped.has(p.ticker)).reduce((s, p) => s + (p.mktValueSGD || 0), 0);
   const intraday = intradayEq + intradayCash;
   const prevDay  = prevEq + prevCash;
   // Chained denominators: book at the start of each window.
   const dIntraBook = nonBondNow - intraday, dPrevBook = nonBondNow - intraday - prevDay;
   const dIntraEq = equityNow - intradayEq, dPrevEq = equityNow - intradayEq - prevEq;
+  const gaps = { count: gapped.size, value: gappedValue, tickers: [...gapped] };
   return {
-    intraday: { pnl: intraday, pct: dIntraBook > 0 ? (intraday / dIntraBook) * 100 : 0, equityPct: dIntraEq > 0 ? (intradayEq / dIntraEq) * 100 : 0, liveCount },
-    prevDay:  { pnl: prevDay,  pct: dPrevBook  > 0 ? (prevDay  / dPrevBook)  * 100 : 0, equityPct: dPrevEq  > 0 ? (prevEq  / dPrevEq)  * 100 : 0 },
+    intraday: { pnl: intraday, pct: dIntraBook > 0 ? (intraday / dIntraBook) * 100 : 0, equityPct: dIntraEq > 0 ? (intradayEq / dIntraEq) * 100 : 0, liveCount, gaps },
+    prevDay:  { pnl: prevDay,  pct: dPrevBook  > 0 ? (prevDay  / dPrevBook)  * 100 : 0, equityPct: dPrevEq  > 0 ? (prevEq  / dPrevEq)  * 100 : 0, gaps },
   };
 }
 
@@ -2192,16 +2229,25 @@ function renderKPIs() {
     title: `Equity + cash basis (bonds excluded). Equity sleeve alone: ${fmtPct(data.equityPct)}`,
   });
 
+  // Both day cards carry the same exclusion notice: a withdrawn name is absent
+  // from the numerator and the denominator alike, so the reader has to be told
+  // what the percentage is a percentage OF. Provenance travels with the number.
+  const dayGaps = (split.intraday.gaps && split.intraday.gaps.count) ? split.intraday.gaps : null;
+  const gapSub = dayGaps ? ` · <span class="kpi-warn">${dayGaps.count} excluded</span>` : '';
+  const gapTitle = dayGaps
+    ? `\n\nEXCLUDED (${dayGaps.count}, ${fmtSGD(dayGaps.value)}): ${dayGaps.tickers.join(', ')}. The price feed is missing a session these exchanges traded, so the day boundary cannot be placed for them. They are withdrawn from both the P&L and the base rather than assumed flat. Longer windows are unaffected. See data_gaps.json.`
+    : '';
+
   const kpis = [
     { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} (${scPs.length}) · CDP ${fmtSGD(cdpValue)} (${cdpPs.length})` },
     { label:'Intraday P&L', value:fmtPL(split.intraday.pnl), num: split.intraday.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}`,
+      sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}${gapSub}`,
       cls: split.intraday.pnl >= 0 ? 'pos' : 'neg',
-      title:`The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}` },
+      title:`The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}${gapTitle}` },
     { label:'1-Day P&L', value:fmtPL(split.prevDay.pnl), num: split.prevDay.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.prevDay.pct)} · prior global day to US close`,
+      sub:`${fmtPct(split.prevDay.pct)} · prior global day to US close${gapSub}`,
       cls: split.prevDay.pnl >= 0 ? 'pos' : 'neg',
-      title:`The previous complete global trading day, ending at the most recent New York close — yesterday's Asian session plus the US session that closed this morning SGT. Stable until the next US close. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}` },
+      title:`The previous complete global trading day, ending at the most recent New York close — yesterday's Asian session plus the US session that closed this morning SGT. Stable until the next US close. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}${gapTitle}` },
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
     { label:'YTD P&L', value:fmtPL(ytd.totalDollar), num: ytd.totalDollar, fmt: fmtPL, sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
@@ -4127,6 +4173,12 @@ function _effectiveReturnGlobalDay(p, mode) {
   const adj = b => b.adjclose != null ? b.adjclose : b.close;
   const raw = b => b.close != null ? b.close : (b.adjclose != null ? b.adjclose : 0);
   const boundary = _usCloseBoundary();
+  // Same withdrawal as the hero engine (see _hasDayWindowGap): a name whose
+  // feed is missing a session inside these windows has no defensible day
+  // return, so it drops out of the panel rather than showing a move that
+  // spans the wrong number of sessions. Returning null is the existing
+  // "no row" signal at the call site.
+  if (_hasDayWindowGap(p.yf, boundary, _prevWeekdayAnchor(boundary))) return null;
   let iU = n - 1;
   while (iU >= 0 && iso(h[iU]) > boundary) iU--;
   if (iU < 1) return null;
@@ -6698,6 +6750,7 @@ async function bootstrap() {
     ]);
     PRELOADED_HISTORY = Object.assign({}, hist, fx);
     PRELOADED_DATE = (meta && meta.date) ? meta.date : '';
+    DATA_GAPS = (meta && Array.isArray(meta.dataGaps)) ? meta.dataGaps : [];
     // Ledger-first derivation: the engines consume only buy/sell rows, so
     // future explicit cash-event rows (deposits/withdrawals) stay inert here.
     TRADES_YTD = trades.filter(t => t.a === 'B' || t.a === 'S');
