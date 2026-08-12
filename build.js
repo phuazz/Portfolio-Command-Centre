@@ -112,11 +112,15 @@ function validateLedger(book, trades) {
 }
 
 // ── Fetch one ticker from Yahoo Finance ──
-async function fetchTicker(symbol, range = '10y') {
+// directOnly skips the CORS proxies. The proxies are a availability fallback,
+// not an equivalence: they have been observed returning a series with recent
+// sessions missing, which the session audit cannot tell apart from a genuine
+// feed gap. Verification re-fetches must therefore come from Yahoo itself.
+async function fetchTicker(symbol, range = '10y', directOnly = false) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
-  
+
   // Try direct first, then CORS proxies
-  const urls = [
+  const urls = directOnly ? [url] : [
     url,
     `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -323,6 +327,37 @@ function auditSessions(stockData, heldSymbols) {
   return { dropped, gaps, unguarded };
 }
 
+// Re-fetch every ticker the audit suspects, direct from Yahoo, and keep the
+// better series. A degraded fetch and a genuine feed gap look identical in the
+// data — both are a ticker missing one recent session — so the audit cannot
+// distinguish them by inspection, and guessing wrong is expensive in both
+// directions: a false stop jams the pipeline, and acknowledging a false gap
+// writes a fiction into the record that later sessions would trust. The first
+// CI run of this guard flagged eight US ETFs for 2026-07-31 whose bars were
+// present and healthy on a direct fetch moments later, which is what this
+// exists to catch. Verifying the claim costs one request per suspect.
+async function verifySuspectGaps(stockData, gaps) {
+  const suspects = [...new Set(gaps.map(g => g.sym))];
+  if (!suspects.length) return { repaired: [], failedRefetch: [] };
+  const repaired = [], failedRefetch = [];
+  for (const sym of suspects) {
+    const wanted = gaps.filter(g => g.sym === sym).map(g => g.date);
+    const fresh = await fetchTicker(sym, RANGE, true);
+    await new Promise(r => setTimeout(r, DELAY_MS));
+    if (!fresh || !fresh.history || !fresh.history.length) { failedRefetch.push(sym); continue; }
+    const have = new Set(fresh.history.map(barDateISO));
+    const recovered = wanted.filter(d => have.has(d));
+    if (recovered.length) {
+      // The re-fetch carries sessions the first one lost: the first fetch was
+      // degraded, so replace the series wholesale rather than patch it — the
+      // rest of that payload is equally suspect.
+      stockData[sym] = fresh;
+      repaired.push({ sym, dates: recovered });
+    }
+  }
+  return { repaired, failedRefetch };
+}
+
 // Acknowledged gaps. A missing session is a hard stop the first time it is
 // seen — publishing a dashboard whose day boundary is known to be wrong is
 // worse than publishing nothing. But Yahoo never backfills these, so an
@@ -414,8 +449,30 @@ async function main() {
   console.log(`  ✅ ${stockCount}/${symbols.length} tickers fetched\n`);
 
   // ── Session audit (see auditSessions above) ──
+  // Two passes. The first proposes gaps; every suspect is then re-fetched
+  // direct from Yahoo and the second pass rules on the repaired data, so only
+  // a gap that survives verification can stop the bake.
   console.log('🔍 Auditing exchange sessions...');
-  const { dropped, gaps, unguarded } = auditSessions(stockData, heldYahooSymbols(book, trades));
+  const held = heldYahooSymbols(book, trades);
+  const pass1 = auditSessions(stockData, held);
+  if (pass1.gaps.length) {
+    console.log(`  🔁 verifying ${new Set(pass1.gaps.map(g => g.sym)).size} suspect ticker(s) with a direct re-fetch...`);
+    const { repaired, failedRefetch } = await verifySuspectGaps(stockData, pass1.gaps);
+    repaired.forEach(r => console.log(`       ${r.sym.padEnd(10)} recovered ${r.dates.join(', ')} on re-fetch — first fetch was degraded, series replaced`));
+    if (failedRefetch.length) console.log(`       re-fetch failed for ${failedRefetch.join(', ')} — their gaps stand on the original payload`);
+    if (!repaired.length) console.log('       nothing recovered — every suspect gap is real');
+  }
+  const pass2 = auditSessions(stockData, held);
+  // auditSessions strips bars as it goes, so the second pass only sees what the
+  // first left plus anything a re-fetch brought back. Union the two, deduped,
+  // for an honest total; the gap verdict is pass 2's alone.
+  const seenDrop = new Set();
+  const dropped = [...pass1.dropped, ...pass2.dropped].filter(d => {
+    const k = `${d.sym}|${d.date}`;
+    if (seenDrop.has(k)) return false;
+    seenDrop.add(k); return true;
+  });
+  const gaps = pass2.gaps, unguarded = pass2.unguarded;
   if (unguarded.length) {
     console.log(`  ℹ️  unguarded calendars (fewer than ${MIN_CALENDAR_GROUP} tickers, no cross-sectional vote possible):`);
     unguarded.forEach(u => console.log(`       ${u}`));
