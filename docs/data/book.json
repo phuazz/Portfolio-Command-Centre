@@ -190,6 +190,16 @@
       "theme": "Cybersecurity",
       "type": "ETF"
     },
+    "KOID.US": {
+      "yf": "KOID",
+      "name": "KraneShares Global Humanoid Robotics",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Robotics/Automation",
+      "type": "ETF"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
