@@ -2227,8 +2227,10 @@ function renderHeadline(split, ytd) {
   }
 
   // Benchmark clauses — TWRR on both sides, same anchor date. Both house
-  // benchmarks are shown: STI and the S&amp;P 500 via the SGD-listed S27
-  // proxy, so the comparison stays in SGD terms like the portfolio curve.
+  // benchmarks are shown: STI via ES3, and the S&amp;P 500 via the S27 proxy
+  // converted to SGD at same-date FX inside getBenchmarkCurve (S27 trades in
+  // USD on SGX), so the comparison is SGD terms end to end, like the
+  // portfolio curve.
   try {
     const startDate = _perfWindowStart('YTD');
     const curve = getEquityCurve(ps, TRADES_YTD, startDate);
@@ -5511,12 +5513,18 @@ function _perfWindowStart(windowKey) {
 // Returns a benchmark cumulative-return series over the same window as the
 // equity curve, rebased to 0% at the bar BEFORE the window start (so the
 // benchmark and portfolio share the same anchor point). Uses adjclose for
-// total return, and snapshot-aware closeNow when today's bar is missing.
+// total return, converted to SGD at same-date FX via fxAtDate — the same
+// series the portfolio NAV rows are converted on — so the curve is the
+// SGD-terms total return of holding the tracker. ES3 trades in SGD (factor 1
+// throughout); S27 trades in USD on SGX, so before this conversion its
+// clause ran in USD terms (measured 2026 YTD wedge at the time of the fix:
+// USDSGD -0.28%, alpha understated by ~0.3pp — small that year, material in
+// a big-USD year). Snapshot-aware closeNow when today's bar is missing.
 //
 // sym: 'STI' (-> ES3.SI), 'SPX' (-> S27.SI). Both are existing portfolio
 // positions that double as benchmark proxies.
 const BENCHMARK_TICKERS = { STI: 'ES3', SPX: 'S27' };
-const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI)' };
+const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI, SGD terms)' };
 
 function getBenchmarkCurve(ps, sym, startDateStr) {
   if (!sym || sym === 'NONE') return null;
@@ -5525,20 +5533,31 @@ function getBenchmarkCurve(ps, sym, startDateStr) {
   const pos = ps.find(p => p.ticker === tk);
   if (!pos || !pos.history || pos.history.length === 0) return null;
 
-  // Seed = last adjclose strictly before the window (so day-0 plots as 0%).
+  // Seed = last adjclose strictly before the window (so day-0 plots as 0%),
+  // converted at its own date's FX: the anchor must carry the same currency
+  // basis as every later point, or the FX move between the seed date and the
+  // window start leaks into the first return.
   let seed = null;
   for (let i = pos.history.length - 1; i >= 0; i--) {
     const bar = pos.history[i];
     const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
     const ds = d.toISOString().slice(0, 10);
-    if (ds < startDateStr) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
+    if (ds < startDateStr) {
+      const adj = bar.adjclose != null ? bar.adjclose : bar.close;
+      seed = adj != null ? adj * fxAtDate(pos.ccy, ds) : null;
+      break;
+    }
   }
-  // Filter history bars at or after window start.
+  // Filter history bars at or after window start, converting each at its
+  // own date's FX.
   const window = [];
   for (const bar of pos.history) {
     const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
     const ds = d.toISOString().slice(0, 10);
-    if (ds >= startDateStr) window.push({ ds, adj: bar.adjclose != null ? bar.adjclose : bar.close });
+    if (ds >= startDateStr) {
+      const adj = bar.adjclose != null ? bar.adjclose : bar.close;
+      window.push({ ds, adj: adj != null ? adj * fxAtDate(pos.ccy, ds) : null });
+    }
   }
   if (window.length === 0) return null;
   const base = seed != null ? seed : window[0].adj;
@@ -5558,7 +5577,9 @@ function getBenchmarkCurve(ps, sym, startDateStr) {
   const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
   if (pos.mktPrice != null && Math.abs(pos.mktPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(pos.quoteTime, _usCloseBoundary()) && todayISO > dates[dates.length - 1]) {
     dates.push(todayISO);
-    cumReturn.push((pos.mktPrice / base - 1) * 100);
+    // The freshness test above compares quote to last bar in local currency;
+    // the appended point converts at today's FX like every other point.
+    cumReturn.push((pos.mktPrice * fxAtDate(pos.ccy, todayISO) / base - 1) * 100);
   }
   return {
     ticker: tk,
