@@ -2043,6 +2043,49 @@ function _dayWindowRecovered(boundary, prevAnchor) {
   return RECOVERED_BARS.filter(r => r.date >= prevAnchor && r.date <= boundary);
 }
 
+// Same-index tracker tripwire. Holdings that track one index (meta.indexGroup
+// in book.json — today the three STI trackers) must show near-identical
+// day-window returns on an adjusted-close basis: a correctly recognised
+// distribution moves the adjusted series with the price, so even an
+// ex-dividend day does not separate them. A spread beyond
+// TRACKER_DIVERGENCE_PP therefore means one member's window rests on a bad
+// anchor or an unrecognised ex-dividend drop. The motivating incident
+// (2026-08-13): ES3 went ex its S$0.093 distribution on a morning when
+// Yahoo's chart feed for it was broken — no dividend event published, and a
+// provisional boundary bar that hard-sets adjclose equal to close — so the
+// detachment read as a -2.21% price move while G3B and GAB sat on the index
+// at -0.3/-0.6%. Divergence alone cannot say WHICH member is wrong, so the
+// alarm withdraws nothing and adjudicates nothing: the day surfaces carry an
+// amber notice naming the members, and the reader treats the outlier with
+// caution. Group members must share a listing currency — returns are
+// compared in local terms, so a cross-currency group would alarm on
+// intraday FX.
+const TRACKER_DIVERGENCE_PP = 1.0;
+function _indexGroupDivergence(ps, mode) {
+  const byGroup = {};
+  for (const p of ps) {
+    if (!p.indexGroup || !(p.qty > 0)) continue;
+    const r = _effectiveReturnGlobalDay(p, mode);
+    if (!r || !(r.closeThen > 0)) continue;
+    // Intraday only: a member with no post-boundary information — no live
+    // tick and no completed post-boundary bar — reads exactly 0.00% by
+    // construction, because closeNow falls back to the boundary close
+    // itself. Comparing that placeholder against siblings that have traded
+    // would alarm on every active morning, so such members sit out.
+    if (mode === 'ID' && !r.snapshotFresher && r.closeNow === r.closeThen) continue;
+    (byGroup[p.indexGroup] = byGroup[p.indexGroup] || []).push({ ticker: p.ticker, retPct: (r.closeNow / r.closeThen - 1) * 100 });
+  }
+  const alarms = [];
+  for (const g of Object.keys(byGroup)) {
+    const members = byGroup[g];
+    if (members.length < 2) continue;
+    members.sort((a, b) => a.retPct - b.retPct);
+    const spreadPp = members[members.length - 1].retPct - members[0].retPct;
+    if (spreadPp > TRACKER_DIVERGENCE_PP) alarms.push({ group: g, spreadPp, members });
+  }
+  return alarms;
+}
+
 function calcSplitDayPnL(ps, trades) {
   const liveData = state.liveData || {};
   const histOf = yf => (yf && liveData[yf] && liveData[yf].history) || null;
@@ -2269,16 +2312,24 @@ function renderKPIs() {
       ? `\n\nREBUILT (${dayRec.count}, ${fmtSGD(dayRec.value)}): ${dayRec.tickers.join(', ')}. The price feed dropped a session for these names; the bake reconstructed it from intraday prints, so the window spans the right sessions and they are counted in full. The rebuilt close stops short of the closing auction — measured against known sessions, median error 0.000%, 89% inside 0.25%, worst case 1.24% on low-priced counters. Treat the last decimal as approximate, not the direction.`
       : '');
 
+  // Same-index tracker tripwire (see _indexGroupDivergence): a spread beyond
+  // the threshold names the members on the affected card. Advisory only —
+  // divergence cannot say which member is wrong, so nothing is withdrawn.
+  const divID = _indexGroupDivergence(ps, 'ID');
+  const div1D = _indexGroupDivergence(ps, '1D');
+  const divSub = a => a.length ? ` · <span class="kpi-warn">trackers split ${fmt(Math.max(...a.map(g => g.spreadPp)), 1)}pp</span>` : '';
+  const divTitle = a => a.map(g => `\n\nTRACKER DIVERGENCE (${g.group}): ${g.members.map(m => `${m.ticker} ${fmtPct(m.retPct)}`).join(', ')} — spread ${fmt(g.spreadPp, 2)}pp on an adjusted-close basis, where same-index trackers should sit together. One member's day window rests on a bad anchor or an unrecognised ex-dividend drop, and this card carries that error. Nothing is withdrawn; treat the outlier's day figures with caution until the feed heals.`).join('');
+
   const kpis = [
     { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} (${scPs.length}) · CDP ${fmtSGD(cdpValue)} (${cdpPs.length})` },
     { label:'Intraday P&L', value:fmtPL(split.intraday.pnl), num: split.intraday.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}${gapSub}`,
+      sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}${gapSub}${divSub(divID)}`,
       cls: split.intraday.pnl >= 0 ? 'pos' : 'neg',
-      title:`The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}${gapTitle}` },
+      title:`The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}${gapTitle}${divTitle(divID)}` },
     { label:'1-Day P&L', value:fmtPL(split.prevDay.pnl), num: split.prevDay.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.prevDay.pct)} · prior global day to US close${gapSub}`,
+      sub:`${fmtPct(split.prevDay.pct)} · prior global day to US close${gapSub}${divSub(div1D)}`,
       cls: split.prevDay.pnl >= 0 ? 'pos' : 'neg',
-      title:`The previous complete global trading day, ending at the most recent New York close — yesterday's Asian session plus the US session that closed this morning SGT. Stable until the next US close. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}${gapTitle}` },
+      title:`The previous complete global trading day, ending at the most recent New York close — yesterday's Asian session plus the US session that closed this morning SGT. Stable until the next US close. Equity + cash basis; equity sleeve alone: ${fmtPct(split.prevDay.equityPct)}${gapTitle}${divTitle(div1D)}` },
     pnlKpi('1-Week P&L', w1),
     pnlKpi('1-Month P&L', m1),
     { label:'YTD P&L', value:fmtPL(ytd.totalDollar), num: ytd.totalDollar, fmt: fmtPL, sub:fmtPct(ytd.portfolioRetPct), cls: ytd.totalDollar >= 0 ? 'pos' : 'neg', title:'Equity + cash basis. Cash was ~zero at 1 Jan, so this equals the equity-sleeve YTD return.' },
@@ -6219,6 +6270,10 @@ function renderAttribution(el) {
     .sort((a, b) => (b.incomeDollar || 0) - (a.incomeDollar || 0)).slice(0, 6);
   const _ts = A.totalStart || 0;
   const _sign = v => v >= 0 ? 'var(--g)' : 'var(--r)';
+  // Tracker tripwire on the day windows only — longer horizons route through
+  // the FIFO window engine, and same-index members legitimately drift there
+  // (fees, replication and distribution timing compound over weeks).
+  const _trackerAlarms = (horizonDef.bars === 'ID' || horizonDef.bars === '1D') ? _indexGroupDivergence(ps, horizonDef.bars) : [];
   const returnDriversCard = `
     <div class="card mb">
       <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Return Drivers · ${horizonDef.label} — Price + Income + FX = Total</div></div>
@@ -6232,6 +6287,10 @@ function renderAttribution(el) {
           <div style="display:flex;align-items:center;font-size:20px;color:var(--t4);font-weight:300">=</div>
           ${_rdTile('Total', A.totalDollar || 0, A.portfolioRetPct || 0, _sign(A.totalDollar || 0), 'SGD total return')}
         </div>
+        ${_trackerAlarms.map(g => `
+        <div style="margin:2px 0 6px;padding:8px 12px;background:var(--bg3);border:1px solid var(--bd);border-left:3px solid var(--a-text);border-radius:6px;font-size:10.5px;line-height:1.5;color:var(--t2)">
+          <strong style="color:var(--a-text)">&#9888; Same-index trackers disagree (${g.group}):</strong> ${g.members.map(m => `${m.ticker} ${fmtPct(m.retPct)}`).join(' · ')} — spread ${fmt(g.spreadPp, 2)}pp on an adjusted-close basis. One member's anchor or income leg is suspect — a dropped session or an unrecognised ex-dividend — so treat the outlier's ${horizonDef.label} figures with caution.
+        </div>`).join('')}
         ${_incThemes.length ? `
         <div style="margin-top:12px">
           <div style="font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:0.6px;font-weight:600;margin-bottom:6px">Where the income comes from — top dividend contributors</div>

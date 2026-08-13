@@ -474,6 +474,7 @@
       "availLTV": 0,
       "theme": "SG Broad Market",
       "type": "ETF",
+      "indexGroup": "STI",
       "account": "CDP",
       "mktPriceSnap": 4.705
     },
@@ -486,6 +487,7 @@
       "availLTV": 0,
       "theme": "SG Broad Market",
       "type": "ETF",
+      "indexGroup": "STI",
       "account": "CDP",
       "mktPriceSnap": 5.13
     },
@@ -655,6 +657,7 @@
       "availLTV": 0,
       "theme": "SG Broad Market",
       "type": "ETF",
+      "indexGroup": "STI",
       "account": "CDP",
       "mktPriceSnap": 5.023
     },
