@@ -2429,6 +2429,21 @@ function renderWhatChanged() {
     || (ps.find(p => p.ticker === tk) || {}).name || tk);
   const label = (tk, nm) => `<strong title="${tk}">${nm || nameOf(tk)}</strong>`;
 
+  // Tracker tripwire markers (see _indexGroupDivergence): a member of an
+  // alarming group is marked wherever its day figure prints, so the reader
+  // never meets the bare number on this card either. Inline colour rather
+  // than the kpi-warn class, which is scoped under .kpi-sub.
+  const _wcDivMap = mode => {
+    const map = {};
+    for (const g of _indexGroupDivergence(ps, mode)) for (const m of g.members) map[m.ticker] = g;
+    return map;
+  };
+  let idDiv = {}, d1Div = {};
+  try { idDiv = _wcDivMap('ID'); d1Div = _wcDivMap('1D'); } catch (e) { console.error('What Changed tripwire markers failed:', e); }
+  const divBadge = (tk, map) => map[tk]
+    ? `<span style="color:var(--a-text);font-weight:600" title="Same-index trackers disagree (${map[tk].group}): spread ${fmt(map[tk].spreadPp, 2)}pp on an adjusted-close basis — this figure may rest on a bad anchor or an unrecognised ex-dividend drop. See the Intraday P&amp;L card caveat.">&#9888;</span>`
+    : '';
+
   let windowStart = null;   // fills and signal-event window: (prev weekday anchor, now]
   if (haveDigest) { try { windowStart = _prevWeekdayAnchor(_usCloseBoundary()); } catch (e) {} }
 
@@ -2440,7 +2455,7 @@ function renderWhatChanged() {
     const up = r.contribPp > 0;
     const ret = (r.retPct != null && isFinite(r.retPct)) ? ` · ${fmtPct(r.retPct)} on the day` : '';
     items.push({ icon: up ? '▲' : '▼', cls: up ? 'pos' : 'neg',
-      html: `${label(r.pos.ticker, r.pos.name)}${r.isClosed ? ' (closed in window)' : ''} ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(r.dollar)}</span> (${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${ret})` });
+      html: `${label(r.pos.ticker, r.pos.name)}${r.isClosed ? ' (closed in window)' : ''} ${up ? 'added' : 'took'} <span class="wc-num ${up ? 'pos' : 'neg'}">${fmtPL(r.dollar)}</span> (${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${ret})${divBadge(r.pos.ticker, d1Div)}` });
   }
 
   if (haveDigest && Math.abs(out.fxContribPp) >= FX_PP) {
@@ -2513,6 +2528,7 @@ function renderWhatChanged() {
     const hasRet = r.retPct != null && isFinite(r.retPct);
     return `<span class="wc-id-item" title="${r.pos.ticker}${r.pos.theme ? ' · ' + r.pos.theme : ''}"><strong>${r.pos.name || r.pos.ticker}</strong>`
       + (hasRet ? `<span class="wc-num ${r.retPct >= 0 ? 'pos' : 'neg'}">${fmtPct(r.retPct)}</span>` : '')
+      + divBadge(r.pos.ticker, idDiv)
       + `<span class="wc-dim">${(r.contribPp >= 0 ? '+' : '') + r.contribPp.toFixed(2)} pp${r.isClosed ? ' · closed' : ''}</span></span>`;
   };
   const idLine = (arr, icon, cls) => `<div class="wc-id"><span class="wc-icon ${cls}">${icon}</span>${arr.map(idChip).join('')}</div>`;
