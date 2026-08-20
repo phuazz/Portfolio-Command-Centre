@@ -200,6 +200,16 @@
       "theme": "Robotics/Automation",
       "type": "ETF"
     },
+    "ARKG.US": {
+      "yf": "ARKG",
+      "name": "ARK Genomic Revolution",
+      "exchange": "BATS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Biotech",
+      "type": "ETF"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
