@@ -210,6 +210,16 @@
       "theme": "Biotech",
       "type": "ETF"
     },
+    "MRNA.US": {
+      "yf": "MRNA",
+      "name": "Moderna",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 60,
+      "theme": "Biotech",
+      "type": "Stock"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
