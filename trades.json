@@ -141,5 +141,7 @@
   {"d": "2026-08-10", "t": "SNDK.US", "a": "B", "q": 7, "p": 1265, "ccy": "USD", "yf": "SNDK", "th": "US Semis"},
   {"d": "2026-08-12", "t": "KOID.US", "a": "B", "q": 220, "p": 39.4, "ccy": "USD", "yf": "KOID", "th": "Robotics/Automation"},
   {"d": "2026-08-19", "t": "ARKG.US", "a": "B", "q": 180, "p": 46.2, "ccy": "USD", "yf": "ARKG", "th": "Biotech"},
-  {"d": "2026-08-19", "t": "DELL.US", "a": "S", "q": 20, "p": 429.535, "ccy": "USD", "yf": "DELL", "th": "US Tech"}
+  {"d": "2026-08-19", "t": "DELL.US", "a": "S", "q": 20, "p": 429.535, "ccy": "USD", "yf": "DELL", "th": "US Tech"},
+  {"d": "2026-08-21", "t": "MRNA.US", "a": "B", "q": 50, "p": 151.7, "ccy": "USD", "yf": "MRNA", "th": "Biotech"},
+  {"d": "2026-08-21", "t": "MU.US", "a": "S", "q": 10, "p": 963.76, "ccy": "USD", "yf": "MU", "th": "US Semis"}
 ]
