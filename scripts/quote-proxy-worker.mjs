@@ -49,6 +49,13 @@
 // route is fine and avoids adding tooling to this repository, which is why no
 // wrangler.toml is committed here.
 //
+// The .mjs extension is for the benefit of the local test only — this repository
+// is CommonJS by default, and Node must be told the file is an ES module before
+// quote-proxy-worker.test.mjs can import it. Cloudflare is indifferent to the
+// extension. Run the test after any edit to either allowlist below:
+//
+//   node scripts/quote-proxy-worker.test.mjs
+//
 // VERIFYING IT WORKS, from the browser console on the live page:
 //
 //   await (await fetch('https://pcc-quote-proxy.<subdomain>.workers.dev/?url='

@@ -535,7 +535,7 @@ const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours before incremental sta
 // and the page is entirely client-side, so a key shipped here is a published key.
 //
 // QUOTE_PROXY is therefore a self-hosted Cloudflare Worker. Source and
-// deployment notes live in scripts/quote-proxy-worker.js; it forwards to
+// deployment notes live in scripts/quote-proxy-worker.mjs; it forwards to
 // query1.finance.yahoo.com and pins Access-Control-Allow-Origin to this origin.
 // Set it to the deployed workers.dev URL, no trailing path. Left empty, live
 // quotes are simply unavailable — and the page then serves baked data and says
