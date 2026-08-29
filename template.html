@@ -98,6 +98,9 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 .pill-date { background:var(--bg3); color:var(--t2); border:1px solid var(--bd); }
 .pill-live { background:var(--g-bg); color:var(--g); border:1px solid rgba(26,135,84,0.2); }
 .pill-loading { background:var(--a-bg); color:var(--a); border:1px solid rgba(180,83,9,0.2); animation:pulse 1.5s infinite; }
+/* Static amber. Same tokens as pill-loading without the pulse: a degraded or
+   dead quote feed is a settled state to be read, not an action in progress. */
+.pill-warn { background:var(--a-bg); color:var(--a); border:1px solid rgba(180,83,9,0.2); }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
 
 /* ─── HEADLINE SENTENCE ───────────────── */
@@ -521,16 +524,43 @@ let RECOVERED_BARS = [];
 const CACHE_KEY = 'pcc_cache_v5';
 const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours before incremental stale
 
-// CORS proxies, fastest-first. corsproxy.io (current ?url= API) is the primary —
-// browser-origin requests succeed in ~0.3s and a 20-request burst returned 20/20.
-// allorigins is kept as a fallback (intermittently up). The previously-listed
-// codetabs (now HTTP 400), thingproxy and cors-anywhere are removed — they were
-// dead weight that each cost a timeout before failover. Verified from a browser
-// 2026-06-09; server-side (curl) is blocked by corsproxy's free tier, browser is not.
+// Quote transport. Both public CORS proxies this page was built on have failed.
+// Measured from this origin on 2026-08-28: corsproxy.io has withdrawn its
+// anonymous free tier and answers HTTP 401 ("A valid API key is required"), and
+// api.allorigins.win returns no Access-Control-Allow-Origin header at all. Six
+// further public proxies were probed in the same pass — codetabs, thingproxy,
+// cors.lol, cors.workers.dev, allorigins /get, whateverorigin — and not one
+// served the Yahoo payload. A public proxy is no longer a viable transport, and
+// buying a corsproxy.io key does not rescue it either: this repository is public
+// and the page is entirely client-side, so a key shipped here is a published key.
+//
+// QUOTE_PROXY is therefore a self-hosted Cloudflare Worker. Source and
+// deployment notes live in scripts/quote-proxy-worker.js; it forwards to
+// query1.finance.yahoo.com and pins Access-Control-Allow-Origin to this origin.
+// Set it to the deployed workers.dev URL, no trailing path. Left empty, live
+// quotes are simply unavailable — and the page then serves baked data and says
+// so, which is the entire point of the freshness guard below. A dead transport
+// must read as stale. It must never read as live.
+const QUOTE_PROXY = '';
+
+// The withdrawn public proxies are retained as a trailing fallback only. Both
+// fail fast — a 401 and an immediate CORS rejection, not a timeout — so they
+// cost almost nothing per request, and the page self-heals if either restores
+// anonymous access. Neither is the intended path.
 const PROXIES = [
+  ...(QUOTE_PROXY ? [url => `${QUOTE_PROXY.replace(/\/+$/, '')}/?url=${encodeURIComponent(url)}`] : []),
   url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
+
+// Live-fetch telemetry, read by the freshness guard in refreshPrices and by the
+// Intraday card. It counts genuine transport successes and nothing else. The
+// last-good fallback in fetchAllPrices deliberately repopulates a failed ticker
+// from baked data, so the size of the map that function returns says nothing
+// about whether a single quote actually arrived. Conflating the two is precisely
+// what let a total feed outage render as "54 LIVE" on 2026-08-28, with every
+// headline figure a day stale and nothing on the page disagreeing.
+let _lastFetch = { ok: 0, failed: 0, total: 0, at: null };
 
 function loadCache() {
   try {
@@ -807,7 +837,9 @@ async function fetchAllPrices() {
     ...fxSymbols.map(sym => ({ sym, range: '5d', mode: 'fx' })),
   ];
 
-  let done = 0, failed = 0;
+  // okCount is the freshness counter: incremented only where the transport
+  // genuinely returned a parsed payload, never on the last-good fallback below.
+  let done = 0, failed = 0, okCount = 0;
   const concurrency = 12;   // higher parallelism — fetches are tiny 7d windows now
   const workQueue = [...queue];
 
@@ -848,6 +880,7 @@ async function fetchAllPrices() {
           }
           continue;
         }
+        okCount++;
 
         if (item.mode === 'fx') {
           results[item.sym] = data;
@@ -885,6 +918,10 @@ async function fetchAllPrices() {
     })());
   }
   await Promise.all(workers);
+
+  // Publish the freshness telemetry before the results are handed back, so the
+  // pill and the Intraday card describe THIS poll rather than the merged map.
+  _lastFetch = { ok: okCount, failed, total: totalFetches, at: Date.now() };
 
   // No localStorage write: the baked PRELOADED_HISTORY is the persistent
   // full-history source (refreshed daily by the pipeline). The live refresh only
@@ -2252,7 +2289,13 @@ function renderHeadline(split, ytd) {
     }
   } catch (e) { console.error('headline benchmark clause failed:', e); }
 
-  if (split && split.intraday && isFinite(split.intraday.pnl)) {
+  // The intraday clause carries the same guard as the Intraday card: with no
+  // price struck after the prior US close there is nothing to report, and
+  // "intraday +S$0" is a positive claim of a flat book rather than an absence of
+  // data. The clause is dropped entirely rather than softened — the card and the
+  // header pill already say why, and a headline sentence is the wrong place to
+  // explain a feed outage.
+  if (split && split.intraday && isFinite(split.intraday.pnl) && split.intraday.liveCount > 0) {
     line += line ? '; ' : '';
     line += `intraday <span class="hs-num ${split.intraday.pnl >= 0 ? 'hs-pos' : 'hs-neg'}">${fmtPL(split.intraday.pnl)}</span>`;
   }
@@ -2320,14 +2363,27 @@ function renderKPIs() {
   const divID = _indexGroupDivergence(ps, 'ID');
   const div1D = _indexGroupDivergence(ps, '1D');
   const divSub = a => a.length ? ` · <span class="kpi-warn">trackers split ${fmt(Math.max(...a.map(g => g.spreadPp)), 1)}pp</span>` : '';
+
+  // Intraday rests entirely on prices struck after the prior US close. When not
+  // one arrived — a dead quote transport, or simply a global weekend — the card
+  // has nothing to measure, and printing +S$0 would assert the book was flat,
+  // which is the single claim the absence of data cannot support. Show a dash,
+  // name the vintage, and suppress the tween (num null) so the figure does not
+  // animate to a number that was never observed.
+  const idDark = split.intraday.liveCount === 0;
+  const idBoundary = _usCloseBoundary();
   const divTitle = a => a.map(g => `\n\nTRACKER DIVERGENCE (${g.group}): ${g.members.map(m => `${m.ticker} ${fmtPct(m.retPct)}`).join(', ')} — spread ${fmt(g.spreadPp, 2)}pp on an adjusted-close basis, where same-index trackers should sit together. One member's day window rests on a bad anchor or an unrecognised ex-dividend drop, and this card carries that error. Nothing is withdrawn; treat the outlier's day figures with caution until the feed heals.`).join('');
 
   const kpis = [
     { label:'Total Market Value', value:fmtSGD(state.totalValueSGD), num: state.totalValueSGD, fmt: fmtSGD, sub:`Brokerage ${fmtSGD(scValue)} (${scPs.length}) · CDP ${fmtSGD(cdpValue)} (${cdpPs.length})` },
-    { label:'Intraday P&L', value:fmtPL(split.intraday.pnl), num: split.intraday.pnl, fmt: fmtPL,
-      sub:`${fmtPct(split.intraday.pct)} · today since US close${split.intraday.liveCount ? ` · ${split.intraday.liveCount} names` : ''}${gapSub}${divSub(divID)}`,
-      cls: split.intraday.pnl >= 0 ? 'pos' : 'neg',
-      title:`The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}${gapTitle}${divTitle(divID)}` },
+    { label:'Intraday P&L', value: idDark ? '—' : fmtPL(split.intraday.pnl), num: idDark ? null : split.intraday.pnl, fmt: fmtPL,
+      sub: idDark
+        ? `<span class="kpi-warn">no live quotes</span> · baked to ${PRELOADED_DATE || 'last close'}${gapSub}`
+        : `${fmtPct(split.intraday.pct)} · today since US close · ${split.intraday.liveCount} names${gapSub}${divSub(divID)}`,
+      cls: idDark ? '' : (split.intraday.pnl >= 0 ? 'pos' : 'neg'),
+      title: idDark
+        ? `Not measurable. This card spans the prior New York close (16:00 NY on ${idBoundary}) to now, and no price on the page was struck after that instant — so every figure here rests on the ${PRELOADED_DATE || 'last baked'} close. Either the quote transport is down (check the header pill) or no market has traded since. Nothing is asserted rather than reporting a flat book, which the absence of data cannot support. The longer windows are unaffected: they close on baked sessions and remain correct.${gapTitle}`
+        : `The current global trading day — Asia open through the US close — anchored at the prior New York close (16:00 NY). Today's completed Asian sessions plus live ticks for markets in session. Equity + cash basis; equity sleeve alone: ${fmtPct(split.intraday.equityPct)}${gapTitle}${divTitle(divID)}` },
     { label:'1-Day P&L', value:fmtPL(split.prevDay.pnl), num: split.prevDay.pnl, fmt: fmtPL,
       sub:`${fmtPct(split.prevDay.pct)} · prior global day to US close${gapSub}${divSub(div1D)}`,
       cls: split.prevDay.pnl >= 0 ? 'pos' : 'neg',
@@ -2745,7 +2801,11 @@ function renderPositions(el) {
     </div>
     ${bondSection}
     <div style="margin-top:8px;font-size:10px;color:var(--t4);display:flex;justify-content:space-between">
-      <span>Data: ${state.dataSource==='live'?'Yahoo Finance (live)':'Snapshot (14 Feb 2026)'} · FX: USD/SGD ${fmt(FX.USD,4)} · HKD/SGD ${fmt(FX.HKD,4)} · JPY/SGD ${fmt(FX.JPY,6)}</span>
+      <span>Data: ${
+        state.dataSource === 'live' ? 'Yahoo Finance (live)'
+        : state.dataSource === 'partial' ? `Yahoo Finance (partial — ${_lastFetch.failed} of ${_lastFetch.total} quotes did not arrive)`
+        : `Baked close ${PRELOADED_DATE || '(vintage unknown)'}`
+      } · FX: USD/SGD ${fmt(FX.USD,4)} · HKD/SGD ${fmt(FX.HKD,4)} · JPY/SGD ${fmt(FX.JPY,6)}</span>
       <span>Brokerage = P&L shown · CDP = Trend score shown (no cost basis) · Bonds excluded from trend analysis</span>
     </div>
   `;
@@ -4287,6 +4347,13 @@ function _effectiveReturnGlobalDay(p, mode) {
     // Timestamp gate — see _quoteIsPostBoundary: a pre-boundary print (stale
     // thin-name quote, weekend) is not an intraday tick.
     const fresher = p.mktPrice != null && Math.abs(p.mktPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(p.quoteTime, boundary);
+    // Same "moved" predicate as calcSplitDayPnL: the window needs either a live
+    // tick past the boundary or a completed post-boundary session. With neither,
+    // closeNow and closeThen are the same bar and the row would read exactly
+    // 0.00% — indistinguishable from a name that genuinely did not move, and a
+    // claim the absence of a quote cannot support. Null is the existing no-row
+    // signal, so the panel omits the name rather than asserting it was flat.
+    if (!fresher && iU >= n - 1) return null;
     const closeNow = fresher ? p.mktPrice : lastAdj;
     const closeThen = adj(h[iU]);
     if (!isFinite(closeNow) || !isFinite(closeThen) || closeThen <= 0) return null;
@@ -5966,11 +6033,27 @@ function renderAttribution(el) {
   }
 
   if (!A || A.covered === 0) {
+    // Two distinct causes reach this branch and they need different words. If no
+    // position carries history at all, the data files are still loading. If
+    // history is present but the horizon covered nothing, the window itself has
+    // no measurable move — for Intraday that means no price was struck after the
+    // prior US close, which is a statement about the quote feed or the clock,
+    // not about the bake. The loading message shipped for both cases, sending
+    // the reader to look for a file that had already loaded.
+    const histLoaded = ps.some(p => p.history && p.history.length > 1);
+    const msg = !histLoaded
+      ? 'Waiting for price history to load. Once <code>data/history.json</code> is in, the attribution decomposes 1D / 1W / 1M P&amp;L by theme.'
+      : horizon === 'ID'
+        ? 'No intraday attribution to show. Nothing on the page is priced later than the prior New York close, so no position has a measurable move on the current global trading day — either the quote feed is down or no market has traded since. The header pill says which. Nothing is shown rather than a table of zeroes, which would read as a flat book. The other horizons are unaffected.'
+        : 'No position carries a measurable move over this window.';
     el.innerHTML = `
       <div class="card mb">
-        <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--t3)"></span>Performance Attribution</div></div>
-        <div class="card-body" style="text-align:center;padding:48px 16px;color:var(--t3);font-size:13px">
-          Waiting for price history to load. Once <code>data/history.json</code> is in, the attribution decomposes 1D / 1W / 1M P&amp;L by theme.
+        <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div class="card-title"><span class="indicator" style="background:var(--t3)"></span>Performance Attribution — ${horizonDef.label}</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${ATTR_HORIZONS.map(h => `<button class="fbtn ${h.key === horizon ? 'active' : ''}" onclick="setAttrHorizon('${h.key}')">${h.label}</button>`).join('')}</div>
+        </div>
+        <div class="card-body" style="text-align:center;padding:48px 16px;color:var(--t3);font-size:13px;line-height:1.55;max-width:760px;margin:0 auto">
+          ${msg}
         </div>
       </div>`;
     return;
@@ -6641,16 +6724,35 @@ window.refreshPrices = async function() {
       // dropping out and reverting to baked. Combined with the last-good fallback
       // in fetchAllPrices, the headline only moves on genuine price ticks.
       state.liveData = { ...state.liveData, ...liveData };
-      state.dataSource = 'live';
       enrichAll();
       renderKPIs();
       invalidateAllPanes();
-      const sigCount = state.positions.filter(p => p.trendSignals && p.trendSignals.source === 'live').length;
+      // Freshness guard. The former pill read a count of positions carrying
+      // history-derived trend signals and stamped it "LIVE", which is a property
+      // of the bake, not of the quote feed: on 2026-08-28 it read "54 LIVE" while
+      // every one of the 54 fetches had failed. liveCount cannot serve either —
+      // the last-good fallback repopulates the map on failure, so it is non-zero
+      // during a total outage. _lastFetch.ok is the only figure that counts
+      // quotes which actually arrived, so the pill is derived from that alone.
       // Stamp the refresh time on the header pill (runtime clock — display of
       // "now", not date arithmetic). Singapore locale, 24-hour.
       const refreshedAt = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-      pill.className = 'pill pill-live';
-      pill.textContent = `● ${sigCount} LIVE · ${refreshedAt}`;
+      if (_lastFetch.ok === 0) {
+        state.dataSource = 'stale';
+        pill.className = 'pill pill-warn';
+        pill.style.background = '';
+        pill.textContent = `⚠ QUOTE FEED DOWN · baked ${PRELOADED_DATE || 'close'}`;
+      } else if (_lastFetch.ok < _lastFetch.total) {
+        state.dataSource = 'partial';
+        pill.className = 'pill pill-warn';
+        pill.style.background = '';
+        pill.textContent = `◐ ${_lastFetch.ok}/${_lastFetch.total} LIVE · ${refreshedAt}`;
+      } else {
+        state.dataSource = 'live';
+        pill.className = 'pill pill-live';
+        pill.style.background = '';
+        pill.textContent = `● ${_lastFetch.ok} LIVE · ${refreshedAt}`;
+      }
     } else {
       pill.className = 'pill pill-date';
       pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : '📊 baked';
