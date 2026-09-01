@@ -541,7 +541,7 @@ const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours before incremental sta
 // quotes are simply unavailable — and the page then serves baked data and says
 // so, which is the entire point of the freshness guard below. A dead transport
 // must read as stale. It must never read as live.
-const QUOTE_PROXY = '';
+const QUOTE_PROXY = 'https://pcc-quote-proxy.phuaz.workers.dev';
 
 // The withdrawn public proxies are retained as a trailing fallback only. Both
 // fail fast — a 401 and an immediate CORS rejection, not a timeout — so they
