@@ -1,29 +1,29 @@
 {
   "date": "1 Sept 2026",
-  "generatedAt": "2026-09-01T14:26:31.762Z",
+  "generatedAt": "2026-09-01T22:59:28.665Z",
   "tickers": [
     "4004.T",
-    "SGM.AX",
     "2338.HK",
     "0992.HK",
-    "0981.HK",
+    "SGM.AX",
+    "3010.HK",
     "3173.HK",
     "3750.HK",
     "1615.T",
+    "0981.HK",
     "COPX",
     "ARGT",
-    "3010.HK",
     "GDX",
     "SIL",
-    "KOID",
     "LIT",
     "CIBR",
-    "ARKG",
-    "MRNA",
+    "KOID",
     "MOO",
-    "TAN",
+    "MRNA",
+    "ARKG",
     "REMX",
     "FLNC",
+    "TAN",
     "SPCX",
     "TLN",
     "CPRX",
@@ -35,81 +35,75 @@
     "NVDA",
     "SNDK",
     "MU",
-    "AKAM",
-    "DELL",
-    "TSLA",
-    "MSFT",
     "OXY",
+    "AKAM",
+    "TSLA",
+    "DELL",
+    "MSFT",
     "BNY",
-    "LLY",
     "SPHR",
-    "EXV3.DE",
     "SOI.PA",
     "GAB.SI",
+    "EXV3.DE",
+    "LLY",
+    "J69U.SI",
     "G3B.SI",
     "D05.SI",
     "T6I.SI",
-    "J69U.SI",
-    "BN4.SI",
     "AJBU.SI",
-    "K71U.SI",
     "YYY.SI",
+    "BN4.SI",
     "CJLU.SI",
+    "K71U.SI",
     "O39.SI",
-    "P52.SI",
     "S58.SI",
     "5E2.SI",
     "ES3.SI",
     "ICU.SI",
     "U11.SI",
-    "9660.HK",
     "D07.SI",
     "S27.SI",
-    "MAR",
-    "XBI",
+    "P52.SI",
+    "9660.HK",
     "SLV",
     "UBER",
     "XPEV",
-    "KWEB",
-    "BIDU",
-    "GREK",
-    "9961.HK",
-    "XHB",
-    "2525.HK",
+    "XBI",
+    "MAR",
     "TBF",
+    "KWEB",
+    "9961.HK",
+    "GREK",
+    "BIDU",
+    "2525.HK",
     "PHAG.L",
-    "SXLE.L",
-    "0700.HK",
-    "NOK",
-    "EWY",
-    "SKM",
-    "PLTR",
-    "NASA",
     "IBIT",
+    "XHB",
+    "0700.HK",
+    "SXLE.L",
+    "NOK",
+    "PLTR",
+    "SKM",
+    "EWY",
+    "NASA",
     "LIFE",
-    "EWZ",
     "IEZ",
-    "GE",
-    "9988.HK"
+    "EWZ",
+    "9988.HK",
+    "GE"
   ],
   "fxSymbols": [
-    "HKDSGD=X",
-    "USDSGD=X",
-    "AUDSGD=X",
     "EURSGD=X",
+    "HKDSGD=X",
+    "AUDSGD=X",
+    "USDSGD=X",
     "JPYSGD=X"
   ],
   "tickerCount": 89,
   "fxCount": 5,
-  "totalBars": 185673,
+  "totalBars": 185639,
   "dataGaps": [],
   "recoveredBars": [
-    {
-      "yf": "3010.HK",
-      "date": "2026-08-31",
-      "close": 90.1,
-      "prints": 19
-    },
     {
       "yf": "COPX",
       "date": "2026-08-28",
@@ -117,22 +111,10 @@
       "prints": 78
     },
     {
-      "yf": "ARGT",
-      "date": "2026-08-28",
-      "close": 93.79,
-      "prints": 52
-    },
-    {
       "yf": "SIL",
       "date": "2026-08-28",
       "close": 99.11,
       "prints": 78
-    },
-    {
-      "yf": "KOID",
-      "date": "2026-08-28",
-      "close": 36.24,
-      "prints": 65
     },
     {
       "yf": "LIT",
@@ -153,21 +135,9 @@
       "prints": 78
     },
     {
-      "yf": "MOO",
-      "date": "2026-08-28",
-      "close": 85.01,
-      "prints": 69
-    },
-    {
       "yf": "TAN",
       "date": "2026-08-28",
       "close": 48.64,
-      "prints": 78
-    },
-    {
-      "yf": "REMX",
-      "date": "2026-08-28",
-      "close": 77.31,
       "prints": 78
     },
     {
@@ -189,46 +159,16 @@
       "prints": 78
     },
     {
-      "yf": "LLY",
-      "date": "2026-08-28",
-      "close": 1173.96,
-      "prints": 78
-    },
-    {
       "yf": "SPHR",
       "date": "2026-08-28",
       "close": 141.51,
       "prints": 78
     },
     {
-      "yf": "XBI",
+      "yf": "LLY",
       "date": "2026-08-28",
-      "close": 162.39,
+      "close": 1173.96,
       "prints": 78
-    },
-    {
-      "yf": "GAB.SI",
-      "date": "2026-08-31",
-      "close": 5.528,
-      "prints": 58
-    },
-    {
-      "yf": "G3B.SI",
-      "date": "2026-08-31",
-      "close": 5.93,
-      "prints": 72
-    },
-    {
-      "yf": "YYY.SI",
-      "date": "2026-08-31",
-      "close": 1.8,
-      "prints": 17
-    },
-    {
-      "yf": "S27.SI",
-      "date": "2026-08-31",
-      "close": 769,
-      "prints": 13
     }
   ]
 }
