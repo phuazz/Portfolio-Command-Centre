@@ -1,12 +1,12 @@
 {
   "date": "1 Sept 2026",
-  "generatedAt": "2026-09-01T00:22:04.176Z",
+  "generatedAt": "2026-09-01T02:53:42.761Z",
   "tickers": [
+    "4004.T",
     "3010.HK",
-    "SGM.AX",
     "2338.HK",
     "0992.HK",
-    "4004.T",
+    "SGM.AX",
     "3750.HK",
     "3173.HK",
     "0981.HK",
@@ -20,36 +20,36 @@
     "KOID",
     "ARKG",
     "MRNA",
-    "MOO",
     "REMX",
+    "MOO",
     "TAN",
-    "FLNC",
     "SPCX",
+    "FLNC",
     "TLN",
     "CPRX",
     "XLE",
     "GRID",
     "IGV",
     "INTC",
+    "SNDK",
     "MRVL",
     "MU",
-    "SNDK",
     "NVDA",
     "DELL",
     "AKAM",
+    "TSLA",
     "MSFT",
     "OXY",
-    "TSLA",
     "BNY",
-    "LLY",
     "SPHR",
     "SOI.PA",
+    "LLY",
     "EXV3.DE",
     "GAB.SI",
     "G3B.SI",
     "D05.SI",
-    "J69U.SI",
     "T6I.SI",
+    "J69U.SI",
     "BN4.SI",
     "AJBU.SI",
     "YYY.SI",
@@ -57,51 +57,187 @@
     "CJLU.SI",
     "O39.SI",
     "S58.SI",
-    "P52.SI",
     "5E2.SI",
+    "P52.SI",
     "ES3.SI",
     "U11.SI",
     "ICU.SI",
-    "9660.HK",
     "S27.SI",
     "D07.SI",
-    "MAR",
-    "SLV",
+    "9660.HK",
     "XBI",
-    "XPEV",
+    "MAR",
     "UBER",
+    "SLV",
+    "XPEV",
     "KWEB",
     "BIDU",
     "TBF",
-    "9961.HK",
     "GREK",
-    "XHB",
+    "9961.HK",
     "2525.HK",
+    "XHB",
     "PHAG.L",
     "IBIT",
     "SXLE.L",
     "0700.HK",
-    "NOK",
-    "PLTR",
     "EWY",
+    "NOK",
     "SKM",
+    "PLTR",
     "NASA",
     "9988.HK",
+    "EWZ",
     "LIFE",
     "IEZ",
-    "EWZ",
     "GE"
   ],
   "fxSymbols": [
-    "EURSGD=X",
     "HKDSGD=X",
-    "USDSGD=X",
     "AUDSGD=X",
+    "EURSGD=X",
+    "USDSGD=X",
     "JPYSGD=X"
   ],
   "tickerCount": 89,
   "fxCount": 5,
-  "totalBars": 185627,
-  "dataGaps": [],
-  "recoveredBars": []
+  "totalBars": 185625,
+  "dataGaps": [
+    {
+      "yf": "3173.HK",
+      "date": "2026-08-31"
+    },
+    {
+      "yf": "D07.SI",
+      "date": "2026-08-31"
+    }
+  ],
+  "recoveredBars": [
+    {
+      "yf": "3010.HK",
+      "date": "2026-08-31",
+      "close": 90.1,
+      "prints": 19
+    },
+    {
+      "yf": "ARGT",
+      "date": "2026-08-28",
+      "close": 93.79,
+      "prints": 52
+    },
+    {
+      "yf": "COPX",
+      "date": "2026-08-28",
+      "close": 94.445,
+      "prints": 78
+    },
+    {
+      "yf": "SIL",
+      "date": "2026-08-28",
+      "close": 99.11,
+      "prints": 78
+    },
+    {
+      "yf": "LIT",
+      "date": "2026-08-28",
+      "close": 76.095,
+      "prints": 65
+    },
+    {
+      "yf": "CIBR",
+      "date": "2026-08-28",
+      "close": 98.56,
+      "prints": 78
+    },
+    {
+      "yf": "KOID",
+      "date": "2026-08-28",
+      "close": 36.24,
+      "prints": 65
+    },
+    {
+      "yf": "ARKG",
+      "date": "2026-08-28",
+      "close": 47.6,
+      "prints": 78
+    },
+    {
+      "yf": "REMX",
+      "date": "2026-08-28",
+      "close": 77.31,
+      "prints": 78
+    },
+    {
+      "yf": "MOO",
+      "date": "2026-08-28",
+      "close": 85.01,
+      "prints": 69
+    },
+    {
+      "yf": "TAN",
+      "date": "2026-08-28",
+      "close": 48.64,
+      "prints": 78
+    },
+    {
+      "yf": "GRID",
+      "date": "2026-08-28",
+      "close": 179.21,
+      "prints": 78
+    },
+    {
+      "yf": "OXY",
+      "date": "2026-08-28",
+      "close": 59.095,
+      "prints": 78
+    },
+    {
+      "yf": "BNY",
+      "date": "2026-08-28",
+      "close": 162.5,
+      "prints": 78
+    },
+    {
+      "yf": "SPHR",
+      "date": "2026-08-28",
+      "close": 141.51,
+      "prints": 78
+    },
+    {
+      "yf": "LLY",
+      "date": "2026-08-28",
+      "close": 1173.96,
+      "prints": 78
+    },
+    {
+      "yf": "XBI",
+      "date": "2026-08-28",
+      "close": 162.39,
+      "prints": 78
+    },
+    {
+      "yf": "GAB.SI",
+      "date": "2026-08-31",
+      "close": 5.528,
+      "prints": 58
+    },
+    {
+      "yf": "G3B.SI",
+      "date": "2026-08-31",
+      "close": 5.93,
+      "prints": 72
+    },
+    {
+      "yf": "YYY.SI",
+      "date": "2026-08-31",
+      "close": 1.8,
+      "prints": 17
+    },
+    {
+      "yf": "S27.SI",
+      "date": "2026-08-31",
+      "close": 769,
+      "prints": 13
+    }
+  ]
 }
