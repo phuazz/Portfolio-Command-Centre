@@ -61,6 +61,16 @@ if (trades.some(r => r.d === d && r.t === t && r.a === a && r.q === q && r.p ===
   process.exit(1);
 }
 
+// ── Cost-basis note: a fill on an opening lot that carries no cost ──
+// The dashboard measures P&L on the shares with a recorded cost only, so a
+// fill here produces a mixed position. Said once at entry, where the user
+// can still decide to enter the opening cost in book.json instead.
+const op = (book.positions || []).find(r => r.ticker === t);
+if (op && op.invested == null) {
+  console.log(`note  ${t}: the opening lot of ${op.qty} carries no cost in book.json (avgPrice/invested null).`);
+  console.log(`      P&L will be reported on the shares with a recorded cost only; enter the opening cost in book.json if it is known.`);
+}
+
 // ── Build the row in the file's established key order and style ──
 const row = `  {"d": "${d}", "t": "${t}", "a": "${a}", "q": ${q}, "p": ${p}, "ccy": "${ccy}", "yf": ${yf == null ? 'null' : `"${yf}"`}, "th": "${th}"}`;
 

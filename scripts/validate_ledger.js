@@ -66,36 +66,55 @@ function replay() {
   const adj = book.costAdjustments || {};
   const out = [];
   const seen = new Set();
-  const replayOne = (openQty, openInv, tr) => {
-    let q = openQty, inv = openInv;
+  // costedQty mirrors the client: the part of a position with a recorded
+  // cost. A null opening cost (CDP legacy holding) is unknown, not zero, so a
+  // top-up on such a name yields a mixed position whose P&L the dashboard
+  // measures on the costed lot alone. Sells come out of both lots pro rata.
+  const replayOne = (openQty, openInv, openCostedQty, tr) => {
+    let q = openQty, inv = openInv, costedQty = openCostedQty;
     for (const t of tr) {
-      if (t.a === 'B') { q += t.q; inv += t.q * t.p + (t.fee || 0); }
-      else { const avg = q > 0 ? inv / q : 0; inv -= t.q * avg; q -= t.q; }
-      if (q <= 1e-9) { q = 0; inv = 0; }   // zero-crossing resets the lot
+      if (t.a === 'B') { q += t.q; costedQty += t.q; inv += t.q * t.p + (t.fee || 0); }
+      else {
+        const avg = q > 0 ? inv / q : 0;
+        const costedFrac = q > 0 ? costedQty / q : 0;
+        inv -= t.q * avg;
+        costedQty -= t.q * costedFrac;
+        q -= t.q;
+      }
+      if (q <= 1e-9) { q = 0; costedQty = 0; inv = 0; }   // zero-crossing resets the lot
     }
-    return { q, inv };
+    return { q, costedQty, inv };
   };
   for (const op of book.positions) {
     seen.add(op.ticker);
     const tr = byTicker[op.ticker] || [];
+    const costed = op.invested != null;
     if (tr.length === 0) {
-      out.push({ ticker: op.ticker, qty: op.qty, avg: op.avgPrice, inv: op.invested });
+      out.push({ ticker: op.ticker, qty: op.qty, costedQty: costed ? op.qty : 0, avg: op.avgPrice, inv: op.invested });
       continue;
     }
-    const r = replayOne(op.qty, op.invested != null ? op.invested : 0, tr);
+    const r = replayOne(op.qty, costed ? op.invested : 0, costed ? op.qty : 0, tr);
     const inv = r.inv + (r.q > 0 ? (adj[op.ticker] || 0) : 0);
-    if (r.q > 0) out.push({ ticker: op.ticker, qty: r.q, avg: inv / r.q, inv });
+    if (r.q > 0) out.push({ ticker: op.ticker, qty: r.q, costedQty: r.costedQty,
+      avg: r.costedQty > 0 ? inv / r.costedQty : null, inv: r.costedQty > 0 ? inv : null });
   }
   for (const tk of Object.keys(byTicker)) {
     if (seen.has(tk)) continue;
-    const r = replayOne(0, 0, byTicker[tk]);
+    const r = replayOne(0, 0, 0, byTicker[tk]);
     const inv = r.q > 0 ? r.inv + (adj[tk] || 0) : 0;
-    if (r.q > 0) out.push({ ticker: tk, qty: r.q, avg: inv / r.q, inv });
+    if (r.q > 0) out.push({ ticker: tk, qty: r.q, costedQty: r.costedQty, avg: inv / r.q, inv });
   }
   return out;
 }
 const derived = replay();
 pass(`replay produced ${derived.length} open positions`);
+// Surface every mixed position so the partial basis is visible at each gate
+// run rather than only on the dashboard.
+for (const p of derived) {
+  if (p.inv != null && p.costedQty > 1e-9 && p.costedQty < p.qty - 1e-9) {
+    console.log(`note  ${p.ticker}: ${p.qty} held, cost recorded for ${Number(p.costedQty.toFixed(4))} (avg ${p.avg.toFixed(4)}); the opening lot carries no cost, so P&L is reported on the costed shares only`);
+  }
+}
 
 // ── Cash buckets: anchor plus strictly-later trades, floored at zero ──
 const sortedT = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
