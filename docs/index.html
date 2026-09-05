@@ -1437,7 +1437,7 @@ function enrichAll() {
     let mktPrice, dayChange, dayChangePct, history, trendSignals;
 
     // Get price and history from live data or snapshot
-    mktPrice = (live && live.price) ? live.price : (p.mktPriceSnap || SNAPSHOT[p.yf] || SNAPSHOT[p.ticker] || (p.invested ? p.invested / p.qty : 0));
+    mktPrice = (live && live.price) ? live.price : (p.mktPriceSnap || SNAPSHOT[p.yf] || SNAPSHOT[p.ticker] || (p.invested ? p.invested / (p.costedQty || p.qty) : 0));
     // Epoch SECONDS of the trade behind mktPrice (Yahoo regularMarketTime),
     // null when the source cannot say (hardcoded SNAPSHOT fallback). Follows
     // the same precedence as mktPrice so the intraday timestamp gates judge
@@ -1469,11 +1469,17 @@ function enrichAll() {
     const mktValue = mktPrice * p.qty;
     const fxRate = FX[p.ccy] || 1;
     const mktValueSGD = mktValue * fxRate;
-    const hasCost = p.invested != null && p.invested > 0;
+    // P&L is measured on the shares that carry a recorded cost. replayLedger
+    // sets costedQty below qty when an uncosted opening lot (CDP legacy
+    // holding) has been topped up; valuing those inherited shares against a
+    // cost of zero would report their whole market value as profit. For every
+    // other position costedQty equals qty and the arithmetic is unchanged.
+    const costedQty = p.costedQty != null ? p.costedQty : p.qty;
+    const hasCost = p.invested != null && p.invested > 0 && costedQty > 0;
     const investedSGD = hasCost ? p.invested * fxRate : mktValueSGD;
-    const pnl = hasCost ? mktValue - p.invested : 0;
+    const pnl = hasCost ? mktPrice * costedQty - p.invested : 0;
     const pnlSGD = pnl * fxRate;
-    const pnlPct = hasCost && p.invested > 0 ? (pnl / p.invested) * 100 : 0;
+    const pnlPct = hasCost ? (pnl / p.invested) * 100 : 0;
 
     // Period total-returns from adjclose history (includes reinvested dividends).
     // Bonds are skipped — adjclose math is meaningless on par-value instruments.
@@ -1659,7 +1665,8 @@ function renderStockChart(containerId, position) {
   // Signal badge — anchored just inside right edge
   annotations.push({x:1.0,y:closes[n-1],xref:'paper',yref:'y',text:'<b>'+sig+'</b> '+sc,showarrow:false,font:{size:10,color:'#fff',family:'DM Sans'},bgcolor:sigColor,borderpad:3,xanchor:'left',xshift:4});
   // Cost label — left side of chart
-  if(position.hasCost&&position.avgPrice)annotations.push({x:dates[Math.max(0,vi+5)],y:position.avgPrice,text:'Cost '+position.avgPrice.toFixed(dp),showarrow:false,font:{size:9,color:'#a855f7',family:'DM Mono'},yshift:8});
+  // A mixed position (uncosted opening lot topped up since) says which shares the cost line covers.
+  if(position.hasCost&&position.avgPrice)annotations.push({x:dates[Math.max(0,vi+5)],y:position.avgPrice,text:'Cost '+position.avgPrice.toFixed(dp)+(position.costedQty<position.qty?' ('+fmt(position.costedQty,0)+' of '+fmt(position.qty,0)+' sh)':''),showarrow:false,font:{size:9,color:'#a855f7',family:'DM Mono'},yshift:8});
   // Right margin: vote status
   if(isSell){
     annotations.push({x:1.0,y:px,xref:'paper',yref:'y',text:'EXIT',showarrow:false,font:{size:10,color:'#fff',family:'DM Sans'},bgcolor:'#dc2626',borderpad:3,xanchor:'left',xshift:4});
@@ -2719,9 +2726,15 @@ function renderPositions(el) {
     const d = p.trendSignals.details || {};
     const v = d.votes != null ? d.votes : null;
 
-    // Compact P&L / signal column: show P&L if available, otherwise show vote
+    // Compact P&L / signal column: show P&L if available, otherwise show vote.
+    // A mixed position (uncosted opening lot topped up since) carries the
+    // share count its P&L actually covers, so the figure is not read as a
+    // return on the whole holding.
+    const partialCost = p.hasCost && p.costedQty < p.qty;
+    const partialNote = partialCost ? `cost on ${fmt(p.costedQty,0)} of ${fmt(p.qty,0)} sh` : '';
+    const partialTitle = partialCost ? `P&amp;L on the ${fmt(p.costedQty,0)} shares with a recorded cost; the other ${fmt(p.qty-p.costedQty,0)} carry no cost in book.json` : '';
     const actionCol = p.hasCost
-      ? `<span class="pl ${plC}" style="font-family:var(--mono);font-size:12px;font-weight:700">${fmtPct(p.pnlPct)}</span>`
+      ? `<span class="pl ${plC}" style="font-family:var(--mono);font-size:12px;font-weight:700"${partialCost?` title="${partialTitle}"`:''}>${fmtPct(p.pnlPct)}</span>${partialCost?`<span style="font-size:8px;color:var(--t4);display:block" title="${partialTitle}">${partialNote}</span>`:''}`
       : (v != null ? `<span style="font-family:var(--mono);font-size:12px;font-weight:700;color:${voteCol(v)}">${voteLabel(v)}</span>` : '<span style="color:var(--t4);font-size:10px">—</span>');
 
     const safeId = p.ticker.replace(/\./g,'_');
@@ -3321,7 +3334,7 @@ function renderPerformance(el) {
                   <span class="pl ${cls}" style="font-family:var(--mono);font-size:15px;font-weight:700">${fmtPL(tPnl)}</span>
                   <span class="pl ${cls}" style="font-family:var(--mono);font-size:11px">${fmtPct(tPct)}</span>
                 </div>
-                <div style="font-size:10px;color:var(--t4);margin-top:5px">${arr.map(p=>p.ticker).join(', ')}</div>
+                <div style="font-size:10px;color:var(--t4);margin-top:5px">${arr.map(p=>p.ticker+(p.hasCost&&p.costedQty<p.qty?` (cost on ${fmt(p.costedQty,0)} of ${fmt(p.qty,0)} sh)`:'')).join(', ')}</div>
               </div>`;
             }).join('')}
           </div>
@@ -6941,40 +6954,63 @@ function replayLedger(book, trades) {
   const overrides = book.ledgerOverrides || {};
   const out = [];
   const seen = new Set();
-  const replayOne = (openQty, openInv, tr) => {
-    let qty = openQty, inv = openInv;
+  // costedQty is the part of a position that carries a recorded cost. An
+  // opening row whose avgPrice/invested are null in book.json (the CDP legacy
+  // holdings, cost never entered) contributes nothing to it, but later fills
+  // do, so a top-up on such a name yields a mixed position: some shares with
+  // a cost, the rest without. The previous replay coerced the null opening
+  // cost to zero and valued the whole position against the top-up alone, so
+  // the inherited shares' entire market value read as profit — S58 showed
+  // +S$25,224 / +334.94% on 2026-09-05 when the costed lot stood at +S$229.
+  // P&L is measured on the costed lot only; the uncosted remainder is carried
+  // at market with no P&L, exactly as a wholly uncosted position already is.
+  // Sells come out of both lots pro rata: the average-cost convention applied
+  // lot-wise, which leaves a fully costed position's arithmetic unchanged
+  // (costedQty equals qty throughout) and a mixed position's costed average
+  // untouched by a sale.
+  const replayOne = (openQty, openInv, openCostedQty, tr) => {
+    let qty = openQty, inv = openInv, costedQty = openCostedQty;
     for (const t of tr) {
       // Fee-inclusive cost on buys — matches the broker's average-cost
       // convention, verified against six month-end statements (Phase A.1).
-      if (t.a === 'B') { qty += t.q; inv += t.q * t.p + (t.fee || 0); }
-      else { const avg = qty > 0 ? inv / qty : 0; inv -= t.q * avg; qty -= t.q; }
-      if (qty <= 1e-9) { qty = 0; inv = 0; }   // zero-crossing resets the lot
+      if (t.a === 'B') { qty += t.q; costedQty += t.q; inv += t.q * t.p + (t.fee || 0); }
+      else {
+        const avg = qty > 0 ? inv / qty : 0;
+        const costedFrac = qty > 0 ? costedQty / qty : 0;
+        inv -= t.q * avg;
+        costedQty -= t.q * costedFrac;
+        qty -= t.q;
+      }
+      if (qty <= 1e-9) { qty = 0; costedQty = 0; inv = 0; }   // zero-crossing resets the lot
     }
-    return { qty, inv };
+    return { qty, costedQty, inv };
   };
   for (const op of book.positions) {
     seen.add(op.ticker);
     const m = book.meta[op.ticker];
     const tr = byTicker[op.ticker] || [];
+    const costed = op.invested != null;   // null means the cost is unknown, not zero
     if (tr.length === 0) {
-      if (m) out.push({ ...m, ticker: op.ticker, qty: op.qty, avgPrice: op.avgPrice, invested: op.invested });
+      if (m) out.push({ ...m, ticker: op.ticker, qty: op.qty, costedQty: costed ? op.qty : 0, avgPrice: op.avgPrice, invested: op.invested });
       continue;
     }
-    const r = replayOne(op.qty, op.invested != null ? op.invested : 0, tr);
+    const r = replayOne(op.qty, costed ? op.invested : 0, costed ? op.qty : 0, tr);
     const inv = r.inv + (r.qty > 0 ? (adj[op.ticker] || 0) : 0);
-    if (r.qty > 0 && m) out.push({ ...m, ticker: op.ticker, qty: r.qty, avgPrice: inv / r.qty, invested: inv });
+    if (r.qty > 0 && m) out.push({ ...m, ticker: op.ticker, qty: r.qty, costedQty: r.costedQty,
+      avgPrice: r.costedQty > 0 ? inv / r.costedQty : null, invested: r.costedQty > 0 ? inv : null });
   }
   // Tickers opened during the period (no opening row in the book)
   for (const tk of Object.keys(byTicker)) {
     if (seen.has(tk)) continue;
     if (overrides[tk] && overrides[tk].qty === 0) { console.warn('[replay] ledger override: ' + tk + ' forced to zero — ' + overrides[tk].reason); continue; }
-    const r = replayOne(0, 0, byTicker[tk]);
+    const r = replayOne(0, 0, 0, byTicker[tk]);
     const inv = r.inv + (r.qty > 0 ? (adj[tk] || 0) : 0);
     if (r.qty > 0) {
       const t0 = byTicker[tk][0];
       if (!book.meta[tk]) console.warn('[replay] no meta for new ticker ' + tk + ' — using trade-row fields; add a meta entry to book.json');
       const m = book.meta[tk] || { yf: t0.yf, name: tk, exchange: '', ccy: t0.ccy, fee: 0, availLTV: 0, theme: t0.th, type: 'Stock' };
-      out.push({ ...m, ticker: tk, qty: r.qty, avgPrice: inv / r.qty, invested: inv });
+      // Every lot of a ticker opened inside the period is priced, so costedQty equals qty.
+      out.push({ ...m, ticker: tk, qty: r.qty, costedQty: r.costedQty, avgPrice: inv / r.qty, invested: inv });
     }
   }
   // Cash buckets: anchor balance plus net of post-anchor trades per currency
@@ -6984,7 +7020,7 @@ function replayLedger(book, trades) {
     if (cash < 0) { console.warn('[replay] ' + ccy + ' cash went negative — floored at zero (externally funded buy, or a deposit row is missing)'); cash = 0; }
     const tk = ccy + '.CASH';
     const m = book.meta[tk] || { yf: null, name: ccy + ' Cash', exchange: '', ccy, fee: 0, availLTV: 0, theme: 'Cash & Money Market', type: 'Cash', account: 'Brokerage', mktPriceSnap: 1.00 };
-    out.push({ ...m, ticker: tk, qty: cash, avgPrice: 1.00, invested: cash });
+    out.push({ ...m, ticker: tk, qty: cash, costedQty: cash, avgPrice: 1.00, invested: cash });
   }
   return out;
 }
