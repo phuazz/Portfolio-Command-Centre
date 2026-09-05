@@ -219,6 +219,9 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 /* ─── HEATMAP ─────────────────────────── */
 .hm { border-radius:6px; padding:10px 8px; text-align:center; transition:transform 0.15s; }
 .hm:hover { transform:scale(1.03); }
+/* Five fixed columns on desktop; below 480px the tiles pack to whatever fits,
+   because five 71px tiles do not fit a 343px card and the fifth column clipped. */
+.hm-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
 
 /* ─── SUMMARY ROW ─────────────────────── */
 .tbl tr.sum { background:var(--bg3); font-weight:700; border-top:2px solid var(--bd2); }
@@ -291,6 +294,7 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 /* ─── RESPONSIVE — SMALL PHONE ────────── */
 @media(max-width:480px) {
   .shell { padding:10px 10px 36px; }
+  .hm-grid { grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); }
   .kpi-strip { grid-template-columns:1fr 1fr; }
   .kpi-val { font-size:18px; }
   .tab { padding:10px 10px; font-size:12px; }
@@ -1425,6 +1429,7 @@ let state = {
   attrHorizon: 'YTD',
   perfWindow: 'YTD',
   perfChartMode: 'pct',  // 'pct' rebased to 0% | 'nav' absolute S$
+  perfBasis: 'ytd',      // Performance tab position cards: 'ytd' (FIFO YTD attribution) | 'cost' (since fee-inclusive cost)
   totalValueSGD: 0,
   totalInvestedSGD: 0,
   totalPnLSGD: 0,
@@ -3272,13 +3277,81 @@ function renderAllocation(el) {
 // ─── TAB: PERFORMANCE ────────────────────
 function renderPerformance(el) {
   const ps = state.positions;
-  const withCost = ps.filter(p=>p.hasCost && p.pnlPct !== 0);
-  const sorted=[...withCost].sort((a,b)=>b.pnlPct-a.pnlPct);
-  const pnlSorted=[...withCost].sort((a,b)=>b.pnlSGD-a.pnlSGD);
-  const maxPnl = withCost.length > 0 ? Math.max(...withCost.map(p=>Math.abs(p.pnlSGD))) : 1;
 
-  const byTheme={};
-  ps.forEach(p=>{if(!byTheme[p.theme])byTheme[p.theme]=[];byTheme[p.theme].push(p)});
+  // Basis for the four position-level cards below the equity curve, chosen
+  // with the Basis control and named in every card title.
+  //   'ytd'  reuses the FIFO YTD attribution engine (realised + unrealised in
+  //          SGD, dividends through the adjusted close, FX at the dates of the
+  //          flows), so every position with price history is covered — the
+  //          CDP legacy lots that carry no cost included.
+  //   'cost' is market value less fee-inclusive cost over the life of the
+  //          position, which by construction cannot cover a position without
+  //          a recorded cost. Until 2026-09-05 this was the only basis and it
+  //          was unlabelled: the cards read as year-to-date while leaving out
+  //          17 CDP names, 43 per cent of the book by value, ES3 among them.
+  const basis = state.perfBasis || 'ytd';
+  const isYtd = basis === 'ytd';
+
+  // Since-cost entries: open positions with a recorded cost and a non-zero P&L.
+  const withCost = ps.filter(p=>p.hasCost && p.pnlPct !== 0);
+  const uncosted = ps.filter(p=>!p.hasCost);
+  const uncostedSGD = uncosted.reduce((s,p)=>s+p.mktValueSGD,0);
+  const uncostedPct = state.totalValueSGD > 0 ? uncostedSGD / state.totalValueSGD * 100 : 0;
+
+  // YTD entries from the attribution engine. A failure is said in the cards
+  // rather than rendered as an empty grid.
+  let ytd = null, ytdError = null;
+  if (isYtd) {
+    try {
+      ytd = calcYtdAttribution(ps, TRADES_YTD);
+      if (!ytd || ytd.covered === 0) { ytdError = 'Waiting for price history to load.'; ytd = null; }
+    } catch (e) {
+      console.error('Performance tab YTD basis failed:', e);
+      ytdError = e.message || String(e);
+    }
+  }
+  const ytdOpen = ytd ? ytd.rows.filter(r=>!r.isClosed && r.retPct != null) : [];
+  const ytdAll  = ytd ? ytd.rows.filter(r=>r.dollar !== 0) : [];
+  const ytdNotCovered = ytd ? ps.filter(p=>p.type !== 'Cash' && p.type !== 'Bond' && !ytd.rows.some(r=>!r.isClosed && r.pos.ticker === p.ticker)) : [];
+
+  // One entry shape for the heatmap, the contribution list and the chart:
+  // { ticker, pct, dollar, closed, partial }.
+  const heat = isYtd
+    ? ytdOpen.map(r=>({ ticker:r.pos.ticker, pct:r.retPct, dollar:r.dollar, closed:false, partial:false }))
+    : withCost.map(p=>({ ticker:p.ticker, pct:p.pnlPct, dollar:p.pnlSGD, closed:false, partial:p.costedQty < p.qty }));
+  // Names closed during the year contributed real money and belong in the
+  // contribution list; they have no current holding to tile in the heatmap.
+  const contrib = isYtd
+    ? ytdAll.map(r=>({ ticker:r.pos.ticker, pct:r.retPct, dollar:r.dollar, closed:r.isClosed, partial:false }))
+    : heat;
+  const sorted=[...heat].sort((a,b)=>b.pct-a.pct);
+  const pnlSorted=[...contrib].sort((a,b)=>b.dollar-a.dollar);
+  const maxPnl = contrib.length > 0 ? Math.max(...contrib.map(e=>Math.abs(e.dollar))) : 1;
+
+  // Theme entries: { theme, dollar, pct, members[], uncostedOnly }.
+  let themes;
+  if (isYtd && ytd) {
+    themes = ytd.themes.map(t=>({ theme:t.theme, dollar:t.dollar, pct:t.retPct, uncostedOnly:false,
+      members:t.positions.map(r=>r.pos.ticker+(r.isClosed?' (closed)':'')) }));
+  } else {
+    const byTheme={};
+    ps.forEach(p=>{if(!byTheme[p.theme])byTheme[p.theme]=[];byTheme[p.theme].push(p)});
+    themes = Object.entries(byTheme).map(([theme,arr])=>{
+      const costed=arr.filter(p=>p.hasCost);
+      const tPnl=costed.reduce((s,p)=>s+p.pnlSGD,0);
+      const tInv=costed.reduce((s,p)=>s+p.investedSGD,0);
+      return { theme, dollar:tPnl, pct: tInv>0?(tPnl/tInv*100):0, uncostedOnly: costed.length===0,
+        members:arr.map(p=>p.ticker+(!p.hasCost?' (no cost)':(p.costedQty<p.qty?` (cost on ${fmt(p.costedQty,0)} of ${fmt(p.qty,0)} sh)`:''))) };
+    });
+  }
+  themes.sort((a,b)=>b.dollar-a.dollar);
+
+  const basisTag = isYtd ? 'YTD' : 'since cost';
+  const basisNote = isYtd
+    ? (ytd
+        ? `Year to date: realised (FIFO) plus unrealised P&amp;L in SGD, dividends included through the adjusted close, FX at the dates of the flows; per-position returns are on the opening value, or on capital deployed this year where that is larger. Covers ${ytdOpen.length} open positions and ${contrib.filter(e=>e.closed).length} closed this year (closed names appear in the contribution list only).${ytdNotCovered.length?` Not yet covered, no price history: ${ytdNotCovered.map(p=>p.ticker).join(', ')}.`:''} Cash and bonds are outside this basis.`
+        : `YTD basis unavailable: ${ytdError}`)
+    : `Since cost: market value less fee-inclusive cost over the life of each position, at current price and FX. ${uncosted.length} positions carry no recorded cost in book.json and are left out of all four cards: ${fmtSGD(uncostedSGD)}, ${fmt(uncostedPct,1)}% of the book (${uncosted.map(p=>p.ticker).join(', ')}). A position whose opening lot has no cost shows P&amp;L on the costed shares only.`;
 
   // Equity curve card sits at the top of the tab. setPerfWindow re-renders
   // just this container, leaving the rest of the Performance tab alone.
@@ -3286,55 +3359,59 @@ function renderPerformance(el) {
 
   el.innerHTML = `
     <div class="card mb" id="equityCurveCard"></div>
+    <div class="mb" id="perfBasisBar" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <span style="font-size:10px;font-weight:600;color:var(--t3);letter-spacing:0.5px;text-transform:uppercase">Basis</span>
+        <button class="fbtn ${isYtd?'active':''}" onclick="setPerfBasis('ytd')">YTD</button>
+        <button class="fbtn ${!isYtd?'active':''}" onclick="setPerfBasis('cost')">Since cost</button>
+      </div>
+      <div id="perfBasisNote" style="font-size:10px;color:var(--t3);line-height:1.5;flex:1;min-width:240px">${basisNote}</div>
+    </div>
     <div class="g2 mb">
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>Return Heatmap</div></div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>Return Heatmap · ${basisTag}</div></div>
         <div class="card-body">
-          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
-            ${sorted.map(p=>{
-              const int = Math.min(Math.abs(p.pnlPct)/100,1);
-              const bg = p.pnlPct>=0?`rgba(26,135,84,${0.06+int*0.45})`:`rgba(192,57,43,${0.06+int*0.4})`;
-              const tc = int>0.4?(p.pnlPct>=0?'#fff':'#fff'):(p.pnlPct>=0?'var(--g)':'var(--r)');
-              return `<div class="hm" style="background:${bg}">
-                <div style="font-size:10px;font-weight:600;color:${tc}">${p.ticker}</div>
-                <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${tc}">${fmtPct(p.pnlPct)}</div>
+          <div class="hm-grid">
+            ${sorted.map(e=>{
+              const int = Math.min(Math.abs(e.pct)/100,1);
+              const bg = e.pct>=0?`rgba(26,135,84,${0.06+int*0.45})`:`rgba(192,57,43,${0.06+int*0.4})`;
+              const tc = int>0.4?'#fff':(e.pct>=0?'var(--g)':'var(--r)');
+              return `<div class="hm" style="background:${bg}"${e.partial?' title="Return on the costed shares only; the opening lot carries no cost"':''}>
+                <div style="font-size:10px;font-weight:600;color:${tc}">${e.ticker}</div>
+                <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${tc}">${fmtPct(e.pct)}</div>
               </div>`;
             }).join('')}
+            ${sorted.length===0?`<div style="grid-column:1/-1;font-size:11px;color:var(--t3);padding:12px 0">${isYtd?basisNote:'No open position carries a recorded cost.'}</div>`:''}
           </div>
         </div>
       </div>
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>P&L Contribution (SGD)</div></div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>P&L Contribution (SGD) · ${basisTag}</div></div>
         <div class="card-body" style="max-height:400px;overflow-y:auto">
-          ${pnlSorted.map(p=>{
-            const bW=(Math.abs(p.pnlSGD)/maxPnl)*100;
-            const c=p.pnlSGD>=0?'var(--g)':'var(--r)';
+          ${pnlSorted.map(e=>{
+            const bW=(Math.abs(e.dollar)/maxPnl)*100;
+            const c=e.dollar>=0?'var(--g)':'var(--r)';
             return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd)">
-              <span style="font-size:10px;font-weight:600;width:65px;color:var(--t2)">${p.ticker}</span>
+              <span style="font-size:10px;font-weight:600;width:84px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.ticker}${e.closed?'<span style="font-size:8px;font-weight:400;color:var(--t4)" title="Closed during the year: realised P&amp;L only"> closed</span>':''}</span>
               <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${bW}%;background:${c}"></div></div>
-              <span class="pl ${p.pnlSGD>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;width:65px;text-align:right">${fmtPL(p.pnlSGD)}</span>
+              <span class="pl ${e.dollar>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;width:70px;text-align:right">${fmtPL(e.dollar)}</span>
             </div>`;
           }).join('')}
         </div>
       </div>
     </div>
     <div class="mb">
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Performance by Theme</div></div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--a)"></span>Performance by Theme · ${basisTag}</div></div>
         <div class="card-body">
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">
-            ${Object.entries(byTheme).sort((a,b)=>{
-              const pa=a[1].reduce((s,p)=>s+p.pnlSGD,0), pb=b[1].reduce((s,p)=>s+p.pnlSGD,0);
-              return pb-pa;
-            }).map(([theme,arr])=>{
-              const tPnl=arr.reduce((s,p)=>s+p.pnlSGD,0);
-              const tInv=arr.reduce((s,p)=>s+p.investedSGD,0);
-              const tPct=tInv>0?(tPnl/tInv*100):0;
-              const cls=tPnl>=0?'pos':'neg';
+            ${themes.map(t=>{
+              const cls=t.dollar>=0?'pos':'neg';
+              const figures = t.uncostedOnly
+                ? `<span style="font-size:11px;color:var(--t4)" title="No position in this theme carries a recorded cost">no recorded cost</span>`
+                : `<span class="pl ${cls}" style="font-family:var(--mono);font-size:15px;font-weight:700">${fmtPL(t.dollar)}</span>
+                  <span class="pl ${cls}" style="font-family:var(--mono);font-size:11px">${fmtPct(t.pct)}</span>`;
               return `<div style="background:var(--bg3);border-radius:8px;padding:14px;border:1px solid var(--bd)">
-                <div style="font-size:10px;color:var(--t3);margin-bottom:5px">${theme}</div>
-                <div style="display:flex;justify-content:space-between;align-items:baseline">
-                  <span class="pl ${cls}" style="font-family:var(--mono);font-size:15px;font-weight:700">${fmtPL(tPnl)}</span>
-                  <span class="pl ${cls}" style="font-family:var(--mono);font-size:11px">${fmtPct(tPct)}</span>
-                </div>
-                <div style="font-size:10px;color:var(--t4);margin-top:5px">${arr.map(p=>p.ticker+(p.hasCost&&p.costedQty<p.qty?` (cost on ${fmt(p.costedQty,0)} of ${fmt(p.qty,0)} sh)`:'')).join(', ')}</div>
+                <div style="font-size:10px;color:var(--t3);margin-bottom:5px">${t.theme}</div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline">${figures}</div>
+                <div style="font-size:10px;color:var(--t4);margin-top:5px">${t.members.join(', ')}</div>
               </div>`;
             }).join('')}
           </div>
@@ -3342,19 +3419,19 @@ function renderPerformance(el) {
       </div>
     </div>
     <div class="mb" id="perfChartWrap">
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>P&L Distribution</div></div>
+      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>P&L Distribution · ${basisTag}</div></div>
         <div id="pnlDistChart" style="height:280px"></div>
       </div>
     </div>
   `;
 
-  // P&L bar chart
+  // Return distribution bar chart — the heatmap's entries, same basis
   setTimeout(()=>{
-    const s=[...withCost].sort((a,b)=>b.pnlPct-a.pnlPct);
+    const s=sorted;
     Plotly.newPlot('pnlDistChart',[{
-      type:'bar', x:s.map(p=>p.ticker), y:s.map(p=>p.pnlPct),
-      marker:{color:s.map(p=>p.pnlPct>=0?'rgba(26,135,84,0.7)':'rgba(192,57,43,0.7)'),line:{width:0}},
-      text:s.map(p=>fmtPct(p.pnlPct)), textposition:'outside', textfont:{size:10,family:'DM Mono'}
+      type:'bar', x:s.map(e=>e.ticker), y:s.map(e=>e.pct),
+      marker:{color:s.map(e=>e.pct>=0?'rgba(26,135,84,0.7)':'rgba(192,57,43,0.7)'),line:{width:0}},
+      text:s.map(e=>fmtPct(e.pct)), textposition:'outside', textfont:{size:10,family:'DM Mono'}
     }],{
       margin:{t:20,b:50,l:50,r:20}, paper_bgcolor:'transparent', plot_bgcolor:'transparent',
       font:{family:'DM Sans',size:11,color:'#5c5c56'},
@@ -6027,6 +6104,14 @@ window.setPerfWindow = (w) => {
 window.setPerfChartMode = (m) => {
   state.perfChartMode = m;
   renderEquityCurve('equityCurveCard', state.positions, TRADES_YTD, state.perfWindow || 'YTD');
+};
+
+window.setPerfBasis = (b) => {
+  state.perfBasis = b;
+  // The four position-level cards and their footnote all depend on the basis,
+  // so the whole pane re-renders (the equity curve redraws with it).
+  _paneVersion.performance = -1;
+  renderTab();
 };
 
 function attrThemeColor(theme) {
