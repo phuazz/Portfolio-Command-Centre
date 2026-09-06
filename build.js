@@ -227,7 +227,11 @@ async function fetchTicker(symbol, range = '10y', directOnly = false) {
       // marked close (thinly traded SGX names routinely differ for days).
       // exchangeTz groups tickers by trading calendar for the session audit and,
       // like volume, is stripped before the file is written.
-      return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), quoteTime: meta.regularMarketTime || null, exchangeTz: meta.exchangeTimezoneName || null, history };
+      // name: the feed's security name, kept in history.json so the client can
+      // label tickers that have no book.json meta entry (names closed during
+      // the year). longName reads better than shortName ("WisdomTree Physical
+      // Silver" against "WISDOMTREE METAL SECURITIES LIM").
+      return { price: +price.toFixed(4), prevClose: +prevClose.toFixed(4), quoteTime: meta.regularMarketTime || null, exchangeTz: meta.exchangeTimezoneName || null, name: meta.longName || meta.shortName || null, history };
     } catch (e) {
       // Try next proxy
     }

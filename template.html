@@ -222,6 +222,16 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 /* Five fixed columns on desktop; below 480px the tiles pack to whatever fits,
    because five 71px tiles do not fit a 343px card and the fifth column clipped. */
 .hm-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+.hm-name { font-size:9px; opacity:.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:1px 0 2px; }
+.perf-treemap { height:440px; }
+/* P&L Contribution rows: ticker in bold, name muted beside it, both on one
+   line that ellipsises rather than wraps; the full text is in the row's title. */
+.pc-summary { font-size:10px; color:var(--t3); padding:0 0 6px; border-bottom:1px solid var(--bd); margin-bottom:2px; }
+.pc-row { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--bd); }
+.pc-label { flex:0 0 42%; max-width:260px; min-width:84px; font-size:10px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pc-label b { font-weight:600; }
+.pc-name { color:var(--t4); font-weight:400; margin-left:2px; }
+.pc-closed { font-size:8px; color:var(--t4); }
 
 /* ─── SUMMARY ROW ─────────────────────── */
 .tbl tr.sum { background:var(--bg3); font-weight:700; border-top:2px solid var(--bd2); }
@@ -295,6 +305,8 @@ body { background:var(--bg); color:var(--t1); font-family:var(--sans); line-heig
 @media(max-width:480px) {
   .shell { padding:10px 10px 36px; }
   .hm-grid { grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); }
+  .pc-label { flex-basis:38%; }
+  .perf-treemap { height:380px; }
   .kpi-strip { grid-template-columns:1fr 1fr; }
   .kpi-val { font-size:18px; }
   .tab { padding:10px 10px; font-size:12px; }
@@ -1430,6 +1442,7 @@ let state = {
   perfWindow: 'YTD',
   perfChartMode: 'pct',  // 'pct' rebased to 0% | 'nav' absolute S$
   perfBasis: 'ytd',      // Performance tab position cards: 'ytd' (FIFO YTD attribution) | 'cost' (since fee-inclusive cost)
+  perfHeatView: 'treemap', // Performance tab return card: 'treemap' (tile size = weight, grouped by theme) | 'grid' (equal tiles by return)
   totalValueSGD: 0,
   totalInvestedSGD: 0,
   totalPnLSGD: 0,
@@ -3275,6 +3288,23 @@ function renderAllocation(el) {
 }
 
 // ─── TAB: PERFORMANCE ────────────────────
+// Security name for a ticker, best source first: the owner-curated book.json
+// meta (concise, "STI ETF"), else the price feed's long name carried in
+// history.json since 2026-09-06 (this covers tickers closed during the year,
+// which have no meta entry), else ''. Never the ticker itself — the caller
+// decides how an unknown name renders.
+function securityName(tk) {
+  const p = state.positions.find(x => x.ticker === tk);
+  if (p && p.name && p.name !== tk) return p.name;
+  const m = (LEDGER_BOOK && LEDGER_BOOK.meta) ? LEDGER_BOOK.meta[tk] : null;
+  if (m && m.name) return m.name;
+  let yf = p ? p.yf : null;
+  if (!yf) { const t = TRADES_YTD.find(r => r.t === tk && r.yf); yf = t ? t.yf : null; }
+  const h = yf ? PRELOADED_HISTORY[yf] : null;
+  return (h && h.name) ? h.name : '';
+}
+const _perfEsc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+
 function renderPerformance(el) {
   const ps = state.positions;
 
@@ -3314,25 +3344,44 @@ function renderPerformance(el) {
   const ytdAll  = ytd ? ytd.rows.filter(r=>r.dollar !== 0) : [];
   const ytdNotCovered = ytd ? ps.filter(p=>p.type !== 'Cash' && p.type !== 'Bond' && !ytd.rows.some(r=>!r.isClosed && r.pos.ticker === p.ticker)) : [];
 
-  // One entry shape for the heatmap, the contribution list and the chart:
-  // { ticker, pct, dollar, closed, partial }.
+  // One entry shape for the heatmap, the treemap, the contribution list and
+  // the chart: { ticker, name, pct, dollar, value, weight, theme, closed, partial }.
+  const mk = (ticker, pct, dollar, closed, partial, pos, theme) => ({
+    ticker, pct, dollar, closed, partial,
+    name: securityName(ticker),
+    value: pos ? (pos.mktValueSGD || 0) : 0,
+    weight: pos ? (pos.weight || 0) : 0,
+    theme: theme || (pos ? pos.theme : '(Unclassified)'),
+  });
   const heat = isYtd
-    ? ytdOpen.map(r=>({ ticker:r.pos.ticker, pct:r.retPct, dollar:r.dollar, closed:false, partial:false }))
-    : withCost.map(p=>({ ticker:p.ticker, pct:p.pnlPct, dollar:p.pnlSGD, closed:false, partial:p.costedQty < p.qty }));
+    ? ytdOpen.map(r=>mk(r.pos.ticker, r.retPct, r.dollar, false, false, r.pos, r.theme))
+    : withCost.map(p=>mk(p.ticker, p.pnlPct, p.pnlSGD, false, p.costedQty < p.qty, p, p.theme));
   // Names closed during the year contributed real money and belong in the
   // contribution list; they have no current holding to tile in the heatmap.
   const contrib = isYtd
-    ? ytdAll.map(r=>({ ticker:r.pos.ticker, pct:r.retPct, dollar:r.dollar, closed:r.isClosed, partial:false }))
+    ? ytdAll.map(r=>mk(r.pos.ticker, r.retPct, r.dollar, r.isClosed, false, r.isClosed ? null : r.pos, r.theme))
     : heat;
   const sorted=[...heat].sort((a,b)=>b.pct-a.pct);
   const pnlSorted=[...contrib].sort((a,b)=>b.dollar-a.dollar);
   const maxPnl = contrib.length > 0 ? Math.max(...contrib.map(e=>Math.abs(e.dollar))) : 1;
+  // Gainers and losers, for the contribution card's summary line and each
+  // row's share: a gainer's share of all gains, a loser's share of all losses.
+  const gainSum = contrib.filter(e=>e.dollar>0).reduce((s,e)=>s+e.dollar,0);
+  const lossSum = contrib.filter(e=>e.dollar<0).reduce((s,e)=>s+e.dollar,0);
+  const nGain = contrib.filter(e=>e.dollar>0).length, nLoss = contrib.filter(e=>e.dollar<0).length;
+  const shareOf = e => e.dollar>0 ? (gainSum>0 ? e.dollar/gainSum*100 : 0) : (lossSum<0 ? e.dollar/lossSum*100 : 0);
+  const heatView = state.perfHeatView || 'grid';
 
-  // Theme entries: { theme, dollar, pct, members[], uncostedOnly }.
+  // Theme entries: { theme, dollar, pct, weight, count, members[{ticker,note}], uncostedOnly }.
+  // weight and count are the theme's current share of the book and its open
+  // positions, the same on both bases, so importance reads beside the P&L.
+  const themeWeight = {}, themeCount = {};
+  ps.forEach(p=>{ themeWeight[p.theme]=(themeWeight[p.theme]||0)+(p.weight||0); themeCount[p.theme]=(themeCount[p.theme]||0)+1; });
   let themes;
   if (isYtd && ytd) {
     themes = ytd.themes.map(t=>({ theme:t.theme, dollar:t.dollar, pct:t.retPct, uncostedOnly:false,
-      members:t.positions.map(r=>r.pos.ticker+(r.isClosed?' (closed)':'')) }));
+      weight: themeWeight[t.theme]||0, count: themeCount[t.theme]||0,
+      members:t.positions.map(r=>({ ticker:r.pos.ticker, note:r.isClosed?' (closed)':'' })) }));
   } else {
     const byTheme={};
     ps.forEach(p=>{if(!byTheme[p.theme])byTheme[p.theme]=[];byTheme[p.theme].push(p)});
@@ -3341,12 +3390,16 @@ function renderPerformance(el) {
       const tPnl=costed.reduce((s,p)=>s+p.pnlSGD,0);
       const tInv=costed.reduce((s,p)=>s+p.investedSGD,0);
       return { theme, dollar:tPnl, pct: tInv>0?(tPnl/tInv*100):0, uncostedOnly: costed.length===0,
-        members:arr.map(p=>p.ticker+(!p.hasCost?' (no cost)':(p.costedQty<p.qty?` (cost on ${fmt(p.costedQty,0)} of ${fmt(p.qty,0)} sh)`:''))) };
+        weight: themeWeight[theme]||0, count: arr.length,
+        members:arr.map(p=>({ ticker:p.ticker, note:(!p.hasCost?' (no cost)':(p.costedQty<p.qty?` (cost on ${fmt(p.costedQty,0)} of ${fmt(p.qty,0)} sh)`:'')) })) };
     });
   }
   themes.sort((a,b)=>b.dollar-a.dollar);
 
   const basisTag = isYtd ? 'YTD' : 'since cost';
+  // Hover text for tiles and rows: name, figure, P&L and weight in one line.
+  const tileTip = e => `${e.ticker}${e.name?' · '+e.name:''} · ${basisTag} return ${fmtPct(e.pct)} · P&L ${fmtPL(e.dollar)} · ${fmt(e.weight,1)}% of book${e.partial?' · return on the costed shares only; the opening lot carries no cost':''}`;
+  const rowTip  = e => `${e.ticker}${e.name?' · '+e.name:''}${e.closed?' · closed this year, realised P&L only':''} · P&L ${fmtPL(e.dollar)}, ${fmt(Math.abs(shareOf(e)),0)}% of all ${e.dollar>=0?'gains':'losses'} · ${basisTag} return ${fmtPct(e.pct)}`;
   const basisNote = isYtd
     ? (ytd
         ? `Year to date: realised (FIFO) plus unrealised P&amp;L in SGD, dividends included through the adjusted close, FX at the dates of the flows; per-position returns are on the opening value, or on capital deployed this year where that is larger. Covers ${ytdOpen.length} open positions and ${contrib.filter(e=>e.closed).length} closed this year (closed names appear in the contribution list only).${ytdNotCovered.length?` Not yet covered, no price history: ${ytdNotCovered.map(p=>p.ticker).join(', ')}.`:''} Cash and bonds are outside this basis.`
@@ -3368,31 +3421,40 @@ function renderPerformance(el) {
       <div id="perfBasisNote" style="font-size:10px;color:var(--t3);line-height:1.5;flex:1;min-width:240px">${basisNote}</div>
     </div>
     <div class="g2 mb">
-      <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--g)"></span>Return Heatmap · ${basisTag}</div></div>
+      <div class="card">
+        <div class="card-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="card-title"><span class="indicator" style="background:var(--g)"></span>${heatView==='treemap'?'Return Treemap':'Return Heatmap'} · ${basisTag}${heatView==='treemap'?' · tile size = weight':''}</div>
+          <div style="display:flex;gap:4px">
+            <button class="fbtn ${heatView==='treemap'?'active':''}" onclick="setPerfHeatView('treemap')" title="Tiles sized by market value, grouped by theme, coloured by return">Treemap</button>
+            <button class="fbtn ${heatView==='grid'?'active':''}" onclick="setPerfHeatView('grid')" title="Equal tiles sorted by return">Grid</button>
+          </div>
+        </div>
         <div class="card-body">
-          <div class="hm-grid">
+          ${heatView==='treemap' ? `<div id="perfTreemap" class="perf-treemap"></div>` : `<div class="hm-grid">
             ${sorted.map(e=>{
               const int = Math.min(Math.abs(e.pct)/100,1);
               const bg = e.pct>=0?`rgba(26,135,84,${0.06+int*0.45})`:`rgba(192,57,43,${0.06+int*0.4})`;
               const tc = int>0.4?'#fff':(e.pct>=0?'var(--g)':'var(--r)');
-              return `<div class="hm" style="background:${bg}"${e.partial?' title="Return on the costed shares only; the opening lot carries no cost"':''}>
+              return `<div class="hm" style="background:${bg}" title="${_perfEsc(tileTip(e))}">
                 <div style="font-size:10px;font-weight:600;color:${tc}">${e.ticker}</div>
+                <div class="hm-name" style="color:${tc}">${_perfEsc(e.name)||'&nbsp;'}</div>
                 <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${tc}">${fmtPct(e.pct)}</div>
               </div>`;
             }).join('')}
             ${sorted.length===0?`<div style="grid-column:1/-1;font-size:11px;color:var(--t3);padding:12px 0">${isYtd?basisNote:'No open position carries a recorded cost.'}</div>`:''}
-          </div>
+          </div>`}
         </div>
       </div>
       <div class="card"><div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>P&L Contribution (SGD) · ${basisTag}</div></div>
         <div class="card-body" style="max-height:400px;overflow-y:auto">
+          <div class="pc-summary">${nGain} gainers <span class="pl pos" style="font-family:var(--mono)">${fmtPL(gainSum)}</span> · ${nLoss} losers <span class="pl neg" style="font-family:var(--mono)">${fmtPL(lossSum)}</span> · net <span class="pl ${gainSum+lossSum>=0?'pos':'neg'}" style="font-family:var(--mono);font-weight:700">${fmtPL(gainSum+lossSum)}</span></div>
           ${pnlSorted.map(e=>{
             const bW=(Math.abs(e.dollar)/maxPnl)*100;
             const c=e.dollar>=0?'var(--g)':'var(--r)';
-            return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd)">
-              <span style="font-size:10px;font-weight:600;width:84px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.ticker}${e.closed?'<span style="font-size:8px;font-weight:400;color:var(--t4)" title="Closed during the year: realised P&amp;L only"> closed</span>':''}</span>
+            return `<div class="pc-row" title="${_perfEsc(rowTip(e))}">
+              <span class="pc-label"><b>${e.ticker}</b>${e.closed?'<span class="pc-closed"> closed</span>':''}${e.name?` <span class="pc-name">${_perfEsc(e.name)}</span>`:''}</span>
               <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${bW}%;background:${c}"></div></div>
-              <span class="pl ${e.dollar>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;width:70px;text-align:right">${fmtPL(e.dollar)}</span>
+              <span class="pl ${e.dollar>=0?'pos':'neg'}" style="font-family:var(--mono);font-size:10px;width:70px;text-align:right;flex-shrink:0">${fmtPL(e.dollar)}</span>
             </div>`;
           }).join('')}
         </div>
@@ -3408,10 +3470,11 @@ function renderPerformance(el) {
                 ? `<span style="font-size:11px;color:var(--t4)" title="No position in this theme carries a recorded cost">no recorded cost</span>`
                 : `<span class="pl ${cls}" style="font-family:var(--mono);font-size:15px;font-weight:700">${fmtPL(t.dollar)}</span>
                   <span class="pl ${cls}" style="font-family:var(--mono);font-size:11px">${fmtPct(t.pct)}</span>`;
+              const members = t.members.map(m=>{ const nm=securityName(m.ticker); return `<span title="${_perfEsc(nm||'no name on file')}">${m.ticker}</span>${m.note}`; }).join(', ');
               return `<div style="background:var(--bg3);border-radius:8px;padding:14px;border:1px solid var(--bd)">
-                <div style="font-size:10px;color:var(--t3);margin-bottom:5px">${t.theme}</div>
+                <div style="display:flex;justify-content:space-between;gap:6px;margin-bottom:5px"><span style="font-size:10px;color:var(--t3)">${t.theme}</span><span style="font-size:9px;color:var(--t4);white-space:nowrap" title="Current share of the book and open positions in this theme">${t.count?`${fmt(t.weight,1)}% · ${t.count} pos`:'no open position'}</span></div>
                 <div style="display:flex;justify-content:space-between;align-items:baseline">${figures}</div>
-                <div style="font-size:10px;color:var(--t4);margin-top:5px">${t.members.join(', ')}</div>
+                <div style="font-size:10px;color:var(--t4);margin-top:5px">${members}</div>
               </div>`;
             }).join('')}
           </div>
@@ -3425,19 +3488,70 @@ function renderPerformance(el) {
     </div>
   `;
 
-  // Return distribution bar chart — the heatmap's entries, same basis
+  // Return distribution bar chart — the heatmap's entries, same basis; the
+  // hover carries the name and the P&L so the ticker axis is not the only key.
   setTimeout(()=>{
     const s=sorted;
     Plotly.newPlot('pnlDistChart',[{
       type:'bar', x:s.map(e=>e.ticker), y:s.map(e=>e.pct),
+      customdata:s.map(e=>[e.name||'', fmtPL(e.dollar), fmt(e.weight,1)+'%']),
+      hovertemplate:'<b>%{x}</b> %{customdata[0]}<br>'+basisTag+' return %{y:+.2f}%<br>P&L %{customdata[1]} · weight %{customdata[2]}<extra></extra>',
       marker:{color:s.map(e=>e.pct>=0?'rgba(26,135,84,0.7)':'rgba(192,57,43,0.7)'),line:{width:0}},
       text:s.map(e=>fmtPct(e.pct)), textposition:'outside', textfont:{size:10,family:'DM Mono'}
     }],{
       margin:{t:20,b:50,l:50,r:20}, paper_bgcolor:'transparent', plot_bgcolor:'transparent',
       font:{family:'DM Sans',size:11,color:'#5c5c56'},
+      hovermode:'closest', hoverlabel:{bgcolor:'#fff',bordercolor:'#d5d3ca',font:{size:11,family:'DM Sans'}},
       xaxis:{tickangle:-45}, yaxis:{title:'Return %',gridcolor:'#e2e0d8',zerolinecolor:'#c0beb5'}
     },{displayModeBar:false,responsive:true});
   },100);
+
+  // Treemap: tile size = current market value, colour = return on the chosen
+  // basis (diverging, neutral at zero, saturating at ±lim), grouped by theme.
+  // Names print inside tiles when they fit; the hover carries everything.
+  if (heatView === 'treemap') setTimeout(()=>{
+    const el2 = document.getElementById('perfTreemap');
+    if (!el2) return;
+    if (heat.length === 0) { el2.innerHTML = `<div style="font-size:11px;color:var(--t3);padding:12px 0">${isYtd?basisNote:'No open position carries a recorded cost.'}</div>`; return; }
+    const byTheme = {};
+    heat.forEach(e => { (byTheme[e.theme] = byTheme[e.theme] || []).push(e); });
+    const themePct = {}; themes.forEach(t => { themePct[t.theme] = t.pct; });
+    const ids=[], labels=[], parents=[], values=[], colors=[], text=[], custom=[];
+    Object.entries(byTheme).forEach(([theme, arr]) => {
+      const cv = arr.map(e => Math.max(e.value, 1));
+      const tv = cv.reduce((s,v)=>s+v,0);
+      const tw = arr.reduce((s,e)=>s+e.weight,0), td = arr.reduce((s,e)=>s+e.dollar,0);
+      const tp = (themePct[theme] != null && isFinite(themePct[theme])) ? themePct[theme] : arr.reduce((s,e,i)=>s+e.pct*cv[i],0)/tv;
+      ids.push('T:'+theme); labels.push(theme); parents.push('ROOT'); values.push(tv); colors.push(tp);
+      text.push(fmtPct(tp)); custom.push([`${arr.length} position${arr.length===1?'':'s'}`, fmt(tw,1)+'%', fmtPct(tp), fmtPL(td)]);
+      arr.forEach((e,i) => {
+        ids.push(e.ticker); labels.push(e.ticker); parents.push('T:'+theme); values.push(cv[i]); colors.push(e.pct);
+        text.push((e.name ? e.name + '<br>' : '') + fmtPct(e.pct));
+        custom.push([e.name || '', fmt(e.weight,1)+'%', fmtPct(e.pct), fmtPL(e.dollar)]);
+      });
+    });
+    // An explicit, neutral root: without it Plotly paints the path bar in the
+    // root's default dark fill and labels it with nothing.
+    const rootValue = values.filter((v,i)=>parents[i]==='ROOT').reduce((s,v)=>s+v,0);
+    ids.unshift('ROOT'); labels.unshift('All positions'); parents.unshift(''); values.unshift(rootValue); colors.unshift(0);
+    text.unshift(''); custom.unshift([`${heat.length} positions on the ${basisTag} basis`, fmt(heat.reduce((s,e)=>s+e.weight,0),1)+'%', '', fmtPL(heat.reduce((s,e)=>s+e.dollar,0))]);
+    const lim = Math.min(50, Math.max(10, Math.ceil(Math.max(...heat.map(e=>Math.abs(e.pct)))/10)*10));
+    Plotly.newPlot('perfTreemap', [{
+      type:'treemap', ids, labels, parents, values, text, customdata:custom,
+      branchvalues:'total', textinfo:'label+text', textfont:{family:'DM Sans', size:11},
+      hovertemplate:'<b>%{label}</b> %{customdata[0]}<br>Weight %{customdata[1]}<br>'+basisTag+' return %{customdata[2]}<br>P&L %{customdata[3]}<extra></extra>',
+      marker:{ colors, colorscale:[[0,'#c0392b'],[0.5,'#efeee8'],[1,'#1a8754']], cmid:0, cmin:-lim, cmax:lim, showscale:true,
+        colorbar:{ title:{text:basisTag+' %', font:{size:10}}, thickness:8, len:0.7, tickfont:{size:10, family:'JetBrains Mono'}, outlinewidth:0 },
+        line:{ width:2, color:'#fff' } },
+      pathbar:{ visible:true, thickness:18, textfont:{size:10} },
+      tiling:{ pad:2 },
+    }], {
+      margin:{t:4,b:4,l:4,r:4}, paper_bgcolor:'transparent',
+      font:{family:'DM Sans', size:11, color:'#4a4a44'},
+      uniformtext:{ minsize:8, mode:'hide' },
+      hoverlabel:{ bgcolor:'#fff', bordercolor:'#d5d3ca', font:{size:11, family:'DM Sans'} },
+    }, {displayModeBar:false, responsive:true});
+  }, 120);
 
   // Equity curve + drawdown + KPI strip at the top of the tab
   setTimeout(() => renderEquityCurve('equityCurveCard', ps, TRADES_YTD, perfWindow), 80);
@@ -6110,6 +6224,12 @@ window.setPerfBasis = (b) => {
   state.perfBasis = b;
   // The four position-level cards and their footnote all depend on the basis,
   // so the whole pane re-renders (the equity curve redraws with it).
+  _paneVersion.performance = -1;
+  renderTab();
+};
+
+window.setPerfHeatView = (v) => {
+  state.perfHeatView = v;
   _paneVersion.performance = -1;
   renderTab();
 };
