@@ -1,0 +1,56 @@
+name: Deploy Pages
+
+# Publishes docs/ exactly as committed, with no rebake.
+#
+# update.yml already deploys Pages, but only on its three price crons and on
+# manual dispatch. Nothing deploys on push, so a hand edit to template.html
+# sat unpublished until the next scheduled price run — up to 42 hours on a
+# Saturday, longer over a public holiday. Two hover-format corrections on
+# 2026-09-12 are what surfaced it.
+#
+# This workflow is deliberately NOT a second bake. It uploads the committed
+# docs/ and deploys, so a template change reaches the site as soon as the
+# built artefact is pushed, while update.yml keeps sole responsibility for
+# fetching prices and committing data.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Read-only on contents: this workflow never commits. Writing docs/ back to
+# main remains update.yml's job alone.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Same group as update.yml so a push-triggered deploy and a scheduled one
+# serialise rather than race. Never cancel in flight — a half-updated Pages
+# site is worse than a slightly late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned to match update.yml. Review before 16 Sep 2026 alongside that
+      # file: GitHub removes Node 20 from runners then, so both workflows need
+      # majors that run on Node 24.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
