@@ -4251,7 +4251,9 @@ function runBacktest(positions) {
     margin:{t:10,b:32,l:55,r:20},
     paper_bgcolor:'transparent',plot_bgcolor:'#fafaf8',
     font:{family:'DM Sans',size:10,color:'#5c5c56'},
-    xaxis:{tickfont:{size:9},tickformat:"%b '%y",nticks:12},
+    // Coarse ticks, but the unified hover must name the session — without
+    // hoverformat Plotly reuses tickformat and reads "Aug '26".
+    xaxis:{tickfont:{size:9},tickformat:"%b '%y",nticks:12,hoverformat:'%d %b %Y'},
     yaxis:{title:'Growth of $100 (log)',titlefont:{size:10},type:'log',gridcolor:'#f0f0ea',tickfont:{size:9,family:'DM Mono'},zerolinecolor:'#d5d3ca',hoverformat:',.0f'},
     legend:{x:0,y:1.1,orientation:'h',font:{size:10}},
     hovermode:'x unified',
