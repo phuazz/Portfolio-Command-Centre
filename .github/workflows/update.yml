@@ -13,6 +13,27 @@ on:
     # bars Yahoo finalised overnight. Each run is a fresh full refetch so
     # the later history.json overwrites the earlier with finalised closes.
     - cron: '0 4 * * 2-6'
+  # Deploy on push as well, so a hand edit does not wait for the next price
+  # cron — that was 42 hours for a Saturday-afternoon commit, and longer over
+  # a public holiday.
+  #
+  # This has to be the SAME workflow rather than a separate deploy-only one.
+  # docs/data/history.json is gitignored (~13 MB) and exists only in the
+  # runner's working tree after the bake below, so a workflow that merely
+  # checks out the repo and uploads the committed docs/ publishes an artifact
+  # with no price history and every chart on the live site renders empty.
+  # A separate deploy-only workflow did exactly that on 2026-09-12 and was
+  # reverted. Whatever deploys must bake first.
+  #
+  # No loop risk: the commit step below pushes with GITHUB_TOKEN, and GitHub
+  # does not re-trigger workflows from those pushes.
+  push:
+    branches: [main]
+    paths:
+      - 'template.html'
+      - 'build.js'
+      - 'docs/**'
+      - '.github/workflows/update.yml'
   workflow_dispatch:
 
 # contents:write  — the bake commits docs/ back to main (unchanged).
