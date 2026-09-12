@@ -6160,7 +6160,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       line: { color: 'rgba(26,135,84,0.95)', width: 2 },
       fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
       customdata: primaryHover,
-      hovertemplate: '<b>%{x|%-d %b %Y}</b><br>Return: %{customdata}<extra></extra>',
+      hovertemplate: 'Return: %{customdata}<extra></extra>',
       yaxis: 'y1',
     } : {
       type: 'scatter', mode: 'lines', name: 'Equity NAV',
@@ -6168,7 +6168,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       line: { color: 'rgba(26,135,84,0.95)', width: 2 },
       fill: 'tozeroy', fillcolor: 'rgba(26,135,84,0.08)',
       customdata: primaryHover,
-      hovertemplate: '<b>%{x|%-d %b %Y}</b><br>NAV: %{customdata}<extra></extra>',
+      hovertemplate: 'NAV: %{customdata}<extra></extra>',
       yaxis: 'y1',
     };
     const trace2 = {
@@ -6177,7 +6177,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       line: { color: 'rgba(192,57,43,0.6)', width: 1 },
       fill: 'tozeroy', fillcolor: 'rgba(192,57,43,0.18)',
       customdata: ddHover,
-      hovertemplate: '<b>%{x|%-d %b %Y}</b><br>Drawdown: %{customdata}<extra></extra>',
+      hovertemplate: 'Drawdown: %{customdata}<extra></extra>',
       yaxis: 'y2',
     };
     if (!document.getElementById('equityCurveChart')) return;
@@ -6189,7 +6189,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
         x: benchmarkCurve.dates, y: benchmarkCurve.cumReturn,
         line: { color: 'rgba(100,116,139,0.85)', width: 1.5, dash: 'dash' },
         customdata: benchHover,
-        hovertemplate: '<b>%{x|%-d %b %Y}</b><br>' + benchmarkCurve.label + ': %{customdata}<extra></extra>',
+        hovertemplate: benchmarkCurve.label + ': %{customdata}<extra></extra>',
         yaxis: 'y1',
       });
     }
@@ -6200,7 +6200,12 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       showlegend: !!(isPct && benchmarkCurve),
       legend: { x: 0, y: 1.05, orientation: 'h', font: { size: 10 } },
       hovermode: 'x unified',
-      xaxis: { type: 'date', gridcolor: '#e2e0d8', tickfont: { size: 10 } },
+      // The hover is "x unified", so the session is named ONCE here and each
+      // trace row carries only its value. Do not put %{x} back into the
+      // hovertemplates: unified mode collapses the <br>, so the rows read
+      // "17 Aug 2026Return: +23.5%" with the date run into the number.
+      xaxis: { type: 'date', gridcolor: '#e2e0d8', tickfont: { size: 10 },
+               hoverformat: '%d %b %Y' },
       yaxis:  isPct
         ? { title: { text: 'Cumulative Return (%)', font: { size: 11 } }, gridcolor: '#e2e0d8', zerolinecolor: '#9a9890', zerolinewidth: 1, tickfont: { size: 10, family: 'JetBrains Mono' }, ticksuffix: '%', side: 'left' }
         : { title: { text: 'NAV (S$)', font: { size: 11 } }, gridcolor: '#e2e0d8', tickfont: { size: 10, family: 'JetBrains Mono' }, tickformat: ',.0f', side: 'left', rangemode: 'tozero' },
