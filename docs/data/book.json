@@ -190,6 +190,16 @@
       "theme": "Cybersecurity",
       "type": "ETF"
     },
+    "NET.US": {
+      "yf": "NET",
+      "name": "Cloudflare",
+      "exchange": "NYS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 60,
+      "theme": "Cybersecurity",
+      "type": "Stock"
+    },
     "KOID.US": {
       "yf": "KOID",
       "name": "KraneShares Global Humanoid Robotics",
@@ -217,6 +227,16 @@
       "ccy": "USD",
       "fee": 0,
       "availLTV": 60,
+      "theme": "Biotech",
+      "type": "Stock"
+    },
+    "MRVI.US": {
+      "yf": "MRVI",
+      "name": "Maravai LifeSciences",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 50,
       "theme": "Biotech",
       "type": "Stock"
     },

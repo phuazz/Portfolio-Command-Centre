@@ -144,5 +144,7 @@
   {"d": "2026-08-19", "t": "DELL.US", "a": "S", "q": 20, "p": 429.535, "ccy": "USD", "yf": "DELL", "th": "US Tech"},
   {"d": "2026-08-21", "t": "MRNA.US", "a": "B", "q": 50, "p": 151.7, "ccy": "USD", "yf": "MRNA", "th": "Biotech"},
   {"d": "2026-08-21", "t": "MU.US", "a": "S", "q": 10, "p": 963.76, "ccy": "USD", "yf": "MU", "th": "US Semis"},
-  {"d": "2026-08-26", "t": "SNDK.US", "a": "S", "q": 7, "p": 1456.51, "ccy": "USD", "yf": "SNDK", "th": "US Semis"}
+  {"d": "2026-08-26", "t": "SNDK.US", "a": "S", "q": 7, "p": 1456.51, "ccy": "USD", "yf": "SNDK", "th": "US Semis"},
+  {"d": "2026-09-17", "t": "NET.US", "a": "B", "q": 27, "p": 334.0582, "ccy": "USD", "yf": "NET", "th": "Cybersecurity"},
+  {"d": "2026-09-18", "t": "MRVI.US", "a": "B", "q": 1185, "p": 7.17, "ccy": "USD", "yf": "MRVI", "th": "Biotech"}
 ]

@@ -576,7 +576,16 @@ const PROXIES = [
 // about whether a single quote actually arrived. Conflating the two is precisely
 // what let a total feed outage render as "54 LIVE" on 2026-08-28, with every
 // headline figure a day stale and nothing on the page disagreeing.
-let _lastFetch = { ok: 0, failed: 0, total: 0, at: null };
+let _lastFetch = { ok: 0, failed: 0, total: 0, at: null, failedSymbols: [] };
+
+// Consecutive-poll failure count per symbol, reset to absent the moment a quote
+// arrives. It exists because the failure COUNT alone cannot separate the two
+// cases it covers. One symbol missing on one poll is ordinary proxy noise and
+// repairs itself ten seconds later; the same symbol missing on every poll is a
+// quote that has stopped, and nothing else on the page says so — the last-good
+// fallback in fetchAllPrices supplies a price, so the Positions row does not
+// badge it stale and only the header pill dissents.
+let _failStreak = {};
 
 // True once a poll has COMPLETED and not one quote arrived. The null `at`
 // distinguishes a page whose first poll is still in flight — figures baked,
@@ -591,6 +600,26 @@ let _lastFetch = { ok: 0, failed: 0, total: 0, at: null };
 // every one of them baked — while the header pill correctly showed QUOTE FEED
 // DOWN and _lastFetch stood at 0 of 55.
 function _feedIsDead() { return _lastFetch.at !== null && _lastFetch.ok === 0; }
+
+// Tooltip for the header pill on a partial poll: which quotes did not arrive,
+// and for how many consecutive polls. Yahoo symbols are translated back to the
+// tickers shown on the page (0992.HK reads as 992.HK, 4004.T as 4004.JP); FX
+// crosses and anything unmapped keep the raw symbol. Without this the pill can
+// say that one of 55 failed but not which one, and identifying it means opening
+// the console.
+function _fetchFailureTooltip() {
+  const syms = _lastFetch.failedSymbols || [];
+  if (!syms.length) return '';
+  const names = syms.map(s => {
+    const pos = (typeof POSITIONS !== 'undefined' && POSITIONS) ? POSITIONS.find(p => p.yf === s) : null;
+    const label = pos ? pos.ticker : s;
+    const streak = _failStreak[s] || 1;
+    return streak > 1 ? `${label} (${streak} polls)` : label;
+  });
+  return `Did not arrive on the last poll: ${names.join(', ')}. `
+       + `Each holds its last-good price, so no figure reverted to the bake. `
+       + `A single poll is ordinary proxy noise; a count that keeps climbing is a quote that has stopped.`;
+}
 
 function loadCache() {
   try {
@@ -870,6 +899,7 @@ async function fetchAllPrices() {
   // okCount is the freshness counter: incremented only where the transport
   // genuinely returned a parsed payload, never on the last-good fallback below.
   let done = 0, failed = 0, okCount = 0;
+  const failedSyms = [];
   const concurrency = 12;   // higher parallelism — fetches are tiny 7d windows now
   const workQueue = [...queue];
 
@@ -885,6 +915,7 @@ async function fetchAllPrices() {
         const data = await fetchLivePrice(item.sym, item.range);
         if (!data) {
           failed++;
+          failedSyms.push(item.sym);
           // FALLBACK on a failed fetch: keep the LAST-GOOD LIVE figures if we have
           // them, dropping to the baked snapshot only when there is no prior live
           // value (e.g. the first poll). Reverting a transiently-failed ticker to
@@ -951,7 +982,14 @@ async function fetchAllPrices() {
 
   // Publish the freshness telemetry before the results are handed back, so the
   // pill and the Intraday card describe THIS poll rather than the merged map.
-  _lastFetch = { ok: okCount, failed, total: totalFetches, at: Date.now() };
+  // The streak is keyed off THIS poll's queue alone: a symbol served from cache
+  // was never fetched, so it neither breaks nor extends its streak.
+  const failedSet = new Set(failedSyms);
+  for (const item of queue) {
+    if (failedSet.has(item.sym)) _failStreak[item.sym] = (_failStreak[item.sym] || 0) + 1;
+    else delete _failStreak[item.sym];
+  }
+  _lastFetch = { ok: okCount, failed, total: totalFetches, at: Date.now(), failedSymbols: [...failedSet].sort() };
 
   // No localStorage write: the baked PRELOADED_HISTORY is the persistent
   // full-history source (refreshed daily by the pipeline). The live refresh only
@@ -6994,24 +7032,31 @@ window.refreshPrices = async function() {
         pill.className = 'pill pill-warn';
         pill.style.background = '';
         pill.textContent = `⚠ QUOTE FEED DOWN · baked ${PRELOADED_DATE || 'close'}`;
+        pill.title = `Not one of the ${_lastFetch.total} quotes arrived on the last poll. Every figure on the page is the ${PRELOADED_DATE || 'last'} bake.`;
       } else if (_lastFetch.ok < _lastFetch.total) {
         state.dataSource = 'partial';
         pill.className = 'pill pill-warn';
         pill.style.background = '';
         pill.textContent = `◐ ${_lastFetch.ok}/${_lastFetch.total} LIVE · ${refreshedAt}`;
+        // The count says a quote is missing; the tooltip says which, and whether
+        // it has been missing long enough to be a dead symbol rather than noise.
+        pill.title = _fetchFailureTooltip();
       } else {
         state.dataSource = 'live';
         pill.className = 'pill pill-live';
         pill.style.background = '';
         pill.textContent = `● ${_lastFetch.ok} LIVE · ${refreshedAt}`;
+        pill.title = `All ${_lastFetch.total} quotes arrived at ${refreshedAt}.`;
       }
     } else {
       pill.className = 'pill pill-date';
       pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : '📊 baked';
+      pill.title = '';
     }
   } catch(e) {
     pill.className = 'pill pill-date';
     pill.textContent = PRELOADED_DATE ? `📊 ${PRELOADED_DATE}` : '📊 baked';
+    pill.title = '';
   } finally {
     _refreshing = false;
   }
