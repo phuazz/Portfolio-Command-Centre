@@ -146,5 +146,9 @@
   {"d": "2026-08-21", "t": "MU.US", "a": "S", "q": 10, "p": 963.76, "ccy": "USD", "yf": "MU", "th": "US Semis"},
   {"d": "2026-08-26", "t": "SNDK.US", "a": "S", "q": 7, "p": 1456.51, "ccy": "USD", "yf": "SNDK", "th": "US Semis"},
   {"d": "2026-09-17", "t": "NET.US", "a": "B", "q": 27, "p": 334.0582, "ccy": "USD", "yf": "NET", "th": "Cybersecurity"},
-  {"d": "2026-09-18", "t": "MRVI.US", "a": "B", "q": 1185, "p": 7.17, "ccy": "USD", "yf": "MRVI", "th": "Biotech"}
+  {"d": "2026-09-18", "t": "MRVI.US", "a": "B", "q": 1185, "p": 7.17, "ccy": "USD", "yf": "MRVI", "th": "Biotech"},
+  {"d": "2026-09-23", "t": "HOOD.US", "a": "B", "q": 70, "p": 125.98, "ccy": "USD", "yf": "HOOD", "th": "US Financials", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
+  {"d": "2026-09-23", "t": "TAN.US", "a": "S", "q": 200, "p": 45.7574, "ccy": "USD", "yf": "TAN", "th": "Clean Energy", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
+  {"d": "2026-09-23", "t": "SPHR.US", "a": "S", "q": 60, "p": 138.66, "ccy": "USD", "yf": "SPHR", "th": "US Entertainment", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
+  {"d": "2026-09-23", "t": "LIT.US", "a": "S", "q": 120, "p": 69.7402, "ccy": "USD", "yf": "LIT", "th": "Lithium/Battery Tech", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"}
 ]

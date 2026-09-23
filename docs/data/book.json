@@ -240,6 +240,16 @@
       "theme": "Biotech",
       "type": "Stock"
     },
+    "HOOD.US": {
+      "yf": "HOOD",
+      "name": "Robinhood Markets",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 50,
+      "theme": "US Financials",
+      "type": "Stock"
+    },
     "MOO.US": {
       "yf": "MOO",
       "name": "VanEck Agribusiness",
