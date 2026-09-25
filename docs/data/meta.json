@@ -1,49 +1,49 @@
 {
-  "date": "24 Sept 2026",
-  "generatedAt": "2026-09-24T23:45:02.644Z",
+  "date": "25 Sept 2026",
+  "generatedAt": "2026-09-25T09:18:29.284Z",
   "tickers": [
     "3010.HK",
-    "4004.T",
     "2338.HK",
+    "4004.T",
     "0992.HK",
     "SGM.AX",
-    "3173.HK",
     "3750.HK",
+    "3173.HK",
     "0981.HK",
-    "ARGT",
     "1615.T",
-    "GDX",
+    "ARGT",
     "COPX",
+    "GDX",
     "SIL",
     "LIT",
     "CIBR",
-    "KOID",
     "NET",
+    "KOID",
     "ARKG",
     "MRNA",
     "MRVI",
     "HOOD",
     "MOO",
     "REMX",
-    "FLNC",
     "TAN",
+    "FLNC",
     "SPCX",
     "TLN",
     "XLE",
     "GRID",
     "IGV",
     "INTC",
-    "MRVL",
     "MU",
-    "NVDA",
+    "MRVL",
     "SNDK",
+    "NVDA",
     "DELL",
     "AKAM",
     "OXY",
     "MSFT",
     "TSLA",
-    "SPHR",
     "BNY",
+    "SPHR",
     "LLY",
     "SOI.PA",
     "GAB.SI",
@@ -58,8 +58,8 @@
     "YYY.SI",
     "CJLU.SI",
     "O39.SI",
-    "S58.SI",
     "P52.SI",
+    "S58.SI",
     "5E2.SI",
     "ES3.SI",
     "ICU.SI",
@@ -90,22 +90,34 @@
     "NASA",
     "9988.HK",
     "EWZ",
-    "IEZ",
     "LIFE",
+    "IEZ",
     "GE"
   ],
   "fxSymbols": [
+    "HKDSGD=X",
+    "AUDSGD=X",
     "EURSGD=X",
     "USDSGD=X",
-    "AUDSGD=X",
-    "HKDSGD=X",
     "JPYSGD=X"
   ],
   "tickerCount": 91,
   "fxCount": 5,
-  "totalBars": 190603,
+  "totalBars": 190636,
   "dataGaps": [],
   "recoveredBars": [
+    {
+      "yf": "3010.HK",
+      "date": "2026-09-24",
+      "close": 91.04,
+      "prints": 12
+    },
+    {
+      "yf": "3173.HK",
+      "date": "2026-09-24",
+      "close": 10.04,
+      "prints": 4
+    },
     {
       "yf": "ARGT",
       "date": "2026-09-22",
@@ -131,16 +143,16 @@
       "prints": 78
     },
     {
-      "yf": "KOID",
-      "date": "2026-09-22",
-      "close": 36.67,
-      "prints": 67
-    },
-    {
       "yf": "NET",
       "date": "2026-09-22",
       "close": 352.945,
       "prints": 78
+    },
+    {
+      "yf": "KOID",
+      "date": "2026-09-22",
+      "close": 36.67,
+      "prints": 67
     },
     {
       "yf": "ARKG",
@@ -189,6 +201,42 @@
       "date": "2026-09-22",
       "close": 161.92,
       "prints": 78
+    },
+    {
+      "yf": "GAB.SI",
+      "date": "2026-09-24",
+      "close": 5.478,
+      "prints": 36
+    },
+    {
+      "yf": "G3B.SI",
+      "date": "2026-09-24",
+      "close": 5.874,
+      "prints": 65
+    },
+    {
+      "yf": "YYY.SI",
+      "date": "2026-09-24",
+      "close": 1.759,
+      "prints": 3
+    },
+    {
+      "yf": "ES3.SI",
+      "date": "2026-09-24",
+      "close": 5.771,
+      "prints": 82
+    },
+    {
+      "yf": "D07.SI",
+      "date": "2026-09-24",
+      "close": 512.92,
+      "prints": 2
+    },
+    {
+      "yf": "S27.SI",
+      "date": "2026-09-24",
+      "close": 763.61,
+      "prints": 14
     }
   ]
 }
