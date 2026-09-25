@@ -212,6 +212,26 @@
       "theme": "Cybersecurity",
       "type": "Stock"
     },
+    "META.US": {
+      "yf": "META",
+      "name": "Meta Platforms",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 70,
+      "theme": "US Tech",
+      "type": "Stock"
+    },
+    "NBIS.US": {
+      "yf": "NBIS",
+      "name": "Nebius Group",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 40,
+      "theme": "US Tech",
+      "type": "Stock"
+    },
     "KOID.US": {
       "yf": "KOID",
       "name": "KraneShares Global Humanoid Robotics",

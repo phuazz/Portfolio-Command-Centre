@@ -154,5 +154,7 @@
   {"d": "2026-09-25", "t": "992.HK", "a": "B", "q": 2000, "p": 37, "ccy": "HKD", "yf": "0992.HK", "th": "China Tech", "ref": "owner 2026-09-25: add to Lenovo, exit CATL and Weichai"},
   {"d": "2026-09-25", "t": "3750.HK", "a": "S", "q": 100, "p": 488.2, "ccy": "HKD", "yf": "3750.HK", "th": "China EV Batteries", "ref": "owner 2026-09-25: add to Lenovo, exit CATL and Weichai"},
   {"d": "2026-09-25", "t": "2338.HK", "a": "S", "q": 2000, "p": 27.96, "ccy": "HKD", "yf": "2338.HK", "th": "China Heavy Industry", "ref": "owner 2026-09-25: add to Lenovo, exit CATL and Weichai"},
-  {"d": "2026-08-20", "t": "GLS", "a": "B", "q": 1600, "p": 6.154, "ccy": "SGD", "yf": "GLS.SI", "th": "Precious Metals", "ref": "owner 2026-08-20: initiate physical gold (GLS)"}
+  {"d": "2026-08-20", "t": "GLS", "a": "B", "q": 1600, "p": 6.154, "ccy": "SGD", "yf": "GLS.SI", "th": "Precious Metals", "ref": "owner 2026-08-20: initiate physical gold (GLS)"},
+  {"d": "2026-09-25", "t": "META.US", "a": "B", "q": 11, "p": 767, "ccy": "USD", "yf": "META", "th": "US Tech", "ref": "owner 2026-09-25: add Meta and Nebius"},
+  {"d": "2026-09-25", "t": "NBIS.US", "a": "B", "q": 35, "p": 242.5, "ccy": "USD", "yf": "NBIS", "th": "US Tech", "ref": "owner 2026-09-25: add Meta and Nebius"}
 ]
