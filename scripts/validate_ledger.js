@@ -58,6 +58,21 @@ const pass = m => console.log('pass  ' + m);
   if (ok) pass('no oversells');
 }
 
+// ── Decision reference gate (since 2026-09-19) ──
+// Every fill dated on or after REF_REQUIRED_FROM carries `ref`, the decision record it
+// expresses (a kickoff or study path with its date, a ledger row, an escalation-queue
+// item, or "owner <date>: <one line>"). Older rows are exempt and counted, never failed.
+{
+  const REF_REQUIRED_FROM = '2026-09-19';
+  const fills = trades.filter(t => t.a === 'B' || t.a === 'S');
+  const missing = fills.filter(t => t.d >= REF_REQUIRED_FROM && !(typeof t.ref === 'string' && t.ref.trim().length > 0));
+  const legacy = fills.filter(t => t.d < REF_REQUIRED_FROM && !(typeof t.ref === 'string' && t.ref.trim().length > 0)).length;
+  const bad = fills.filter(t => typeof t.ref === 'string' && (/[\r\n]/.test(t.ref) || t.ref.length > 160));
+  for (const t of missing) fail(`decision ref missing on ${t.d} ${t.t} ${t.a} ${t.q} @ ${t.p} (required on rows dated ${REF_REQUIRED_FROM} onward)`);
+  for (const t of bad) fail(`decision ref malformed on ${t.d} ${t.t}: one line, up to 160 characters`);
+  if (!missing.length && !bad.length) pass(`decision refs present on every fill dated ${REF_REQUIRED_FROM} onward (${legacy} earlier rows exempt)`);
+}
+
 // ── Replay (mirrors template.html replayLedger) ──
 function replay() {
   const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);

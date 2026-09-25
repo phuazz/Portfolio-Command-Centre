@@ -3,13 +3,21 @@
  * add_trade.js — append one fill to trades.json with zero hand-editing.
  *
  * Usage:
- *   node scripts/add_trade.js <YYYY-MM-DD> <B|S> <qty> <TICKER> <price> [--dry-run]
+ *   node scripts/add_trade.js <YYYY-MM-DD> <B|S> <qty> <TICKER> <price> "<ref>" [--dry-run]
  *
  * Existing tickers only: currency, Yahoo symbol and theme are looked up
  * from book.json meta (falling back to the ticker's most recent trade
  * row). A brand-new ticker needs a meta entry first — use the assisted
  * workflow in CLAUDE.md for that case. No fee field is written; the
  * monthly statement reconciliation backfills fees.
+ *
+ * <ref> (required since 2026-09-19) names the decision the fill expresses,
+ * so a trade can be traced back to the record that motivated it: a kickoff
+ * or study path with its date ("command-centre/STATE_TABLE.md 2026-09-12"),
+ * a ledger row ("ledger 2026-08-21 tradfi-thematic"), an escalation-queue
+ * item, or "owner <date>: <one line>" for a named discretionary decision.
+ * Never a broker, account or statement reference. validate_ledger.js
+ * requires it on every row dated on or after 2026-09-19.
  *
  * The append is a text splice at the end of the array, so existing rows
  * are byte-untouched. Run scripts/validate_ledger.js afterwards (the
@@ -23,11 +31,21 @@ const TRADES = path.join(ROOT, 'trades.json');
 
 const args = process.argv.slice(2).filter(a => a !== '--dry-run');
 const dryRun = process.argv.includes('--dry-run');
-if (args.length !== 5) {
-  console.error('Usage: node scripts/add_trade.js <YYYY-MM-DD> <B|S> <qty> <TICKER> <price> [--dry-run]');
+if (args.length !== 6) {
+  console.error('Usage: node scripts/add_trade.js <YYYY-MM-DD> <B|S> <qty> <TICKER> <price> "<ref>" [--dry-run]');
+  console.error('<ref> names the decision the fill expresses (a kickoff or study path with its date, a ledger row, an escalation-queue item, or "owner <date>: <one line>"). Required since 2026-09-19.');
   process.exit(1);
 }
-const [d, a, qStr, t, pStr] = args;
+const [d, a, qStr, t, pStr, refRaw] = args;
+
+// ── Decision reference: non-empty, one line, no quotes, never a broker/account reference ──
+const ref = String(refRaw).trim();
+if (!ref || ref.length > 160 || /[\r\n"]/.test(ref)) {
+  console.error(`Invalid ref: ${JSON.stringify(refRaw)} (non-empty, one line, up to 160 characters, no double quotes)`); process.exit(1);
+}
+if (/\b(account|acct|a\/c|statement|broker)\b/i.test(ref) || /\d{6,}/.test(ref)) {
+  console.error('Invalid ref: it looks like an account, statement or broker reference. The ref names a DECISION record, never an account.'); process.exit(1);
+}
 
 // ── Validate arguments ──
 if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(Date.parse(d + 'T00:00:00Z'))) {
@@ -72,7 +90,7 @@ if (op && op.invested == null) {
 }
 
 // ── Build the row in the file's established key order and style ──
-const row = `  {"d": "${d}", "t": "${t}", "a": "${a}", "q": ${q}, "p": ${p}, "ccy": "${ccy}", "yf": ${yf == null ? 'null' : `"${yf}"`}, "th": "${th}"}`;
+const row = `  {"d": "${d}", "t": "${t}", "a": "${a}", "q": ${q}, "p": ${p}, "ccy": "${ccy}", "yf": ${yf == null ? 'null' : `"${yf}"`}, "th": "${th}", "ref": "${ref}"}`;
 
 // ── Text splice: existing rows stay byte-identical ──
 const trimmed = tradesText.replace(/\s+$/, '');
