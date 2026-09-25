@@ -157,7 +157,7 @@
       "ccy": "USD",
       "fee": 0,
       "availLTV": 60,
-      "theme": "Gold Miners",
+      "theme": "Precious Metals",
       "type": "ETF"
     },
     "SIL.US": {
@@ -167,8 +167,20 @@
       "ccy": "USD",
       "fee": 0,
       "availLTV": 60,
-      "theme": "Silver/Precious Metals",
+      "theme": "Precious Metals",
       "type": "ETF"
+    },
+    "GLS": {
+      "yf": "GLS.SI",
+      "name": "Lion-OCBC Sec Physical Gold",
+      "exchange": "SGX",
+      "ccy": "SGD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "Precious Metals",
+      "type": "ETF",
+      "account": "CDP",
+      "mktPriceSnap": 6.154
     },
     "LIT.US": {
       "yf": "LIT",
@@ -492,7 +504,7 @@
       "ccy": "USD",
       "fee": 0,
       "availLTV": 60,
-      "theme": "Gold Miners",
+      "theme": "Precious Metals",
       "type": "ETF"
     },
     "SOI.FR": {
