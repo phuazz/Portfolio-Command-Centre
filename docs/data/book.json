@@ -56,7 +56,7 @@
       "exchange": "HKG",
       "ccy": "HKD",
       "fee": 0,
-      "availLTV": 60,
+      "availLTV": 50,
       "theme": "China Tech",
       "type": "Stock"
     },

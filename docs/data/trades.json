@@ -150,5 +150,8 @@
   {"d": "2026-09-23", "t": "HOOD.US", "a": "B", "q": 70, "p": 125.98, "ccy": "USD", "yf": "HOOD", "th": "US Financials", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
   {"d": "2026-09-23", "t": "TAN.US", "a": "S", "q": 200, "p": 45.7574, "ccy": "USD", "yf": "TAN", "th": "Clean Energy", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
   {"d": "2026-09-23", "t": "SPHR.US", "a": "S", "q": 60, "p": 138.66, "ccy": "USD", "yf": "SPHR", "th": "US Entertainment", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
-  {"d": "2026-09-23", "t": "LIT.US", "a": "S", "q": 120, "p": 69.7402, "ccy": "USD", "yf": "LIT", "th": "Lithium/Battery Tech", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"}
+  {"d": "2026-09-23", "t": "LIT.US", "a": "S", "q": 120, "p": 69.7402, "ccy": "USD", "yf": "LIT", "th": "Lithium/Battery Tech", "ref": "owner 2026-09-23: rotate out of TAN, SPHR and LIT into HOOD"},
+  {"d": "2026-09-25", "t": "992.HK", "a": "B", "q": 2000, "p": 37, "ccy": "HKD", "yf": "0992.HK", "th": "China Tech", "ref": "owner 2026-09-25: add to Lenovo, exit CATL and Weichai"},
+  {"d": "2026-09-25", "t": "3750.HK", "a": "S", "q": 100, "p": 488.2, "ccy": "HKD", "yf": "3750.HK", "th": "China EV Batteries", "ref": "owner 2026-09-25: add to Lenovo, exit CATL and Weichai"},
+  {"d": "2026-09-25", "t": "2338.HK", "a": "S", "q": 2000, "p": 27.96, "ccy": "HKD", "yf": "2338.HK", "th": "China Heavy Industry", "ref": "owner 2026-09-25: add to Lenovo, exit CATL and Weichai"}
 ]
