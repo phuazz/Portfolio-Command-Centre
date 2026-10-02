@@ -166,6 +166,37 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   does not skip SRS. GLS (CDP) is outside the check. `cashAnchor` was again
   NOT re-anchored (the 2026-08-08 decision stands); it remains 2026-06-30.
   The V7AB hand-mark was out of scope.
+- September fills reconciled against the September statement (31 August to
+  30 September) on 2026-10-02: all eleven statement fills (NET.US, MRVI.US,
+  HOOD.US, TAN.US, SPHR.US, LIT.US, 992.HK, 3750.HK, 2338.HK, META.US,
+  NBIS.US) matched the ledger 1:1 on date, quantity and price, with no missing
+  or extra fills; fees were backfilled from the statement cash movements and
+  the existing `ref` values left untouched. Replayed brokerage holdings tie to
+  the 30 September statement exactly on quantity and within broker rounding on
+  average across all 35 open SCB lines, again on a point-in-time ledger cut
+  (rows dated on or before 30 September, which excludes the 2 October 981.HK
+  sell). One near-tolerance line: 992.HK carries the cash-line fee HKD 248.84
+  (commission plus the 0.1% stamp duty, both on the settlement line), giving
+  an average 0.0048 below the broker's 26.5488 against a 0.005 tolerance; the
+  broker average implies HKD 287.80, and the HKD 38.96 gap has no cash line
+  on the statement. Kept at 248.84 (owner decision 2026-10-02); check the
+  October statement for a late charge. The SOI.FR French FTT (EUR 35.36, July)
+  has still not appeared as a separate cash line, but the broker average
+  (118.6208, unchanged) already includes it, matching the row's 57.81 fee;
+  nothing to book. T6I carried at ledger values as in August; `cashAnchor`
+  unchanged at 2026-06-30; V7AB out of scope.
+- OPEN: Crasus Chemical (646A.JP), the 1:1 in-kind spin-off from Resonac
+  (4004.JP) listed on the TSE on 29 September, is owned (100 shares) but NOT
+  yet booked. It is absent from the 30 September statement and 4004.JP is
+  unchanged there (100 @ 15,684.12). The ledger has no corporate-action
+  mechanism: a buy row would fabricate a JPY cash outflow, and a zero-price
+  buy would misstate attribution. Booking it needs a non-cash spin-off row type
+  handled identically by `replayLedger()`, `build.js` and `validate_ledger.js`
+  and by the FIFO and daily-book engines, with the basis split at the
+  allocation ratio (about 0.085, an estimate until the final figure in early
+  November). Owner decision 2026-10-02: a separate session. Until then NAV
+  omits the Crasus value and the 4004.JP mark carries any ex-spin-off fall as
+  a loss.
 - Engine architecture: the NAV-series engines (equity curve, TWRR,
   allocation risk) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
