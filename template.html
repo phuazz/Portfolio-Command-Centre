@@ -436,6 +436,26 @@ let POSITIONS = [];   // Derived at boot: replayLedger() replays data/trades.jso
 let LEDGER_BOOK = null; // Raw book.json payload kept for the daily-book universe: opening
                         // quantities and metadata of tickers no longer held (closed in-year).
 let TRADES_YTD = [];  // Loaded at boot from data/trades.json (buy/sell rows only, chronological).
+
+// Ledger action vocabulary (since 2026-10-02). B and S are fills: they move
+// quantity and cash. Every engine reads a row's effect through these helpers
+// rather than testing t.a inline, because the inline form `t.a === 'B' ? +1 : -1`
+// reads any other action code as a sell. A code outside the vocabulary throws
+// here; build.js and scripts/validate_ledger.js refuse it before a bake can
+// publish it (shared definition: scripts/ledger_actions.js; keep both in step).
+const LEDGER_FILL_ACTIONS = new Set(['B', 'S']);
+function isFillRow(t) { return LEDGER_FILL_ACTIONS.has(t.a); }
+function _ledgerAction(t) {
+  if (!LEDGER_FILL_ACTIONS.has(t.a)) throw new Error('ledger row ' + t.d + ' ' + t.t + ': unknown action ' + JSON.stringify(t.a));
+  return t.a;
+}
+function isBuyRow(t)  { return _ledgerAction(t) === 'B'; }
+function isSellRow(t) { return _ledgerAction(t) === 'S'; }
+// Signed change in quantity held: +q on a buy, -q on a sell.
+function rowQtyDelta(t) { return isBuyRow(t) ? t.q : -t.q; }
+// Signed capital deployed into the position, native currency, before fees:
+// +q×p on a buy, -q×p on a sell. The cash bucket moves by the negative.
+function rowFlowLoc(t) { return isBuyRow(t) ? t.q * t.p : -(t.q * t.p); }
 let THESES = {};      // Loaded at boot from data/theses.json (per-holding investment theses) — optional.
 
 // Snapshot prices from screenshots (fallback if live fetch fails)
@@ -2004,8 +2024,8 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
 
     const qtyNow = pos ? pos.qty : 0;
     const wTrades = trades.filter(t => t.t === tk && t.d > startDateTk);   // trades after the start mark
-    const buysW  = wTrades.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
-    const sellsW = wTrades.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
+    const buysW  = wTrades.filter(isBuyRow).reduce((s, t) => s + t.q, 0);
+    const sellsW = wTrades.filter(isSellRow).reduce((s, t) => s + t.q, 0);
     const qtyStart = qtyNow - buysW + sellsW;
     if (qtyStart === 0 && wTrades.length === 0) continue;                  // not held at start, not traded in window
 
@@ -2013,7 +2033,7 @@ function calcPortfolioPeriodPnL(ps, trades, barsBack) {
     const startVal = qtyStart * pStart * fxAtDate(ccy, startDateTk);
     const endVal   = qtyNow   * pNow   * fxNow;
     let netFlow = 0;
-    for (const t of wTrades) netFlow += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d);
+    for (const t of wTrades) netFlow += rowFlowLoc(t) * fxAtDate(ccy, t.d);
     equityPnl += endVal - startVal - netFlow;
     count++;
   }
@@ -2252,8 +2272,8 @@ function calcSplitDayPnL(ps, trades) {
     const pNow = fresher ? curPrice : lastAdj;
     const fxNow = pos ? (pos.fxRate || 1) : (FX[ccy] || 1);
     const tradesOf = trades.filter(t => t.t === tk);
-    const net = arr => arr.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
-    const flow = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d), 0);
+    const net = arr => arr.reduce((s, t) => s + rowQtyDelta(t), 0);
+    const flow = arr => arr.reduce((s, t) => s + rowFlowLoc(t) * fxAtDate(ccy, t.d), 0);
 
     // Intraday: (boundary, now]
     const wIntra = tradesOf.filter(t => t.d > dateU);
@@ -2614,7 +2634,7 @@ function renderWhatChanged() {
 
   if (windowStart) {
     for (const t of TRADES_YTD.filter(t => t.d > windowStart)) {
-      const buy = t.a === 'B';
+      const buy = isBuyRow(t);
       items.push({ icon: '●', cls: buy ? 'pos' : 'neg',
         html: `${buy ? 'Bought' : 'Sold'} <strong title="${t.t}">${(t.q || 0).toLocaleString('en-US')} ${nameOf(t.t)}</strong> @ <span class="wc-num">${(t.p || 0).toLocaleString('en-US')}</span>${t.th ? ` <span class="wc-dim">(${t.th})</span>` : ''} · ${t.d}` });
     }
@@ -4718,9 +4738,9 @@ function calcAttribution(ps, bars, trades) {
       // ── Flow-aware day attribution ──
       const ccy = p.ccy;
       const tradesOf = trades.filter(t => t.t === p.ticker);
-      const net     = arr => arr.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
-      const flowFx  = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(ccy, t.d), 0);
-      const flowLoc = arr => arr.reduce((s, t) => s + (t.a === 'B' ? 1 : -1) * t.q * t.p, 0);   // shares×fill price; FX applied once outside
+      const net     = arr => arr.reduce((s, t) => s + rowQtyDelta(t), 0);
+      const flowFx  = arr => arr.reduce((s, t) => s + rowFlowLoc(t) * fxAtDate(ccy, t.d), 0);
+      const flowLoc = arr => arr.reduce((s, t) => s + rowFlowLoc(t), 0);   // shares×fill price; FX applied once outside
       // Boundary quantity and the flow window. For ID the window is
       // (prior US close, now]; for 1D it is the prior complete global day
       // (dateP, dateU], with current quantity rolled back past any later
@@ -4759,9 +4779,9 @@ function calcAttribution(ps, bars, trades) {
       // the displayed rate. Computed in local currency throughout (the FX leg
       // renders separately); basisSGD carries the same basis — opening leg at
       // start FX, buys at trade-date FX — up to the theme aggregate.
-      const buyLoc = w.reduce((s, t) => s + (t.a === 'B' ? t.q * t.p : 0), 0);
+      const buyLoc = w.reduce((s, t) => s + (isBuyRow(t) ? t.q * t.p : 0), 0);
       const basisLoc = qStart * r.closeThen + buyLoc;
-      basisSGD = qStart * r.closeThen * fxThen + w.reduce((s, t) => s + (t.a === 'B' ? t.q * t.p * fxAtDate(ccy, t.d) : 0), 0);
+      basisSGD = qStart * r.closeThen * fxThen + w.reduce((s, t) => s + (isBuyRow(t) ? t.q * t.p * fxAtDate(ccy, t.d) : 0), 0);
       retPct = basisLoc > 0 ? ((qEnd * r.closeNow - qStart * r.closeThen - fl) / basisLoc) * 100 : null;
       if (!isFinite(dollar) || startSGD === 0) continue;
     } else {
@@ -4924,7 +4944,7 @@ function calcWindowAttribution(ps, bars, trades) {
     // current holding back past them to recover the holding at the window start.
     const wTrades = trades.filter(t => t.t === tk && t.d > startDate)
                           .sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
-    const net = wTrades.reduce((s, t) => s + (t.a === 'B' ? t.q : -t.q), 0);
+    const net = wTrades.reduce((s, t) => s + rowQtyDelta(t), 0);
     const qtyStart = qtyNow - net;
 
     // Seed lot = holding at window start, cost = window-start RAW close, carrying
@@ -4938,7 +4958,7 @@ function calcWindowAttribution(ps, bars, trades) {
     // realisedPrice strips the dividend uplift (u = 1) to isolate the price leg.
     let realised = 0, realisedPrice = 0, realisedSGD = 0;
     for (const t of wTrades) {
-      if (t.a === 'B') {
+      if (isBuyRow(t)) {
         lots.push({ qty: t.q, cost: t.p, u: uAt(t.d), fxEntry: fxAtDate(ccy, t.d) });
       } else {
         const uSell = uAt(t.d), fxSell = fxAtDate(ccy, t.d);
@@ -4979,7 +4999,7 @@ function calcWindowAttribution(ps, bars, trades) {
     // two-point startSGD exactly) plus the cost of capital deployed by in-window
     // buys (so a name opened mid-window carries weight rather than a zero base).
     const windowStartValueSGD = Math.max(0, qtyStart) * adjThen * fxThen;
-    const windowBuyCostSGD = wTrades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
+    const windowBuyCostSGD = wTrades.filter(isBuyRow).reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
     const startSGD = windowStartValueSGD + windowBuyCostSGD;
     if (!(startSGD > 0)) continue;
     const endSGD = qtyNow * closeNow * fxNow;
@@ -5146,7 +5166,7 @@ function calcYtdAttribution(ps, trades) {
     let buyCost = 0;        // sum of buy proceeds in native ccy (for cash-flow reporting)
     let sellProceeds = 0;
     for (const tr of trades) {
-      if (tr.a === 'B') { buyQty  += tr.q; buyCost += tr.q * tr.p; }
+      if (isBuyRow(tr)) { buyQty  += tr.q; buyCost += tr.q * tr.p; }
       else              { sellQty += tr.q; sellProceeds += tr.q * tr.p; }
     }
 
@@ -5179,8 +5199,8 @@ function calcYtdAttribution(ps, trades) {
         if (PRE_YTD_BASIS[ticker] != null) {
           jan1Px = PRE_YTD_BASIS[ticker];
         } else {
-          const firstSell = trades.find(tr => tr.a === 'S');
-          const firstBuy  = trades.find(tr => tr.a === 'B');
+          const firstSell = trades.find(isSellRow);
+          const firstBuy  = trades.find(isBuyRow);
           jan1Px = firstSell ? firstSell.p : (firstBuy ? firstBuy.p : 0);
           flags.push({ ticker, reason: 'pre-YTD lot — cost basis unavailable, sell price used' });
         }
@@ -5193,7 +5213,7 @@ function calcYtdAttribution(ps, trades) {
     // (dividend) component of the total return.
     let realised = 0, realisedPrice = 0;
     for (const tr of trades) {
-      if (tr.a === 'B') {
+      if (isBuyRow(tr)) {
         lots.push({ qty: tr.q, cost: tr.p, u: uFactorAt(pos, tr.d), fxEntry: fxAtDate(ccy, tr.d) });
       } else {
         const uSell = uFactorAt(pos, tr.d);
@@ -5257,7 +5277,7 @@ function calcYtdAttribution(ps, trades) {
     // For themes built entirely during the year, startSGD is 0 — using the
     // sum of YTD buy costs as denominator gives a meaningful return number
     // instead of 0.00%.
-    const buyCostSGD    = trades.filter(t => t.a === 'B').reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
+    const buyCostSGD    = trades.filter(isBuyRow).reduce((s, t) => s + t.q * t.p * fxAtDate(ccy, t.d), 0);
     const basisSGD      = Math.max(startSGD, buyCostSGD);
 
     // Theme from POSITIONS if available, else from first trade entry
@@ -5296,10 +5316,10 @@ function calcYtdAttribution(ps, trades) {
   let avgCapital = bmv;
   if (_span > 0) {
     for (const tr of sorted) {
-      if (tr.a !== 'B' && tr.a !== 'S') continue;
+      if (!isFillRow(tr)) continue;
       const td = Date.parse(tr.d + 'T00:00:00Z');
       let w = (_now - td) / _span; if (w < 0) w = 0; if (w > 1) w = 1;   // weight = time invested
-      avgCapital += w * (tr.a === 'B' ? 1 : -1) * tr.q * tr.p * fxAtDate(tr.ccy, tr.d);
+      avgCapital += w * rowFlowLoc(tr) * fxAtDate(tr.ccy, tr.d);
     }
   }
   if (!(avgCapital > 0)) avgCapital = bmv || 1;            // guard
@@ -5556,13 +5576,13 @@ function buildDailyBook(ps, trades) {
   const qtyRows = {};
   for (const p of priced) {
     const all = trades.filter(t => t.t === p.ticker);
-    const buyTotal  = all.filter(t => t.a === 'B').reduce((s, t) => s + t.q, 0);
-    const sellTotal = all.filter(t => t.a === 'S').reduce((s, t) => s + t.q, 0);
+    const buyTotal  = all.filter(isBuyRow).reduce((s, t) => s + t.q, 0);
+    const sellTotal = all.filter(isSellRow).reduce((s, t) => s + t.q, 0);
     let qty = p.qty - buyTotal + sellTotal;
     const row = new Array(dates.length);
     for (let i = 0; i < dates.length; i++) {
       const tt = tradesByTickerDate[p.ticker] && tradesByTickerDate[p.ticker][dates[i]] || [];
-      for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
+      for (const t of tt) qty += rowQtyDelta(t);
       row[i] = qty;
     }
     qtyRows[p.ticker] = row;
@@ -5576,7 +5596,7 @@ function buildDailyBook(ps, trades) {
     const row = new Array(dates.length);
     for (let i = 0; i < dates.length; i++) {
       const tt = tradesByTickerDate[c.ticker] && tradesByTickerDate[c.ticker][dates[i]] || [];
-      for (const t of tt) qty += (t.a === 'B' ? t.q : -t.q);
+      for (const t of tt) qty += rowQtyDelta(t);
       row[i] = qty;
     }
     if (Math.abs(qty) > 1e-9) console.warn('[dailyBook] closed ticker ' + c.ticker + ' quantity walk ends at ' + qty + ' — ledger drift?');
@@ -5607,8 +5627,8 @@ function buildDailyBook(ps, trades) {
     navRow[i] = nav;
     let cf = 0, untracked = 0;
     for (const t of (tradesByDate[ds] || [])) {
-      if (trackedTickers.has(t.t)) cf += (t.a === 'B' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
-      else untracked += (t.a === 'S' ? 1 : -1) * t.q * t.p * fxAtDate(t.ccy, t.d);
+      if (trackedTickers.has(t.t)) cf += rowFlowLoc(t) * fxAtDate(t.ccy, t.d);
+      else untracked += -rowFlowLoc(t) * fxAtDate(t.ccy, t.d);
     }
     cfRow[i] = cf;
     untrackedRow[i] = untracked;
@@ -7204,7 +7224,7 @@ async function fetchDataFile(name) {
 //  trades dated strictly after the anchor date.
 // ═══════════════════════════════════════════════════════════════
 function replayLedger(book, trades) {
-  const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const sorted = [...trades].filter(isFillRow).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
   const byTicker = {};
   for (const t of sorted) (byTicker[t.t] = byTicker[t.t] || []).push(t);
   const adj = book.costAdjustments || {};
@@ -7230,7 +7250,7 @@ function replayLedger(book, trades) {
     for (const t of tr) {
       // Fee-inclusive cost on buys — matches the broker's average-cost
       // convention, verified against six month-end statements (Phase A.1).
-      if (t.a === 'B') { qty += t.q; costedQty += t.q; inv += t.q * t.p + (t.fee || 0); }
+      if (isBuyRow(t)) { qty += t.q; costedQty += t.q; inv += t.q * t.p + (t.fee || 0); }
       else {
         const avg = qty > 0 ? inv / qty : 0;
         const costedFrac = qty > 0 ? costedQty / qty : 0;
@@ -7273,7 +7293,7 @@ function replayLedger(book, trades) {
   // Cash buckets: anchor balance plus net of post-anchor trades per currency
   for (const ccy of Object.keys(book.cashAnchor.balances)) {
     let cash = book.cashAnchor.balances[ccy];
-    for (const t of sorted) if (t.ccy === ccy && t.d > book.cashAnchor.date) cash += (t.a === 'S' ? t.q * t.p : -(t.q * t.p));
+    for (const t of sorted) if (t.ccy === ccy && t.d > book.cashAnchor.date) cash -= rowFlowLoc(t);
     if (cash < 0) { console.warn('[replay] ' + ccy + ' cash went negative — floored at zero (externally funded buy, or a deposit row is missing)'); cash = 0; }
     const tk = ccy + '.CASH';
     const m = book.meta[tk] || { yf: null, name: ccy + ' Cash', exchange: '', ccy, fee: 0, availLTV: 0, theme: 'Cash & Money Market', type: 'Cash', account: 'Brokerage', mktPriceSnap: 1.00 };
@@ -7303,7 +7323,12 @@ async function bootstrap() {
     RECOVERED_BARS = (meta && Array.isArray(meta.recoveredBars)) ? meta.recoveredBars : [];
     // Ledger-first derivation: the engines consume only buy/sell rows, so
     // future explicit cash-event rows (deposits/withdrawals) stay inert here.
-    TRADES_YTD = trades.filter(t => t.a === 'B' || t.a === 'S');
+    // The bake refuses an unknown action code, so a row reaching this point
+    // outside the vocabulary means the gate was bypassed: say so rather than
+    // drop it silently.
+    TRADES_YTD = trades.filter(isFillRow);
+    const nonFill = trades.filter(t => !isFillRow(t));
+    if (nonFill.length) console.warn('[bootstrap] ' + nonFill.length + ' ledger row(s) outside the action vocabulary ignored: ' + nonFill.map(t => t.d + ' ' + t.t + ' ' + JSON.stringify(t.a)).join(', '));
     PRE_YTD_BASIS = book.epochCloses || {};
     LEDGER_BOOK = book;
     POSITIONS = replayLedger(book, trades);

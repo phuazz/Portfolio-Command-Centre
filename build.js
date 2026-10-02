@@ -27,6 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isFillRow, rowQtyDelta, checkActions } = require('./scripts/ledger_actions');
 
 const TEMPLATE_FILE = path.join(__dirname, 'template.html');
 // Phase 4: single-write into docs/. GitHub Pages serves from docs/ on main,
@@ -82,7 +83,7 @@ function readLedger() {
 function heldYahooSymbols(book, trades) {
   const qty = {};
   for (const op of book.positions || []) qty[op.ticker] = op.qty;
-  for (const t of trades) if (t.a === 'B' || t.a === 'S') qty[t.t] = (qty[t.t] || 0) + (t.a === 'B' ? t.q : -t.q);
+  for (const t of trades) if (isFillRow(t)) qty[t.t] = (qty[t.t] || 0) + rowQtyDelta(t);
   const held = new Set();
   for (const [tk, m] of Object.entries(book.meta || {})) {
     if (m.yf && Math.abs(qty[tk] || 0) > 1e-9) held.add(m.yf);
@@ -90,18 +91,19 @@ function heldYahooSymbols(book, trades) {
   return held;
 }
 
-// Replay validation: the ledger must never sell more than is held (opening
-// quantity plus prior buys), unless a named ledgerOverride covers the gap.
-// A hard failure here stops the bake — a red Actions run beats silently
-// publishing a dashboard built on inconsistent books.
+// Replay validation: every row's action code must be in the ledger vocabulary
+// (scripts/ledger_actions.js), and the ledger must never sell more than is
+// held (opening quantity plus prior buys), unless a named ledgerOverride
+// covers the gap. A hard failure here stops the bake — a red Actions run
+// beats silently publishing a dashboard built on inconsistent books.
 function validateLedger(book, trades) {
-  const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const errors = checkActions(trades);
+  const sorted = [...trades].filter(isFillRow).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
   const qty = {};
   for (const op of book.positions || []) qty[op.ticker] = op.qty;
   const overrides = book.ledgerOverrides || {};
-  const errors = [];
   for (const t of sorted) {
-    qty[t.t] = (qty[t.t] || 0) + (t.a === 'B' ? t.q : -t.q);
+    qty[t.t] = (qty[t.t] || 0) + rowQtyDelta(t);
     if (qty[t.t] < -1e-9 && !overrides[t.t]) errors.push(`${t.d} ${t.t}: sell of ${t.q} exceeds holdings (running qty ${qty[t.t]})`);
   }
   for (const [tk, ov] of Object.entries(overrides)) console.log(`  ⚠️  ledger override active: ${tk} → qty ${ov.qty}`);

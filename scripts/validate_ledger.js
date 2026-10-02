@@ -34,6 +34,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { FILL_ACTIONS, isFillRow, isBuyRow, rowQtyDelta, rowFlowLoc, checkActions } = require('./ledger_actions');
 
 const ROOT = path.join(__dirname, '..');
 const trades = JSON.parse(fs.readFileSync(path.join(ROOT, 'trades.json'), 'utf8'));
@@ -43,15 +44,24 @@ let failures = 0;
 const fail = m => { failures++; console.log('FAIL  ' + m); };
 const pass = m => console.log('pass  ' + m);
 
+// ── Action vocabulary gate (mirrors build.js validateLedger, since 2026-10-02) ──
+// Every row's action code must be in scripts/ledger_actions.js. Before this
+// gate an unknown code was filtered out by every consumer without a word.
+{
+  const bad = checkActions(trades);
+  for (const m of bad) fail(m);
+  if (!bad.length) pass(`every row carries a known action code (${[...FILL_ACTIONS].join(', ')})`);
+}
+
 // ── Oversell gate (mirrors build.js validateLedger) ──
 {
-  const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const sorted = [...trades].filter(isFillRow).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
   const qty = {};
   for (const op of book.positions || []) qty[op.ticker] = op.qty;
   const overrides = book.ledgerOverrides || {};
   let ok = true;
   for (const t of sorted) {
-    qty[t.t] = (qty[t.t] || 0) + (t.a === 'B' ? t.q : -t.q);
+    qty[t.t] = (qty[t.t] || 0) + rowQtyDelta(t);
     if (qty[t.t] < -1e-9 && !overrides[t.t]) { fail(`oversell ${t.d} ${t.t} (running qty ${qty[t.t]})`); ok = false; }
   }
   for (const [tk, ov] of Object.entries(overrides)) console.log(`note  ledger override active: ${tk} -> qty ${ov.qty}`);
@@ -64,7 +74,7 @@ const pass = m => console.log('pass  ' + m);
 // item, or "owner <date>: <one line>"). Older rows are exempt and counted, never failed.
 {
   const REF_REQUIRED_FROM = '2026-09-19';
-  const fills = trades.filter(t => t.a === 'B' || t.a === 'S');
+  const fills = trades.filter(isFillRow);
   const missing = fills.filter(t => t.d >= REF_REQUIRED_FROM && !(typeof t.ref === 'string' && t.ref.trim().length > 0));
   const legacy = fills.filter(t => t.d < REF_REQUIRED_FROM && !(typeof t.ref === 'string' && t.ref.trim().length > 0)).length;
   const bad = fills.filter(t => typeof t.ref === 'string' && (/[\r\n]/.test(t.ref) || t.ref.length > 160));
@@ -75,7 +85,7 @@ const pass = m => console.log('pass  ' + m);
 
 // ── Replay (mirrors template.html replayLedger) ──
 function replay() {
-  const sorted = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+  const sorted = [...trades].filter(isFillRow).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
   const byTicker = {};
   for (const t of sorted) (byTicker[t.t] = byTicker[t.t] || []).push(t);
   const adj = book.costAdjustments || {};
@@ -88,7 +98,7 @@ function replay() {
   const replayOne = (openQty, openInv, openCostedQty, tr) => {
     let q = openQty, inv = openInv, costedQty = openCostedQty;
     for (const t of tr) {
-      if (t.a === 'B') { q += t.q; costedQty += t.q; inv += t.q * t.p + (t.fee || 0); }
+      if (isBuyRow(t)) { q += t.q; costedQty += t.q; inv += t.q * t.p + (t.fee || 0); }
       else {
         const avg = q > 0 ? inv / q : 0;
         const costedFrac = q > 0 ? costedQty / q : 0;
@@ -132,7 +142,7 @@ for (const p of derived) {
 }
 
 // ── Cash buckets: anchor plus strictly-later trades, floored at zero ──
-const sortedT = [...trades].filter(t => t.a === 'B' || t.a === 'S').sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+const sortedT = [...trades].filter(isFillRow).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
 let fxRates = {};
 try {
   const fx = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/data/fx.json'), 'utf8'));
@@ -146,7 +156,7 @@ const buckets = {};
 console.log(`\nDerived cash buckets (anchor ${book.cashAnchor.date} + later trades):`);
 for (const ccy of Object.keys(book.cashAnchor.balances)) {
   let cash = book.cashAnchor.balances[ccy];
-  for (const t of sortedT) if (t.ccy === ccy && t.d > book.cashAnchor.date) cash += (t.a === 'S' ? t.q * t.p : -(t.q * t.p));
+  for (const t of sortedT) if (t.ccy === ccy && t.d > book.cashAnchor.date) cash -= rowFlowLoc(t);
   if (cash < 0) { console.log(`note  ${ccy} floored at zero (externally funded buy since anchor)`); cash = 0; }
   buckets[ccy] = cash;
   const sgd = fxRates[ccy] != null ? `  (~S$${(cash * fxRates[ccy]).toFixed(0)})` : '';
