@@ -150,6 +150,22 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   post-statement) are out of scope for the July pass and reconcile in the
   August cycle. The Astrea 7A (V7AB) hand-mark refresh was out of scope — it is
   a CDP holding, not on the SCB statement.
+- August fills reconciled against the August statement (31 July to 31 August)
+  on 2026-10-02: all nine statement fills (EXV3.DE, CIBR.US, SNDK.US buy and
+  sell, KOID.US, ARKG.US, DELL.US, MRNA.US, MU.US) matched the ledger 1:1 on
+  date, quantity and price, with no missing or extra fills, and explicit fees
+  were backfilled from the statement cash movements. Every buy's
+  fee-inclusive cost equals its broker holding average, so no separate tax line
+  arose this month. Replayed brokerage holdings tie to the 31 August statement
+  exactly on quantity and within broker rounding on average across all 35 open
+  SCB lines (largest residue 0.0001 on 981.HK and 992.HK). The gate was run on a
+  point-in-time copy of the ledger (rows dated on or before 31 August), because
+  `validate_ledger.js` replays the whole ledger and ignores `asOf`, and the
+  ledger already carried September fills. T6I (SRS) was carried in the
+  expectations at ledger values, not statement-tied, because the reverse check
+  does not skip SRS. GLS (CDP) is outside the check. `cashAnchor` was again
+  NOT re-anchored (the 2026-08-08 decision stands); it remains 2026-06-30.
+  The V7AB hand-mark was out of scope.
 - Engine architecture: the NAV-series engines (equity curve, TWRR,
   allocation risk) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
