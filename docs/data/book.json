@@ -518,7 +518,7 @@
       "type": "Stock"
     },
     "GDX.GB": {
-      "yf": "GDX",
+      "yf": "GDX.L",
       "name": "VanEck Gold Miners UCITS",
       "exchange": "LSE",
       "ccy": "USD",

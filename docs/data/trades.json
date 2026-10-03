@@ -38,7 +38,7 @@
   {"d": "2026-03-10", "t": "OXY.US", "a": "S", "q": 300, "p": 52.82, "ccy": "USD", "yf": "OXY", "th": "US Energy", "fee": 34.54},
   {"d": "2026-03-10", "t": "SLV.US", "a": "B", "q": 100, "p": 80.64, "ccy": "USD", "yf": "SLV", "th": "Precious Metals", "fee": 17.58},
   {"d": "2026-03-12", "t": "700.HK", "a": "B", "q": 100, "p": 550.0, "ccy": "HKD", "yf": "0700.HK", "th": "China Tech", "fee": 184.95},
-  {"d": "2026-03-13", "t": "GDX.GB", "a": "S", "q": 70, "p": 108.83, "ccy": "USD", "yf": "GDX", "th": "Precious Metals", "fee": 16.61},
+  {"d": "2026-03-13", "t": "GDX.GB", "a": "S", "q": 70, "p": 108.83, "ccy": "USD", "yf": "GDX.L", "th": "Precious Metals", "fee": 16.61},
   {"d": "2026-03-13", "t": "MU.US", "a": "B", "q": 20, "p": 423.8, "ccy": "USD", "yf": "MU", "th": "US Semis", "fee": 18.48},
   {"d": "2026-03-13", "t": "NOK.US", "a": "B", "q": 900, "p": 8.54, "ccy": "USD", "yf": "NOK", "th": "Telecom Infra", "fee": 16.75},
   {"d": "2026-03-13", "t": "SLV.US", "a": "S", "q": 110, "p": 74.74, "ccy": "USD", "yf": "SLV", "th": "Precious Metals", "fee": 17.92},
