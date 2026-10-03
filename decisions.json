@@ -1,0 +1,11 @@
+{
+  "_comment": "Decision log for the cooling-off rule (PREREG_cooling-off-rule.md). Written by scripts/add_decision.js and scripts/add_trade.js, never by hand. One row per intended trade at the moment of decision; outcome filled, dropped or override. Never a broker, account or statement reference.",
+  "adopted": "2026-10-05",
+  "rule": {
+    "T_pct": 3,
+    "K_sessions": 5,
+    "stale_days": 10
+  },
+  "rows": [
+  ]
+}
