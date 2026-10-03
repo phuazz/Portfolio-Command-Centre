@@ -3088,7 +3088,17 @@ function calcRiskModel(ps, basis) {
     const v = cov(rets, rets);
     if (v > 0) bench[sym] = { rets, var: v };
   }
+  // 50/50 blend of the two, rebalanced each period: the Performance tab's
+  // default benchmark. It is all equity, while the whole book here carries
+  // bonds and cash at zero risk, so the book's beta to it sits below 1 by
+  // roughly the equity weight.
+  if (bench.STI && bench.SPX) {
+    const rets = bench.STI.rets.map((x, i) => 0.5 * x + 0.5 * bench.SPX.rets[i]);
+    const v = cov(rets, rets);
+    if (v > 0) bench.BLEND = { rets, var: v };
+  }
   const betaTo = (r, sym) => bench[sym] ? cov(r, bench[sym].rets) / bench[sym].var : null;
+  const r2To = (r, sym) => { if (!bench[sym]) return null; const c = cov(r, bench[sym].rets), v = cov(r, r); return v > 0 ? c * c / (v * bench[sym].var) : null; };
 
   const rows = names.map(n => {
     const vi = cov(n.rets, n.rets);
@@ -3114,6 +3124,7 @@ function calcRiskModel(ps, basis) {
     totalMV, portRets: rp,
     portVol: Math.sqrt(varP) * ann * 100,
     betaSTI: betaTo(rp, 'STI'), betaSPX: betaTo(rp, 'SPX'),
+    betaBlend: betaTo(rp, 'BLEND'), r2Blend: r2To(rp, 'BLEND'),
     droppedPrints: dropped.filter(x => keys.length && x.date >= keys[0] && x.date <= keys[T - 1]),
     rows,
   };
@@ -3386,6 +3397,7 @@ function _riskSecurityCardHTML(ps, rm) {
           ${tile('Top-5 Risk Share', fmt(top5Risk, 1) + '%', `on ${fmt(top5W, 1)}% of capital · ${top5.map(r => r.ticker).join(' · ')}`)}
           ${tile('Book Beta to STI', f2(rm.betaSTI), `daily closes: ${f2(daily.betaSTI)}`)}
           ${tile('Book Beta to S&amp;P 500', f2(rm.betaSPX), `daily closes: ${f2(daily.betaSPX)}`)}
+          ${tile('Book Beta to 50/50', f2(rm.betaBlend), `R² ${f2(rm.r2Blend)} · priced holdings ${fmt(rm.rows.filter(r => r.priced).reduce((s, r) => s + r.weight, 0), 0)}% of book`)}
         </div>
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
           <table style="width:100%;min-width:820px;border-collapse:collapse;font-size:12px">
@@ -3402,7 +3414,7 @@ function _riskSecurityCardHTML(ps, rm) {
           <strong style="color:var(--t2)">Risk share</strong> is weight × beta to the book, the name's share of the book's variance; it sums to 100% across the book, so a name above its weight adds risk faster than capital and a negative share is a hedge.
           <strong style="color:var(--t2)">Basis:</strong> ${rm.periods} weekly SGD total returns (last adjusted close of each calendar week, FX as of that close), weeks ending ${rm.from} to ${rm.to} (last close ${rm.lastClose}), applied to current weights; this is the current book's risk over past price moves, not the realised risk of the book as it was held.
           Weekly sampling is used because the book spans Asian, European and US closes: daily returns pair sessions that do not overlap, which leaves book volatility almost unchanged here but understates the book's beta to the S&amp;P 500.
-          Benchmarks are the STI ETF (ES3) and the SGX-listed S&amp;P 500 tracker (S27), both in SGD.
+          Benchmarks are the STI ETF (ES3) and the SGX-listed S&amp;P 500 tracker (S27), both in SGD; 50/50 is the two rebalanced weekly, the Performance tab's default comparison. It is all equity, so against this whole book, with bonds and cash at zero risk, a beta below 1 by about the non-equity share is expected. R² is the share of the book's weekly variance the blend explains; the rest is theme and name risk.
           Single-name betas on 52 observations are approximate: the standard error is about 0.12 × (name vol ÷ benchmark vol) at a correlation of 0.5.
           ${unpricedW > 0 ? `Bonds, cash and unpriced holdings (${fmt(unpricedW, 1)}% of the book) carry weight and no risk and are not listed.` : ''}${dropped}
         </div>
@@ -6208,12 +6220,41 @@ function _perfWindowStart(windowKey) {
 // a big-USD year). Snapshot-aware closeNow when today's bar is missing.
 //
 // sym: 'STI' (-> ES3.SI), 'SPX' (-> S27.SI). Both are existing portfolio
-// positions that double as benchmark proxies.
+// positions that double as benchmark proxies. 'BLEND' is 50% STI / 50%
+// S&P 500 rebalanced daily, built from those two curves (see below).
 const BENCHMARK_TICKERS = { STI: 'ES3', SPX: 'S27' };
-const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI, SGD terms)' };
+const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI, SGD terms)', BLEND: '50/50 STI / S&P 500 (SGD)' };
+const BENCHMARK_SHORT   = { STI: 'STI', SPX: 'S&P 500', BLEND: '50/50' };
+const BENCHMARK_DEFAULT = 'BLEND';
+
+// 50/50 blend, rebalanced to equal weights every session: each day's return
+// is the mean of the two trackers' SGD total returns. Both trade on SGX, so
+// their sessions coincide; a date one of them lacks carries that leg flat.
+// Chosen 2026-10-03 because the equity curve covers equities and cash only
+// (bonds excluded) and splits roughly 57/43 Singapore / overseas, while a
+// weekly fit of the whole book put the best two-index mix near 40/60; 50/50
+// sits between the capital split and the fit.
+function _blendBenchmarkCurve(ps, startDateStr) {
+  const a = getBenchmarkCurve(ps, 'STI', startDateStr);
+  const b = getBenchmarkCurve(ps, 'SPX', startDateStr);
+  if (!a || !b) return null;
+  const level = c => { const m = {}; c.dates.forEach((d, i) => { m[d] = 1 + c.cumReturn[i] / 100; }); return m; };
+  const la = level(a), lb = level(b);
+  const dates = [...new Set([...a.dates, ...b.dates])].sort();
+  let pa = 1, pb = 1, idx = 1;   // both curves are rebased to 0% at the same anchor
+  const cumReturn = [];
+  for (const d of dates) {
+    const na = la[d] != null ? la[d] : pa, nb = lb[d] != null ? lb[d] : pb;
+    idx *= 1 + 0.5 * (na / pa - 1) + 0.5 * (nb / pb - 1);
+    pa = na; pb = nb;
+    cumReturn.push((idx - 1) * 100);
+  }
+  return { ticker: 'ES3+S27', name: BENCHMARK_LABELS.BLEND, label: BENCHMARK_LABELS.BLEND, dates, cumReturn, endReturn: cumReturn[cumReturn.length - 1] };
+}
 
 function getBenchmarkCurve(ps, sym, startDateStr) {
   if (!sym || sym === 'NONE') return null;
+  if (sym === 'BLEND') return _blendBenchmarkCurve(ps, startDateStr);
   const tk = BENCHMARK_TICKERS[sym];
   if (!tk) return null;
   const pos = ps.find(p => p.ticker === tk);
@@ -6418,11 +6459,11 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     </div>`;
 
   // Benchmark selector — must initialise BEFORE the kpis array uses it.
-  // Default STI. Compute the benchmark curve only when a benchmark is
+  // Default BENCHMARK_DEFAULT (50/50). Compute the benchmark curve only when a benchmark is
   // selected and the chart is in rebased % mode; otherwise it is null and
   // downstream uses gate on that.
   const mode_pre = state.perfChartMode || 'pct';
-  const benchmarkSel = state.perfBenchmark || 'STI';
+  const benchmarkSel = state.perfBenchmark || BENCHMARK_DEFAULT;
   const benchmarkCurve = (mode_pre === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate) : null;
   const alpha = benchmarkCurve ? (curve.totalReturnPct - benchmarkCurve.endReturn) : null;
 
@@ -6471,7 +6512,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     { label: 'Current NAV',      value: fmtSGD(curve.currentNav), sub: curve.dates[curve.dates.length - 1] },
     { label: 'Total Return (TWRR)', value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length} trading days · Modified Dietz daily` },
     { label: 'MWRR (cross-check)',  value: fmtPct(curve.mwrrPct), cls: curve.mwrrPct >= 0 ? 'pos' : 'neg', sub: `Δ ${(curve.mwrrPct - curve.totalReturnPct).toFixed(2)} pp vs TWRR${Math.abs(curve.mwrrPct - curve.totalReturnPct) > 3 ? ' ⚠' : ''}` },
-    ...(benchmarkCurve ? [{ label: `vs ${benchmarkSel}`, value: (alpha >= 0 ? '+' : '') + alpha.toFixed(2) + ' pp', cls: alpha >= 0 ? 'pos' : 'neg', sub: `Bench ${fmtPct(benchmarkCurve.endReturn)} · You ${fmtPct(curve.totalReturnPct)}` }] : []),
+    ...(benchmarkCurve ? [{ label: `vs ${BENCHMARK_SHORT[benchmarkSel] || benchmarkSel}`, value: (alpha >= 0 ? '+' : '') + alpha.toFixed(2) + ' pp', cls: alpha >= 0 ? 'pos' : 'neg', sub: `Bench ${fmtPct(benchmarkCurve.endReturn)} · You ${fmtPct(curve.totalReturnPct)}` }] : []),
     { label: 'Max Drawdown',     value: fmtPct(curve.maxDrawdown.value), cls: 'neg', sub: `${curve.maxDrawdown.from} → ${curve.maxDrawdown.date}` },
     { label: 'Best Day',         value: fmtPct(curve.bestDay.return),   cls: 'pos', sub: curve.bestDay.date },
     { label: 'Worst Day',        value: fmtPct(curve.worstDay.return),  cls: 'neg', sub: curve.worstDay.date },
@@ -6485,7 +6526,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
     `<button class="fbtn ${k === mode ? 'active' : ''}" onclick="setPerfChartMode('${k}')">${label}</button>`
   ).join('');
 
-  const benchBtns = [['STI','STI'],['SPX','S&P 500'],['NONE','None']].map(([k,label]) =>
+  const benchBtns = [['BLEND','50/50'],['STI','STI'],['SPX','S&P 500'],['NONE','None']].map(([k,label]) =>
     `<button class="fbtn ${k === benchmarkSel ? 'active' : ''}" onclick="setPerfBenchmark('${k}')">${label}</button>`
   ).join('');
 
