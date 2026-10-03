@@ -1,0 +1,1294 @@
+{
+ "registered": "2026-10-03",
+ "provenance": {
+  "trades_json_sha256": "cc15a5c4a892472cabe66fb07aebf7c3bf77f51ed2b1bf1dc6e4a9a294cd6af0",
+  "book_json_sha256": "69fd8c0864520cbfb3fba1ec31679ab7e1fc7aea5b6a974ee140b141d8dd57d9",
+  "history_json_path": "results\\bars_used.json",
+  "history_json_sha256": "e84e3a97363b42d8940baa09ecaf3613e9ee2694fe498070d9f7e2dd88bb6262",
+  "history_extract_provenance": {
+   "source": "live Pages artefact docs/data/history.json",
+   "fetched_from": "https://phuazz.github.io/Portfolio-Command-Centre/data/history.json",
+   "source_sha256": "98052e9d4448be223323dd9ef644230eceb484281d74a64d93ee6fd3b5976247",
+   "source_bytes": 13478215,
+   "extracted_at_utc": "2026-10-03T08:16:17+00:00",
+   "symbols": 71,
+   "bars_from": "2025-09-01"
+  },
+  "history_last_session": "2026-10-02",
+  "fx_json_path": "results\\fx_used.json",
+  "fx_json_sha256": "746859cef3170fcd27cc44eb6a032688670fe0f1aed297a62390673c9a503b43",
+  "fx_extract_provenance": {
+   "source": "docs/data/fx.json as committed in the repository at extraction",
+   "source_sha256": "e9011b158723418825d17b6306650a366d5385ae349bd213cd7f6aeff4748e72",
+   "extracted_at_utc": "2026-10-03T08:16:17+00:00",
+   "pairs": [
+    "AUDSGD=X",
+    "EURSGD=X",
+    "HKDSGD=X",
+    "JPYSGD=X",
+    "USDSGD=X"
+   ]
+  },
+  "spec_sha256": "c0e064048604820264fe5dcc308cf391adb000bb3649fadac019ad4454e71295",
+  "engine_sha256": "e762808c8d9fa251c75bab88dc7ae76383184167894604684e4f074e7bd6249c",
+  "rows_in_trades_json": 159
+ },
+ "counts": {
+  "rows": 159,
+  "units": 159,
+  "excluded_feed_or_type": 5,
+  "dropped_alignment": 2,
+  "dropped_window": 1,
+  "complete": 151,
+  "by_side": {
+   "S": 67,
+   "B": 84
+  },
+  "by_ccy": {
+   "USD": 122,
+   "HKD": 15,
+   "EUR": 5,
+   "JPY": 5,
+   "AUD": 1,
+   "SGD": 3
+  },
+  "symbols": 70,
+  "largest_symbol_shares": [
+   {
+    "yf": "SLV",
+    "fills": 12
+   },
+   {
+    "yf": "MU",
+    "fills": 7
+   },
+   {
+    "yf": "COPX",
+    "fills": 6
+   },
+   {
+    "yf": "INTC",
+    "fills": 5
+   },
+   {
+    "yf": "4004.T",
+    "fills": 5
+   }
+  ],
+  "ex_date_in_window": 6,
+  "with_ref": 10,
+  "fee_recorded": 149,
+  "session_dates": 68,
+  "blocks": 47,
+  "block_size_distribution": {
+   "1": 17,
+   "2": 14,
+   "3": 5,
+   "4": 4,
+   "5": 2,
+   "6": 2,
+   "7": 1,
+   "19": 1,
+   "27": 1
+  },
+  "fills_sharing_a_date": 127,
+  "sgd_notional": {
+   "total": 1662184,
+   "buys": 923673,
+   "sells": 738511
+  }
+ },
+ "exclusions_feed_or_type": [
+  {
+   "ticker": "XMED.GB",
+   "date": "2026-03-02",
+   "side_label": "S",
+   "reason": "no feed symbol"
+  },
+  {
+   "ticker": "XCSI.GB",
+   "date": "2026-03-03",
+   "side_label": "S",
+   "reason": "no feed symbol"
+  },
+  {
+   "ticker": "GDX.GB",
+   "date": "2026-03-13",
+   "side_label": "S",
+   "reason": "proxy feed: book exchange LSE, feed symbol GDX"
+  },
+  {
+   "ticker": "CPRX.US",
+   "date": "2026-05-07",
+   "side_label": "B",
+   "reason": "symbol absent from history.json"
+  },
+  {
+   "ticker": "CPRX.US",
+   "date": "2026-07-16",
+   "side_label": "S",
+   "reason": "symbol absent from history.json"
+  }
+ ],
+ "alignment": {
+  "tally": {
+   "inside own session range": 152,
+   "outside own range; no adjacent session holds the price": 2
+  },
+  "share_outside_own_range": 0.013,
+  "decisive_inside_own_not_previous": 90,
+  "inside_own_and_previous": 62,
+  "inside_own_and_next": 70,
+  "decisive_inside_own_not_either_neighbour": 51,
+  "dated_on_non_session": [],
+  "outside_own_range": [
+   {
+    "ticker": "2525.HK",
+    "date": "2026-02-23",
+    "side_label": "B",
+    "price": 220.6,
+    "alignment": "outside own range; no adjacent session holds the price"
+   },
+   {
+    "ticker": "2525.HK",
+    "date": "2026-03-25",
+    "side_label": "S",
+    "price": 164.0,
+    "alignment": "outside own range; no adjacent session holds the price"
+   }
+  ],
+  "dropped": [
+   {
+    "ticker": "2525.HK",
+    "date": "2026-02-23",
+    "side_label": "B",
+    "price": 220.6,
+    "reason": "alignment: outside own range; no adjacent session holds the price"
+   },
+   {
+    "ticker": "2525.HK",
+    "date": "2026-03-25",
+    "side_label": "S",
+    "price": 164.0,
+    "reason": "alignment: outside own range; no adjacent session holds the price"
+   }
+  ]
+ },
+ "dropped_window": [
+  {
+   "ticker": "981.HK",
+   "date": "2026-10-02",
+   "side_label": "S",
+   "reason": "incomplete window: edge of history"
+  }
+ ],
+ "ex_dates_in_windows": [
+  {
+   "ticker": "MAR.US",
+   "date": "2026-03-02",
+   "side": "S",
+   "ex": [
+    {
+     "date": "2026-02-26",
+     "implied_distribution_share": 0.001928
+    }
+   ]
+  },
+  {
+   "ticker": "OXY.US",
+   "date": "2026-03-10",
+   "side": "S",
+   "ex": [
+    {
+     "date": "2026-03-10",
+     "implied_distribution_share": 0.004726
+    }
+   ]
+  },
+  {
+   "ticker": "NVDA.US",
+   "date": "2026-06-01",
+   "side": "B",
+   "ex": [
+    {
+     "date": "2026-06-04",
+     "implied_distribution_share": 0.001164
+    }
+   ]
+  },
+  {
+   "ticker": "NVDA.US",
+   "date": "2026-06-05",
+   "side": "S",
+   "ex": [
+    {
+     "date": "2026-06-04",
+     "implied_distribution_share": 0.001164
+    }
+   ]
+  },
+  {
+   "ticker": "DELL.US",
+   "date": "2026-07-22",
+   "side": "B",
+   "ex": [
+    {
+     "date": "2026-07-21",
+     "implied_distribution_share": 0.00165
+    }
+   ]
+  },
+  {
+   "ticker": "2338.HK",
+   "date": "2026-09-25",
+   "side": "S",
+   "ex": [
+    {
+     "date": "2026-09-25",
+     "implied_distribution_share": 0.01996
+    }
+   ]
+  }
+ ],
+ "ex_dates_2026_all_series": [
+  {
+   "yf": "XLE",
+   "date": "2026-03-23",
+   "implied_distribution_share": 0.00649
+  },
+  {
+   "yf": "XLE",
+   "date": "2026-06-22",
+   "implied_distribution_share": 0.00716
+  },
+  {
+   "yf": "XLE",
+   "date": "2026-09-21",
+   "implied_distribution_share": 0.00591
+  },
+  {
+   "yf": "ARGT",
+   "date": "2026-06-29",
+   "implied_distribution_share": 0.0036
+  },
+  {
+   "yf": "TBF",
+   "date": "2026-03-25",
+   "implied_distribution_share": 0.00379
+  },
+  {
+   "yf": "TBF",
+   "date": "2026-06-24",
+   "implied_distribution_share": 0.00624
+  },
+  {
+   "yf": "TBF",
+   "date": "2026-09-23",
+   "implied_distribution_share": 0.00488
+  },
+  {
+   "yf": "GREK",
+   "date": "2026-06-29",
+   "implied_distribution_share": 0.00737
+  },
+  {
+   "yf": "XHB",
+   "date": "2026-03-23",
+   "implied_distribution_share": 0.00226
+  },
+  {
+   "yf": "XHB",
+   "date": "2026-03-26",
+   "implied_distribution_share": 0.00076
+  },
+  {
+   "yf": "XHB",
+   "date": "2026-06-22",
+   "implied_distribution_share": 0.00144
+  },
+  {
+   "yf": "XHB",
+   "date": "2026-09-21",
+   "implied_distribution_share": 0.00556
+  },
+  {
+   "yf": "OXY",
+   "date": "2026-03-10",
+   "implied_distribution_share": 0.00473
+  },
+  {
+   "yf": "OXY",
+   "date": "2026-06-10",
+   "implied_distribution_share": 0.0046
+  },
+  {
+   "yf": "OXY",
+   "date": "2026-09-10",
+   "implied_distribution_share": 0.00457
+  },
+  {
+   "yf": "COPX",
+   "date": "2026-06-29",
+   "implied_distribution_share": 0.00339
+  },
+  {
+   "yf": "MAR",
+   "date": "2026-02-26",
+   "implied_distribution_share": 0.00193
+  },
+  {
+   "yf": "MAR",
+   "date": "2026-05-22",
+   "implied_distribution_share": 0.00197
+  },
+  {
+   "yf": "MAR",
+   "date": "2026-08-20",
+   "implied_distribution_share": 0.00203
+  },
+  {
+   "yf": "MRVL",
+   "date": "2026-01-09",
+   "implied_distribution_share": 0.00072
+  },
+  {
+   "yf": "MRVL",
+   "date": "2026-04-10",
+   "implied_distribution_share": 0.0005
+  },
+  {
+   "yf": "MRVL",
+   "date": "2026-07-10",
+   "implied_distribution_share": 0.00025
+  },
+  {
+   "yf": "0700.HK",
+   "date": "2026-05-15",
+   "implied_distribution_share": 0.01152
+  },
+  {
+   "yf": "MU",
+   "date": "2026-03-30",
+   "implied_distribution_share": 0.00042
+  },
+  {
+   "yf": "3750.HK",
+   "date": "2026-04-10",
+   "implied_distribution_share": 0.01245
+  },
+  {
+   "yf": "3750.HK",
+   "date": "2026-08-06",
+   "implied_distribution_share": 0.00246
+  },
+  {
+   "yf": "SGM.AX",
+   "date": "2026-03-03",
+   "implied_distribution_share": 0.00636
+  },
+  {
+   "yf": "SGM.AX",
+   "date": "2026-09-30",
+   "implied_distribution_share": 0.00831
+  },
+  {
+   "yf": "EWZ",
+   "date": "2026-06-15",
+   "implied_distribution_share": 0.00943
+  },
+  {
+   "yf": "2338.HK",
+   "date": "2026-07-16",
+   "implied_distribution_share": 0.01294
+  },
+  {
+   "yf": "2338.HK",
+   "date": "2026-09-25",
+   "implied_distribution_share": 0.01996
+  },
+  {
+   "yf": "9988.HK",
+   "date": "2026-06-10",
+   "implied_distribution_share": 0.00112
+  },
+  {
+   "yf": "IEZ",
+   "date": "2026-03-17",
+   "implied_distribution_share": 0.0024
+  },
+  {
+   "yf": "IEZ",
+   "date": "2026-06-15",
+   "implied_distribution_share": 0.00278
+  },
+  {
+   "yf": "IEZ",
+   "date": "2026-09-15",
+   "implied_distribution_share": 0.00342
+  },
+  {
+   "yf": "SIL",
+   "date": "2026-06-29",
+   "implied_distribution_share": 0.00138
+  },
+  {
+   "yf": "0992.HK",
+   "date": "2026-08-05",
+   "implied_distribution_share": 0.01339
+  },
+  {
+   "yf": "GE",
+   "date": "2026-03-09",
+   "implied_distribution_share": 0.00145
+  },
+  {
+   "yf": "GE",
+   "date": "2026-07-06",
+   "implied_distribution_share": 0.00124
+  },
+  {
+   "yf": "BNY",
+   "date": "2026-01-20",
+   "implied_distribution_share": 0.00042
+  },
+  {
+   "yf": "BNY",
+   "date": "2026-01-23",
+   "implied_distribution_share": 0.00441
+  },
+  {
+   "yf": "BNY",
+   "date": "2026-02-06",
+   "implied_distribution_share": 0.00042
+  },
+  {
+   "yf": "BNY",
+   "date": "2026-04-27",
+   "implied_distribution_share": 0.00395
+  },
+  {
+   "yf": "BNY",
+   "date": "2026-07-27",
+   "implied_distribution_share": 0.00396
+  },
+  {
+   "yf": "GRID",
+   "date": "2026-03-26",
+   "implied_distribution_share": 0.00059
+  },
+  {
+   "yf": "GRID",
+   "date": "2026-06-25",
+   "implied_distribution_share": 0.00402
+  },
+  {
+   "yf": "GRID",
+   "date": "2026-09-24",
+   "implied_distribution_share": 0.00197
+  },
+  {
+   "yf": "LLY",
+   "date": "2026-02-13",
+   "implied_distribution_share": 0.00167
+  },
+  {
+   "yf": "LLY",
+   "date": "2026-05-15",
+   "implied_distribution_share": 0.00172
+  },
+  {
+   "yf": "LLY",
+   "date": "2026-08-14",
+   "implied_distribution_share": 0.00143
+  },
+  {
+   "yf": "S58.SI",
+   "date": "2026-07-22",
+   "implied_distribution_share": 0.01066
+  },
+  {
+   "yf": "NVDA",
+   "date": "2026-06-04",
+   "implied_distribution_share": 0.00116
+  },
+  {
+   "yf": "NVDA",
+   "date": "2026-09-10",
+   "implied_distribution_share": 0.00112
+  },
+  {
+   "yf": "DELL",
+   "date": "2026-01-20",
+   "implied_distribution_share": 0.00436
+  },
+  {
+   "yf": "DELL",
+   "date": "2026-04-21",
+   "implied_distribution_share": 0.00308
+  },
+  {
+   "yf": "DELL",
+   "date": "2026-07-21",
+   "implied_distribution_share": 0.00165
+  },
+  {
+   "yf": "XBI",
+   "date": "2026-06-22",
+   "implied_distribution_share": 0.00098
+  },
+  {
+   "yf": "LIT",
+   "date": "2026-06-29",
+   "implied_distribution_share": 0.00428
+  },
+  {
+   "yf": "EXV3.DE",
+   "date": "2026-01-15",
+   "implied_distribution_share": 0.00079
+  },
+  {
+   "yf": "EXV3.DE",
+   "date": "2026-04-15",
+   "implied_distribution_share": 0.00152
+  },
+  {
+   "yf": "EXV3.DE",
+   "date": "2026-07-15",
+   "implied_distribution_share": 0.00077
+  },
+  {
+   "yf": "T6I.SI",
+   "date": "2026-05-07",
+   "implied_distribution_share": 0.0244
+  },
+  {
+   "yf": "T6I.SI",
+   "date": "2026-08-26",
+   "implied_distribution_share": 0.01415
+  },
+  {
+   "yf": "CIBR",
+   "date": "2026-03-26",
+   "implied_distribution_share": 0.00174
+  },
+  {
+   "yf": "CIBR",
+   "date": "2026-06-25",
+   "implied_distribution_share": 0.00086
+  },
+  {
+   "yf": "META",
+   "date": "2026-03-16",
+   "implied_distribution_share": 0.00086
+  },
+  {
+   "yf": "META",
+   "date": "2026-06-15",
+   "implied_distribution_share": 0.00093
+  },
+  {
+   "yf": "META",
+   "date": "2026-09-21",
+   "implied_distribution_share": 0.00079
+  }
+ ],
+ "defective_bars_2025_on": [
+  {
+   "yf": "2525.HK",
+   "date": "2025-12-31",
+   "reason": "fabricated bar",
+   "c": 22.275
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-08-18",
+   "reason": "fabricated bar",
+   "c": 18.0
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-08-20",
+   "reason": "fabricated bar",
+   "c": 18.5
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-02",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-03",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-04",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-07",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-08",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-09",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-10",
+   "reason": "fabricated bar",
+   "c": 16.02
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-14",
+   "reason": "fabricated bar",
+   "c": 16.85
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-15",
+   "reason": "fabricated bar",
+   "c": 16.85
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-16",
+   "reason": "fabricated bar",
+   "c": 16.85
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-22",
+   "reason": "fabricated bar",
+   "c": 16.57
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-24",
+   "reason": "fabricated bar",
+   "c": 16.35
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-25",
+   "reason": "fabricated bar",
+   "c": 16.35
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-28",
+   "reason": "fabricated bar",
+   "c": 16.35
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-29",
+   "reason": "fabricated bar",
+   "c": 16.35
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-09-30",
+   "reason": "fabricated bar",
+   "c": 16.35
+  },
+  {
+   "yf": "2525.HK",
+   "date": "2026-10-02",
+   "reason": "fabricated bar",
+   "c": 16.35
+  },
+  {
+   "yf": "T6I.SI",
+   "date": "2025-12-31",
+   "reason": "fabricated bar",
+   "c": 0.99
+  }
+ ],
+ "provisional_bars": [
+  {
+   "yf": "PHAG.L",
+   "date": "2026-10-02"
+  },
+  {
+   "yf": "SXLE.L",
+   "date": "2026-10-02"
+  },
+  {
+   "yf": "SOI.PA",
+   "date": "2026-10-02"
+  },
+  {
+   "yf": "EXV3.DE",
+   "date": "2026-10-02"
+  },
+  {
+   "yf": "GLS.SI",
+   "date": "2026-10-02"
+  }
+ ],
+ "range_repaired_bars_2026": [
+  {
+   "yf": "2525.HK",
+   "date": "2026-08-10"
+  },
+  {
+   "yf": "PHAG.L",
+   "date": "2026-03-02"
+  },
+  {
+   "yf": "PHAG.L",
+   "date": "2026-07-24"
+  },
+  {
+   "yf": "SXLE.L",
+   "date": "2026-01-14"
+  },
+  {
+   "yf": "SXLE.L",
+   "date": "2026-03-02"
+  },
+  {
+   "yf": "SXLE.L",
+   "date": "2026-05-13"
+  },
+  {
+   "yf": "SXLE.L",
+   "date": "2026-07-10"
+  },
+  {
+   "yf": "SXLE.L",
+   "date": "2026-09-25"
+  }
+ ],
+ "bar_timestamps_utc": {
+  "SLV": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "UBER": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "XPEV": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "KWEB": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "XLE": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "ARGT": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "TBF": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "BIDU": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "GREK": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "9961.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "XHB": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "2525.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "OXY": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "COPX": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "PHAG.L": [
+   [
+    "07:00",
+    60
+   ]
+  ],
+  "MAR": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SXLE.L": [
+   [
+    "07:00",
+    60
+   ]
+  ],
+  "9660.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "IBIT": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "MRVL": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "INTC": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "0700.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "MU": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "NOK": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SOI.PA": [
+   [
+    "07:00",
+    60
+   ]
+  ],
+  "EWY": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SKM": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "3750.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "GDX": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "PLTR": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "4004.T": [
+   [
+    "00:00",
+    60
+   ]
+  ],
+  "SGM.AX": [
+   [
+    "00:00",
+    60
+   ]
+  ],
+  "AKAM": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "NASA": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "EWZ": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SPHR": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "2338.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "9988.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "IEZ": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SIL": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "LIFE": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "0981.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "0992.HK": [
+   [
+    "01:30",
+    60
+   ]
+  ],
+  "GE": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "BNY": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "IGV": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "GRID": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "LLY": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "MOO": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "S58.SI": [
+   [
+    "01:00",
+    60
+   ]
+  ],
+  "NVDA": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "DELL": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "FLNC": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SPCX": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "TLN": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "XBI": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "LIT": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "EXV3.DE": [
+   [
+    "07:00",
+    60
+   ]
+  ],
+  "T6I.SI": [
+   [
+    "01:00",
+    60
+   ]
+  ],
+  "CIBR": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "SNDK": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "KOID": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "ARKG": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "GLS.SI": [
+   [
+    "01:00",
+    60
+   ]
+  ],
+  "MRNA": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "NET": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "MRVI": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "HOOD": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "TAN": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "META": [
+   [
+    "13:30",
+    60
+   ]
+  ],
+  "NBIS": [
+   [
+    "13:30",
+    60
+   ]
+  ]
+ },
+ "window_width": {
+  "median_range_over_close": 0.1366,
+  "p25": 0.0838,
+  "p75": 0.2032,
+  "delta_in_bps_at_median_width": 81.9,
+  "u_0_05_in_bps_at_median_width": 68.3
+ },
+ "null": {
+  "structure": "blocked: one offset per cluster per draw; intraday uniform independent per fill",
+  "draws_per_fill": 10000,
+  "seed": 20261003,
+  "blocks": 47,
+  "fallback_blocks_without_a_common_offset": 0,
+  "placebo_offsets_per_fill_min": 57,
+  "median": 114,
+  "one_sided_pools": [
+   {
+    "ticker": "NASA.US",
+    "date": "2026-04-06"
+   },
+   {
+    "ticker": "SPCX.US",
+    "date": "2026-06-18"
+   },
+   {
+    "ticker": "992.HK",
+    "date": "2026-09-25"
+   },
+   {
+    "ticker": "2338.HK",
+    "date": "2026-09-25"
+   },
+   {
+    "ticker": "3750.HK",
+    "date": "2026-09-25"
+   },
+   {
+    "ticker": "META.US",
+    "date": "2026-09-25"
+   },
+   {
+    "ticker": "NBIS.US",
+    "date": "2026-09-25"
+   }
+  ],
+  "mean_u": 0.4982,
+  "sd_mean_u": 0.0212,
+  "mean_u_weighted": 0.4981,
+  "sd_mean_u_weighted": 0.0219,
+  "tail_share": 0.0399,
+  "sd_tail_share": 0.0165,
+  "p95_mean_u": 0.5332,
+  "p95_tail_share": 0.0662,
+  "worse6_share": 0.0923,
+  "u_close_mean": 0.4996,
+  "pre_mean_pct": 0.152,
+  "post_mean_pct": -0.314,
+  "share_of_placebo_windows_with_ex_date": 0.0333,
+  "independent_null_for_comparison": {
+   "draws_per_fill": 1000,
+   "mean_u": 0.4977,
+   "sd_mean_u": 0.0191,
+   "tail_share": 0.0405,
+   "sd_tail_share": 0.0156
+  }
+ },
+ "power": {
+  "alpha_one_sided": 0.05,
+  "H1": {
+   "delta": 0.06,
+   "power_at_delta": 0.883,
+   "mde_at_0_80": 0.0526,
+   "power_at_0_05": 0.764,
+   "power_at_0_02": 0.242,
+   "power_at_delta_independent_null": 0.932,
+   "power_at_0_05_independent_null": 0.834,
+   "n_for_power_0_90_at_delta": 161,
+   "n_for_power_0_80_at_0_05": 168,
+   "n_for_power_0_80_at_0_02": 1046
+  },
+  "H2": {
+   "mde_at_0_80": 0.0409,
+   "delta_fixed": 0.05,
+   "power_at_delta_fixed": 0.918,
+   "note": "the floor is the null's own minimum detectable effect rounded up, so power at the floor is at least 0.80 by construction and the demotion rule cannot fire on H2"
+  }
+ }
+}

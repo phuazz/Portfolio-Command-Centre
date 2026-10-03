@@ -1,0 +1,97 @@
+{
+  "study": "fill-timing",
+  "title": "Do the owner's 2026 fills land at the worst price within three sessions either side?",
+  "registered": "2026-10-03",
+  "context": "Personal",
+  "unit": "ticker x session x side; several rows on one unit are aggregated to one fill at their quantity-weighted average price",
+  "window_sessions_each_side": 3,
+  "placebo": {
+    "offset_min_sessions": 4,
+    "offset_max_sessions": 60,
+    "draws_per_fill": 10000,
+    "independent_null_draws_for_comparison": 1000,
+    "price_rule": "uniform inside the placebo session's unadjusted low-high range",
+    "same_side_as_actual": true,
+    "structure": "blocked: fills that share a session date, or share a name with seven-session windows that overlap (centres within six bars), form one cluster; in each placebo set every member of a cluster takes the same offset, drawn from the offsets eligible for all of them, so the common market move the cluster shares under the null is kept; the intraday uniform is independent per fill. The independent-per-fill null is computed at 1,000 draws for comparison only."
+  },
+  "seed": 20261003,
+  "bootstrap_draws": 2000,
+  "bootstrap_unit": "cluster (block bootstrap over the same clusters as the null)",
+  "alpha_one_sided": 0.05,
+  "verdict_bearing": "H1 alone; H2 is a floored secondary whose pass adds the suffix TAIL-ELEVATED and never confirms on its own (Holm across the pair was considered and dropped at the freeze because it took H1's power at the floor below 0.80)",
+  "floors": {
+    "H1_delta_mean_u": 0.06,
+    "H1_delta_rationale": "the minimum detectable effect at 0.80 power under the blocked null (about 0.054 at n = 151), rounded up to 0.01; about 82 bps of price at the median seven-session window width, roughly 3.7 times one-way commission. The economic floor first registered, 0.05, is reported beside it as a disclosure with its own power.",
+  "H2_delta_tail_share": "MDE at 0.80 power at the one-sided alpha from the blocked placebo null, rounded up to 0.01, fixed at the freeze in coverage.json; by construction powered at least 0.80",
+    "tail_threshold_u": 0.9
+  },
+  "power_rule": "a clause with power below 0.80 at its floor is demoted: a demoted fail reads UNRESOLVED, a demoted pass reads SUGGESTIVE; neither carries CONFIRMED or REJECTED alone",
+  "dividend_handling": {
+    "primary": "rebase every bar of the window to the fill session's adjustment factor f = ac / c, so prices on both sides of an ex-date are on one basis",
+    "sensitivity": "exclude any fill whose window holds a detected ex-date (actual side only; the remaining fills' placebo windows keep their rebased ex-dates, and the share of placebo windows holding one is reported)",
+    "ex_date_tolerance_relative_change_in_f": 0.0002
+  },
+  "alignment": {
+    "own_range_tolerance_relative": 0.001,
+    "rule": "a fill whose price lies outside its dated session's low-high range beyond the tolerance is re-dated to the adjacent session whose range holds it (previous session preferred), and counted; a fill that fits neither adjacent session is excluded"
+  },
+  "bar_defects": {
+    "fabricated_bar": "open = high = low = close equal to the last good close (a no-trade or holiday bar)",
+    "high_below_low": "disqualifying",
+    "range_repair": "a session's range must contain its own open and close; where Yahoo prints a high below the open or a low above the close (its London lines do), the range is widened to the prints it reports and the bar is counted as repaired, not dropped",
+    "bad_print_relative_jump": 0.5,
+    "bad_print_rule": "a close more than the jump away from the last good close that the NEXT close reverts to within half the jump of that level; a move the next bar does not revert is a move, not a print",
+    "explicit_exclusions": [{"yf": "3010.HK", "date": "2025-10-24", "reason": "known bad print, close 9.16 against 70.78 and 72.36 either side"}],
+    "provisional_bar_flag": "p"
+  },
+  "exclusions": [
+    "no feed symbol (yf null) or symbol absent from history.json",
+    "book type Bond or Cash, or meta noQuote",
+    "proxy feed: the book's exchange for the line is not the market the feed symbol trades on (a US ETF standing in for a London UCITS line), so the feed is not the instrument filled",
+    "alignment: the fill price lies outside its dated session's range and outside both adjacent sessions' ranges (a feed in other units, or a mis-dated fill that no neighbour explains)",
+    "window of seven sessions incomplete: edge of history, a defective bar, or a provisional bar inside it"
+  ],
+  "inputs_frozen_as_extracts": {
+    "bars": "results/bars_used.json, the live Pages history.json cut to the symbols carrying a 2026 fill, bars from 2025-09-01",
+    "fx": "results/fx_used.json, the five SGD pairs from docs/data/fx.json as committed at extraction; the daily close on the fill date (the latest FX day at or before it); SGD fills at 1"
+  },
+  "stop_conditions_mechanical": [
+    "spec sha256 differs from coverage.json",
+    "engine (fill_timing.py) sha256 differs from coverage.json",
+    "bars_used.json or fx_used.json sha256 differs from coverage.json",
+    "trades.json or book.json sha256 differs from coverage.json",
+    "complete fill count differs from coverage.json",
+    "any placebo matrix or any actual score holds a missing value",
+    "the vectorised placebo path and the scalar actual path disagree beyond 1e-9 on any fill (parity)"
+  ],
+  "sgd_notional_weighting": "quantity x price x fx on the fill date",
+  "cost_anchor": {
+    "formula": "per fill (u_actual - median placebo u) x (window high - window low, fill basis) x quantity x fx, summed; null from the same expression on each placebo set",
+    "pnl_2026_sgd": 194578,
+    "pnl_source": "dashboard YTD P&L card, +S$194,578 (+20.72 per cent), read from the live page on 2026-10-03 at about 14:02 SGT with 55 live quotes and the intraday card baked to 3 October; single-source output of the dashboard's FX-aware total-return FIFO engine",
+    "rate_card_bps_one_way_usd": 21.8,
+    "rate_card_source": "register record 2026-08-02-Portfolio-Command-Centre-2, an unreviewed extraction; the ledger's own fee field is the measured comparator, converted to SGD terms",
+    "reading_rule": "material if the excess cost in bps of SGD notional exceeds one-way commission in SGD terms; real but sub-commission if H1 passes with bps below it; absent at the registered size on REJECTED; the S$ point estimate and its null sd are reported in every case"
+  },
+  "sell_regret": {
+    "status": "exploratory, after the primary verdict only",
+    "horizons_sessions": [20, 60],
+    "destination_rule": "same-currency buys dated within 7 calendar days after the sell, weighted by SGD notional; otherwise foreign cash earning the FX move",
+    "excluded": [{"yf": "4004.T", "reason": "Crasus spin-off unbooked; the mark is distorted"}]
+  },
+  "declared_cells": [
+    "H1 mean u, equal-weighted (verdict-bearing)",
+    "H2 share of fills with u above 0.9 (floored secondary; suffix only)",
+    "S1 mean u, SGD-notional-weighted",
+    "S2 share worse than all six neighbouring closes",
+    "S3 pre leg (t-3 close to fill) and post leg (fill to t+3 close), adverse-oriented",
+    "S4 post leg against the pre-leg-tercile-matched placebo post leg (mechanical reversal check)",
+    "S5 intraday placement within the fill session's own range, against the uniform 0.5",
+    "S6 u at the session close in place of the fill price (day choice alone)",
+    "S7 buys alone and sells alone",
+    "S8 ex-date-excluded variant of H1",
+    "S9 leave-one-ticker-out range of the H1 effect (thinness)",
+    "C1 SGD cost anchor, bps of traded notional, share of 2026 P&L, against commission",
+    "X1 sell regret at 20 and 60 sessions (exploratory)"
+  ]
+}
