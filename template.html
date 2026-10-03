@@ -2934,12 +2934,217 @@ function renderPositions(el) {
 //  Asset Class | Theme. For each bucket the engine computes:
 //    - weight       : current MV / total MV
 //    - ytdReturn    : geometric link of daily bucket returns over YTD
-//    - volAnnual    : annualised standard deviation of bucket daily returns
-//    - volContrib   : marginal contribution to portfolio variance,
-//                     where Σ_b w_b · cov(r_b, r_p) / σ²_p = 1 by identity.
+//    - volAnnual    : annualised volatility of the bucket on the risk model
+//    - volContrib   : sum of the members' Euler contributions from
+//                     calcRiskModel(), so Σ_b = 100% and the book's
+//                     volatility does not depend on the pivot chosen.
 //  Concentration metrics: HHI, effective N, top-5 weight, diversification
 //  ratio (Σ w_b · σ_b) / σ_portfolio.
 // ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+//  RISK MODEL — security-level risk contribution
+//  Current SGD weights applied to historical returns over a trailing window
+//  (the fixed-weights, ex-ante convention). A name's contribution is its
+//  weight times its beta to the book, w_i · cov(r_i, r_p) / var(r_p), which
+//  sums to 100% across the book; a bucket's contribution is the sum of its
+//  members'. Bonds, cash and names without a priced feed carry weight and a
+//  zero return, so they dilute volatility without contributing to it.
+//
+//  Weekly returns are the default because the book spans SGX, HKEX, Tokyo,
+//  ASX, Europe and the US. A daily close-to-close return pairs an Asian
+//  session with a US session that has not yet traded, so cross-region
+//  covariances read low and the book's volatility with them. Sampling each
+//  name at its last close of the calendar week leaves at most a part-session
+//  offset in five. The daily basis is computed over the same window for
+//  comparison only.
+//
+//  Before 2026-10-03 the allocation engine built each bucket's value series
+//  by summing its members and differencing the sum, so a member whose feed
+//  started inside the window entered as a return, and the book's volatility
+//  differed by pivot (9.30% by theme, 11.01% by region, measured that day).
+//  Returns are now taken per name and weighted, which removes the jump.
+// ═══════════════════════════════════════════════════════════════
+const RISK_WINDOW_WEEKS = 52;
+const RISK_BENCHMARKS = { STI: 'ES3.SI', SPX: 'S27.SI' };   // SGD-terms total return, as getBenchmarkCurve
+
+// Week key: the Saturday that ends the calendar week containing ds (ISO
+// date). Built on the Date object: getUTCDay() is 0 = Sunday … 6 = Saturday,
+// and setUTCDate() rolls month and year ends. JavaScript months are
+// 0-indexed, but no month index is handled here; the ISO string carries it.
+function _riskWeekKey(ds) {
+  const d = new Date(ds + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + (6 - d.getUTCDay()));
+  return d.toISOString().slice(0, 10);
+}
+
+const _riskModelCache = {};
+function calcRiskModel(ps, basis) {
+  basis = basis === 'daily' ? 'daily' : 'weekly';
+  const memoKey = _dataVersion + '|' + ps.length;
+  const hit = _riskModelCache[basis];
+  if (hit && hit._key === memoKey && hit._ps === ps) return hit;
+
+  const isoOf = bar => (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+  const periodOf = basis === 'daily' ? (ds => ds) : _riskWeekKey;
+  // SGD price by period: the period's last adjusted close at that bar's FX.
+  // Bars ascend, so the last write in a period is its last close.
+  // A single bar that moves more than 40% (log) from the prior close and is
+  // undone to within 10% by the next one is a bad print, not a price, and is
+  // dropped: 3010.HK carried a 9.16 close between 70.78 and 72.36 on
+  // 2025-10-24, which alone put its weekly volatility near 700%.
+  const dropped = [];
+  let lastClose = '';
+  const priceByPeriod = (bars, ccy, allKeys, tk) => {
+    const byKey = {};
+    const pxOf = b => (b && (b.adjclose != null ? b.adjclose : b.close)) || null;
+    for (let i = 0; i < bars.length; i++) {
+      const bar = bars[i];
+      const px = pxOf(bar);
+      if (px == null || !(px > 0)) continue;
+      const before = i > 0 ? pxOf(bars[i - 1]) : null, after = pxOf(bars[i + 1]);
+      if (before > 0 && after > 0 && Math.abs(Math.log(px / before)) > 0.4 && Math.abs(Math.log(after / before)) < 0.1) {
+        if (tk) dropped.push({ ticker: tk, date: isoOf(bar) });
+        continue;
+      }
+      const ds = isoOf(bar);
+      const k = periodOf(ds);
+      byKey[k] = px * fxAtDate(ccy, ds);
+      if (allKeys) { allKeys.add(k); if (ds > lastClose) lastClose = ds; }
+    }
+    return byKey;
+  };
+
+  const totalMV = ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const allKeys = new Set();
+  const names = ps.map(p => {
+    const hasFeed = !!(p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
+    return { p, hasFeed, byKey: hasFeed ? priceByPeriod(p.history, p.ccy, allKeys, p.ticker) : {} };
+  });
+
+  // Window: the last RISK_WINDOW_WEEKS + 1 week ends observed in the feed.
+  // The daily basis spans the same weeks: it starts at the last session on or
+  // before the first week end, so both bases measure the same interval.
+  const sortedKeys = [...allKeys].sort();
+  const weekEnds = [...new Set(sortedKeys.map(basis === 'daily' ? _riskWeekKey : (k => k)))].sort().slice(-(RISK_WINDOW_WEEKS + 1));
+  let keys;
+  if (basis === 'daily') {
+    let start = 0;
+    for (let i = 0; i < sortedKeys.length; i++) if (sortedKeys[i] <= weekEnds[0]) start = i;
+    keys = sortedKeys.slice(start);
+  } else {
+    keys = weekEnds;
+  }
+  const T = keys.length, N = Math.max(0, T - 1);
+
+  // Forward-filled period prices, seeded from the last price before the
+  // window, then simple returns. A period with no price at either end is a
+  // zero return and is not counted as an observation.
+  const toRets = byKey => {
+    const ks = Object.keys(byKey).sort();
+    const rets = new Array(N).fill(0);
+    let j = 0, last = null, prev = null, obs = 0;
+    for (let t = 0; t < T; t++) {
+      while (j < ks.length && ks[j] <= keys[t]) { last = byKey[ks[j]]; j++; }
+      if (t > 0 && prev != null && last != null) { rets[t - 1] = last / prev - 1; obs++; }
+      prev = last;
+    }
+    return { rets, obs };
+  };
+
+  const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+  const cov = (a, b) => {
+    if (a.length < 2) return 0;
+    const ma = mean(a), mb = mean(b);
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += (a[i] - ma) * (b[i] - mb);
+    return s / (a.length - 1);
+  };
+  // Periods per year from the window itself: the daily axis is the union of
+  // every exchange's sessions, which is more than 252 a year.
+  const perYear = RISK_WINDOW_WEEKS > 0 ? N * 52 / RISK_WINDOW_WEEKS : 52;
+  const ann = Math.sqrt(perYear);
+
+  const rp = new Array(N).fill(0);
+  for (const n of names) {
+    Object.assign(n, toRets(n.byKey));
+    n.w = totalMV > 0 ? (n.p.mktValueSGD || 0) / totalMV : 0;
+    for (let t = 0; t < N; t++) rp[t] += n.w * n.rets[t];
+  }
+  const varP = cov(rp, rp);
+
+  // Benchmarks: the held tracker's live bars when present, else the baked feed.
+  const bench = {};
+  for (const [sym, yf] of Object.entries(RISK_BENCHMARKS)) {
+    const held = ps.find(p => p.yf === yf || p.ticker === yf.replace('.SI', ''));
+    let bars = held && held.history && held.history.length >= 50 ? held.history : null;
+    let ccy = held ? held.ccy : null;
+    if (!bars && PRELOADED_HISTORY[yf] && PRELOADED_HISTORY[yf].history) {
+      bars = historyToFull(PRELOADED_HISTORY[yf].history);
+      ccy = (LEDGER_BOOK && LEDGER_BOOK.meta[yf.replace('.SI', '')] || {}).ccy || 'SGD';
+    }
+    if (!bars) continue;
+    const { rets } = toRets(priceByPeriod(bars, ccy, null));
+    const v = cov(rets, rets);
+    if (v > 0) bench[sym] = { rets, var: v };
+  }
+  const betaTo = (r, sym) => bench[sym] ? cov(r, bench[sym].rets) / bench[sym].var : null;
+
+  const rows = names.map(n => {
+    const vi = cov(n.rets, n.rets);
+    const cv = cov(n.rets, rp);
+    return {
+      p: n.p, ticker: n.p.ticker, theme: n.p.theme || 'Other', priced: n.hasFeed,
+      rets: n.rets, obs: n.obs, shortHistory: n.hasFeed && n.obs < N / 2,
+      weight: n.w * 100,
+      vol: Math.sqrt(vi) * ann * 100,
+      corr: vi > 0 && varP > 0 ? cv / Math.sqrt(vi * varP) : null,
+      betaBook: varP > 0 ? cv / varP : 0,
+      contrib: varP > 0 ? n.w * cv / varP * 100 : 0,
+      betaSTI: n.hasFeed ? betaTo(n.rets, 'STI') : null,
+      betaSPX: n.hasFeed ? betaTo(n.rets, 'SPX') : null,
+    };
+  });
+
+  const out = {
+    _key: memoKey, _ps: ps, basis,
+    // from / to are period keys (week-ending Saturdays on the weekly basis);
+    // lastClose is the latest session actually priced in the window.
+    from: keys[0] || null, to: keys[T - 1] || null, lastClose, periods: N,
+    totalMV, portRets: rp,
+    portVol: Math.sqrt(varP) * ann * 100,
+    betaSTI: betaTo(rp, 'STI'), betaSPX: betaTo(rp, 'SPX'),
+    droppedPrints: dropped.filter(x => keys.length && x.date >= keys[0] && x.date <= keys[T - 1]),
+    rows,
+  };
+  _riskModelCache[basis] = out;
+  return out;
+}
+
+// Bucket view of the risk model: contribution is the sum of the members'
+// contributions; volatility and return come from the bucket's own series,
+// the members' returns weighted by current value within the bucket.
+function riskByBucket(rm, pivot) {
+  const acc = {};
+  for (const r of rm.rows) {
+    const k = _bucketKeyFor(r.p, pivot);
+    if (!acc[k]) acc[k] = { contrib: 0, w: 0, rets: new Array(rm.periods).fill(0) };
+    acc[k].contrib += r.contrib;
+    acc[k].w += r.weight;
+    for (let t = 0; t < rm.periods; t++) acc[k].rets[t] += r.weight * r.rets[t];
+  }
+  const ann = Math.sqrt(rm.periods * 52 / RISK_WINDOW_WEEKS);
+  const res = {};
+  for (const [k, a] of Object.entries(acc)) {
+    const rets = a.w > 0 ? a.rets.map(x => x / a.w) : a.rets;
+    const m = rets.reduce((s, x) => s + x, 0) / (rets.length || 1);
+    const v = rets.length > 1 ? rets.reduce((s, x) => s + (x - m) * (x - m), 0) / (rets.length - 1) : 0;
+    let cum = 1;
+    for (const x of rets) cum *= (1 + x);
+    res[k] = { contrib: a.contrib, vol: Math.sqrt(v) * ann * 100, ret: (cum - 1) * 100 };
+  }
+  return res;
+}
 const PIVOT_LABELS = {region:'Region', sector:'Sector', assetClass:'Asset Class', theme:'Theme'};
 const SECTOR_COLORS = {
   'Information Technology':'#2563eb', 'Financials':'#047857', 'Industrials':'#b45309',
@@ -2991,9 +3196,9 @@ function _bucketColorFor(pivot, key) {
   return '#64748b';
 }
 
-// Compute bucketed risk + return statistics over the YTD window.
-// Vol contribution uses current (today) weights with historical bucket
-// daily returns — the canonical "fixed-weights" decomposition.
+// Bucketed weight, YTD return and risk. YTD return links daily bucket
+// returns since the epoch at current quantities; volatility and contribution
+// come from calcRiskModel (trailing 52 weekly returns, current weights).
 function calcAllocationRisk(ps, trades, pivot) {
   const startDateStr = '2026-01-01';
   const totalMV = ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
@@ -3015,72 +3220,46 @@ function calcAllocationRisk(ps, trades, pivot) {
   const priced = book.priced;
   const dates = book.dates;
 
-  // Per-bucket daily value series using CURRENT qty  // Per-bucket daily value series using CURRENT qty (fixed-weights convention
-  // for vol decomposition — current allocation, historical price moves).
-  // FX-as-of-date: each bar's value uses the FX rate observed on that date.
-  const bucketValueSeries = {};
-  for (const [k, g] of Object.entries(groups)) {
-    const series = new Array(dates.length).fill(0);
-    for (const p of g.positions) {
-      const row = book.closeRows[p.ticker];
-      if (!row) continue;
-      for (let i = 0; i < dates.length; i++) {
-        const px = row[i];
-        if (px != null) series[i] += p.qty * px * fxAtDate(p.ccy, dates[i]);
-      }
-    }
-    bucketValueSeries[k] = series;
-  }
-
-  // Daily returns per bucket
+  // Daily bucket returns at CURRENT quantities, FX as of each date. Each
+  // day's return is taken over the members priced on both days, so a member
+  // whose feed starts inside the year joins the bucket without its value
+  // being read as a return (see the risk-model note above).
   const bucketReturns = {};
-  for (const [k, series] of Object.entries(bucketValueSeries)) {
+  for (const [k, g] of Object.entries(groups)) {
     const rets = [];
-    for (let i = 1; i < series.length; i++) {
-      rets.push(series[i-1] > 0 ? (series[i] / series[i-1] - 1) : 0);
+    for (let i = 1; i < dates.length; i++) {
+      let v0 = 0, v1 = 0;
+      for (const p of g.positions) {
+        const row = book.closeRows[p.ticker];
+        if (!row || row[i - 1] == null || row[i] == null) continue;
+        v0 += p.qty * row[i - 1] * fxAtDate(p.ccy, dates[i - 1]);
+        v1 += p.qty * row[i] * fxAtDate(p.ccy, dates[i]);
+      }
+      rets.push(v0 > 0 ? v1 / v0 - 1 : 0);
     }
     bucketReturns[k] = rets;
   }
 
-  // Portfolio daily return = w_b weighted sum of bucket daily returns
-  const N = Math.max(0, dates.length - 1);
-  const portRets = new Array(N).fill(0);
-  for (const [k, g] of Object.entries(groups)) {
-    const w = totalMV > 0 ? g.mv / totalMV : 0;
-    const rets = bucketReturns[k];
-    for (let i = 0; i < N; i++) portRets[i] += w * rets[i];
-  }
-
-  // Stats helpers
-  const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
-  const variance = (a,m) => { m = m ?? mean(a); return a.length ? a.reduce((s,x)=>s+(x-m)*(x-m),0)/a.length : 0; };
-  const covar = (a,b) => {
-    const ma = mean(a), mb = mean(b);
-    return a.length ? a.reduce((s,x,i)=>s+(x-ma)*(b[i]-mb),0)/a.length : 0;
-  };
-
-  const portVar = variance(portRets);
-  const portVol = Math.sqrt(portVar);
+  const rm = calcRiskModel(ps, 'weekly');
+  const risk = riskByBucket(rm, pivot);
 
   // Assemble result buckets
   const result = [];
   for (const [k, g] of Object.entries(groups)) {
     const w = totalMV > 0 ? g.mv / totalMV : 0;
-    const rets = bucketReturns[k];
-    const vol = Math.sqrt(variance(rets));
-    const cv = portVar > 0 ? covar(rets, portRets) : 0;
-    const volContribFrac = portVar > 0 ? (w * cv / portVar) : 0;
     let cum = 1;
-    for (const r of rets) cum *= (1 + r);
+    for (const r of bucketReturns[k]) cum *= (1 + r);
     const ytdReturn = (cum - 1) * 100;
-    const volAnnual = vol * Math.sqrt(252) * 100;
+    const br = risk[k] || { vol: 0, contrib: 0, ret: 0 };
+    const volAnnual = br.vol;
     result.push({
       key: k,
       mv: g.mv,
       weight: w * 100,
       ytdReturn,
       volAnnual,
-      volContrib: volContribFrac * 100,
+      volContrib: br.contrib,
+      riskRet: br.ret,
       count: g.positions.length,
       color: _bucketColorFor(pivot, k)
     });
@@ -3093,12 +3272,13 @@ function calcAllocationRisk(ps, trades, pivot) {
   const effectiveN = hhi > 0 ? 1/hhi : 0;
   const top5 = result.slice(0,5).reduce((s,b)=>s+b.weight, 0);
   const wAvgVolFrac = result.reduce((s,b)=>s + (b.weight/100) * (b.volAnnual/100), 0);
-  const portVolAnnual = portVol * Math.sqrt(252);
+  const portVolAnnual = rm.portVol / 100;
   const divRatio = portVolAnnual > 0 ? wAvgVolFrac / portVolAnnual : 0;
 
   return {
     totalMV,
-    portfolioVol: portVolAnnual * 100,
+    portfolioVol: rm.portVol,
+    risk: rm,
     buckets: result,
     concentration: { hhi: hhi * 10000, effectiveN, top5, divRatio }
   };
@@ -3122,6 +3302,146 @@ function setAllocSort(col) {
   }
   const pane = document.getElementById('pane-allocation');
   if (pane) renderAllocation(pane);
+}
+
+// ─── Risk by security (Allocation tab) ───────────────────────────
+// Per-name view of calcRiskModel: weight, volatility, correlation and beta
+// to the book, risk share (weight × beta to book, sums to 100% with the
+// unpriced names at zero), and beta to the two benchmark trackers.
+const RISK_SEC_COLS = [
+  ['ticker', 'Security', 'left'], ['theme', 'Theme', 'left'], ['weight', 'Weight'],
+  ['vol', 'Vol (ann.)'], ['corr', 'Corr. to book'], ['betaBook', 'Beta to book'],
+  ['contrib', 'Risk share'], ['skew', 'Risk − weight'], ['betaSTI', 'Beta STI'], ['betaSPX', 'Beta S&amp;P 500'],
+];
+const RISK_SEC_TOP = 15;
+
+function setRiskSecSort(col) {
+  if (!state.riskSecSort) state.riskSecSort = { col: 'contrib', dir: 'desc' };
+  if (state.riskSecSort.col === col) state.riskSecSort.dir = state.riskSecSort.dir === 'desc' ? 'asc' : 'desc';
+  else state.riskSecSort = { col, dir: (col === 'ticker' || col === 'theme') ? 'asc' : 'desc' };
+  const pane = document.getElementById('pane-allocation');
+  if (pane) renderAllocation(pane);
+}
+
+function toggleRiskSecAll() {
+  state.riskSecAll = !state.riskSecAll;
+  const pane = document.getElementById('pane-allocation');
+  if (pane) renderAllocation(pane);
+}
+
+function _riskSecurityCardHTML(ps, rm) {
+  const daily = calcRiskModel(ps, 'daily');
+  if (!state.riskSecSort) state.riskSecSort = { col: 'contrib', dir: 'desc' };
+  const { col, dir } = state.riskSecSort;
+  const rows = rm.rows.filter(r => r.priced).map(r => ({ ...r, skew: r.contrib - r.weight }));
+  rows.sort((a, b) => {
+    const va = a[col], vb = b[col];
+    if (typeof va === 'string') return dir === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb);
+    const x = va == null ? -Infinity : va, y = vb == null ? -Infinity : vb;
+    return dir === 'desc' ? y - x : x - y;
+  });
+  const shown = state.riskSecAll ? rows : rows.slice(0, RISK_SEC_TOP);
+
+  const byContrib = [...rows].sort((a, b) => b.contrib - a.contrib);
+  const top5 = byContrib.slice(0, 5);
+  const top5Risk = top5.reduce((s, r) => s + r.contrib, 0);
+  const top5W = top5.reduce((s, r) => s + r.weight, 0);
+  const unpricedW = rm.rows.filter(r => !r.priced).reduce((s, r) => s + r.weight, 0);
+  const f2 = v => v == null || !isFinite(v) ? '—' : fmt(v, 2);
+  const sgn = v => (v >= 0 ? '+' : '') + fmt(v, 1);
+  const arrow = c => col === c ? `<span style="color:var(--t1);margin-left:3px">${dir === 'desc' ? '▼' : '▲'}</span>` : '';
+  const tile = (label, value, sub) => `
+      <div>
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">${label}</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${value}</div>
+        <div style="font-size:11px;color:var(--t3)">${sub}</div>
+      </div>`;
+  const cell = 'padding:7px 6px;text-align:right;font-family:var(--mono);font-size:12px';
+  const body = shown.map(r => {
+    const name = securityName(r.ticker);
+    return `
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:7px 6px;font-size:12px;font-weight:600;color:var(--t1);white-space:nowrap">${r.ticker}${name ? `<div style="font-weight:400;font-size:11px;color:var(--t3);max-width:180px;overflow:hidden;text-overflow:ellipsis">${name}</div>` : ''}</td>
+      <td style="padding:7px 6px;font-size:11px;color:var(--t2)">${r.theme}</td>
+      <td style="${cell}">${fmt(r.weight, 1)}%</td>
+      <td style="${cell};color:var(--t2)">${fmt(r.vol, 0)}%</td>
+      <td style="${cell};color:var(--t2)">${f2(r.corr)}</td>
+      <td style="${cell};color:var(--t2)">${f2(r.betaBook)}</td>
+      <td style="${cell};font-weight:700;color:${r.contrib < 0 ? 'var(--g)' : 'var(--t1)'}">${fmt(r.contrib, 1)}%</td>
+      <td style="${cell};color:${r.skew > 0 ? 'var(--r)' : 'var(--g)'}">${sgn(r.skew)}pp</td>
+      <td style="${cell};color:var(--t2)">${f2(r.betaSTI)}</td>
+      <td style="${cell};color:var(--t2)">${f2(r.betaSPX)}</td>
+    </tr>`;
+  }).join('');
+  const dropped = rm.droppedPrints.length
+    ? ` Dropped as bad prints (one-session jump of more than 40% reversed the next session): ${rm.droppedPrints.map(d => `${d.ticker} ${d.date}`).join(', ')}.`
+    : '';
+
+  return `
+    <div class="card mb">
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--r)"></span>Risk Contribution by Security — ${rm.periods} weekly returns to the ${rm.lastClose} close</div></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;padding:12px 14px;background:var(--bg2);border-radius:6px;margin-bottom:12px">
+          ${tile('Book Vol (ann.)', fmt(rm.portVol, 1) + '%', `daily closes, same window: ${fmt(daily.portVol, 1)}%`)}
+          ${tile('Top-5 Risk Share', fmt(top5Risk, 1) + '%', `on ${fmt(top5W, 1)}% of capital · ${top5.map(r => r.ticker).join(' · ')}`)}
+          ${tile('Book Beta to STI', f2(rm.betaSTI), `daily closes: ${f2(daily.betaSTI)}`)}
+          ${tile('Book Beta to S&amp;P 500', f2(rm.betaSPX), `daily closes: ${f2(daily.betaSPX)}`)}
+        </div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <table style="width:100%;min-width:820px;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="border-bottom:2px solid var(--bd);color:var(--t3);font-size:11px;text-transform:uppercase;letter-spacing:0.5px">
+                ${RISK_SEC_COLS.map(([c, label, align]) => `<th style="padding:8px 6px;text-align:${align || 'right'};cursor:pointer;user-select:none;white-space:nowrap" onclick="setRiskSecSort('${c}')">${label}${arrow(c)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+        ${rows.length > RISK_SEC_TOP ? `<div style="margin-top:8px"><button class="fbtn" onclick="toggleRiskSecAll()">${state.riskSecAll ? `Show top ${RISK_SEC_TOP}` : `Show all ${rows.length}`}</button></div>` : ''}
+        <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:11px;color:var(--t3);line-height:1.5">
+          <strong style="color:var(--t2)">Risk share</strong> is weight × beta to the book, the name's share of the book's variance; it sums to 100% across the book, so a name above its weight adds risk faster than capital and a negative share is a hedge.
+          <strong style="color:var(--t2)">Basis:</strong> ${rm.periods} weekly SGD total returns (last adjusted close of each calendar week, FX as of that close), weeks ending ${rm.from} to ${rm.to} (last close ${rm.lastClose}), applied to current weights; this is the current book's risk over past price moves, not the realised risk of the book as it was held.
+          Weekly sampling is used because the book spans Asian, European and US closes: daily returns pair sessions that do not overlap, which leaves book volatility almost unchanged here but understates the book's beta to the S&amp;P 500.
+          Benchmarks are the STI ETF (ES3) and the SGX-listed S&amp;P 500 tracker (S27), both in SGD.
+          Single-name betas on 52 observations are approximate: the standard error is about 0.12 × (name vol ÷ benchmark vol) at a correlation of 0.5.
+          ${unpricedW > 0 ? `Bonds, cash and unpriced holdings (${fmt(unpricedW, 1)}% of the book) carry weight and no risk and are not listed.` : ''}${dropped}
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb">
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>Correlation — top 12 names by risk share, weekly returns to the ${rm.lastClose} close</div></div>
+      <div class="card-body"><div id="riskCorrHeatmap" style="height:440px"></div></div>
+    </div>`;
+}
+
+function _renderRiskCorrHeatmap(rm) {
+  const elx = document.getElementById('riskCorrHeatmap');
+  if (!elx) return;
+  const top = rm.rows.filter(r => r.priced).sort((a, b) => b.contrib - a.contrib).slice(0, 12);
+  if (top.length < 2) return;
+  const corr = (a, b) => {
+    const n = a.length, ma = a.reduce((s, x) => s + x, 0) / n, mb = b.reduce((s, x) => s + x, 0) / n;
+    let sab = 0, saa = 0, sbb = 0;
+    for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+    return saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0;
+  };
+  const labels = top.map(r => r.ticker);
+  const z = top.map(a => top.map(b => corr(a.rets, b.rets)));
+  Plotly.newPlot('riskCorrHeatmap', [{
+    type: 'heatmap', x: labels, y: labels, z, zmin: -1, zmax: 1,
+    colorscale: [[0, '#1d4ed8'], [0.5, '#ffffff'], [1, '#b91c1c']],
+    // Cell values print only where a 12-column grid leaves room for them;
+    // on a phone the colour carries the reading and a tap gives the value.
+    text: z.map(row => row.map(v => v.toFixed(2))), texttemplate: elx.clientWidth >= 600 ? '%{text}' : '', textfont: { size: 11, family: 'JetBrains Mono' },
+    hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
+    colorbar: { thickness: 10, tickfont: { size: 11 } },
+  }], {
+    margin: { l: 70, r: 10, t: 10, b: 70 },
+    xaxis: { tickfont: { size: 11 }, tickangle: -45 }, yaxis: { tickfont: { size: 11 }, autorange: 'reversed' },
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    font: { family: 'DM Sans', size: 11, color: '#1a1a18' },
+  }, { displayModeBar: false, responsive: true });
 }
 
 function renderAllocation(el) {
@@ -3236,16 +3556,19 @@ function renderAllocation(el) {
           </table>
         </div>
         <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:10px;color:var(--t3);line-height:1.5">
-          <strong style="color:var(--t2)">Vol Contribution</strong> decomposes total portfolio volatility (${fmt(out.portfolioVol,1)}%) by bucket. Sums to 100% by construction.
+          <strong style="color:var(--t2)">Vol Contribution</strong> decomposes total portfolio volatility (${fmt(out.portfolioVol,1)}%) by bucket: the sum of each member's weight × beta to the book, so it sums to 100% and the book figure is the same under every pivot.
           A bucket whose vol contribution exceeds its weight is adding risk faster than capital.
+          <strong style="color:var(--t2)">Basis:</strong> Vol and Vol Contribution use ${out.risk.periods} weekly SGD returns, weeks ending ${out.risk.from} to ${out.risk.to} (last close ${out.risk.lastClose}), at current weights. YTD Return links daily returns since 1 Jan 2026 at current quantities.
           Buckets without priced history (Bonds, Cash) show — for return and vol.
         </div>
       </div>
     </div>
 
+    ${_riskSecurityCardHTML(ps, out.risk)}
+
     <div class="g2 mb">
       <div class="card">
-        <div class="card-head"><div class="card-title"><span class="indicator" style="background:#dc2626"></span>Risk vs Return — ${PIVOT_LABELS[pivot]} Buckets (YTD)</div></div>
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:#dc2626"></span>Risk vs Return — ${PIVOT_LABELS[pivot]} Buckets (trailing ${RISK_WINDOW_WEEKS} weeks to the ${out.risk.lastClose} close)</div></div>
         <div class="card-body"><div id="allocScatterChart" style="height:340px"></div></div>
       </div>
       <div class="card">
@@ -3291,13 +3614,17 @@ function renderAllocation(el) {
     </div>
   `;
 
+  setTimeout(() => _renderRiskCorrHeatmap(out.risk), 90);
+
   // Render scatter plot
   setTimeout(()=>{
     const buckets = out.buckets.filter(b => b.volAnnual > 0);
     if (buckets.length === 0) return;
     Plotly.newPlot('allocScatterChart', [{
+      // Both axes on the same window and basis: the risk model's weekly
+      // returns. The table's YTD column is a different window.
       x: buckets.map(b => b.volAnnual),
-      y: buckets.map(b => b.ytdReturn),
+      y: buckets.map(b => b.riskRet),
       text: buckets.map(b => b.key),
       mode: 'markers+text',
       textposition: 'top center',
@@ -3309,10 +3636,10 @@ function renderAllocation(el) {
         opacity: 0.85
       },
       customdata: buckets.map(b => [b.weight, b.volContrib, b.count]),
-      hovertemplate: '<b>%{text}</b><br>Weight: %{customdata[0]:.1f}%<br>Vol Contribution: %{customdata[1]:.1f}%<br>Annualised Vol: %{x:.1f}%<br>YTD Return: %{y:.1f}%<br>Positions: %{customdata[2]}<extra></extra>'
+      hovertemplate: '<b>%{text}</b><br>Weight: %{customdata[0]:.1f}%<br>Vol Contribution: %{customdata[1]:.1f}%<br>Annualised Vol: %{x:.1f}%<br>52-week Return: %{y:.1f}%<br>Positions: %{customdata[2]}<extra></extra>'
     }], {
-      xaxis: { title: { text: 'Annualised Volatility (%)', font: { size: 11 } }, zeroline: false, gridcolor: '#e5e7eb' },
-      yaxis: { title: { text: 'YTD Return (%)', font: { size: 11 } }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#e5e7eb' },
+      xaxis: { title: { text: 'Annualised Volatility, weekly (%)', font: { size: 11 } }, zeroline: false, gridcolor: '#e5e7eb' },
+      yaxis: { title: { text: '52-week Return at current weights (%)', font: { size: 11 } }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#e5e7eb' },
       margin: { l: 55, r: 20, t: 15, b: 55 },
       paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
       font: { family: 'DM Sans', size: 11, color: '#1a1a18' },
@@ -5431,8 +5758,9 @@ function _maybeAppendTodayDate(dates, priced) {
 //  e.g. an in-year round trip on a young listing): external to the book.
 //  FX is applied as of each date.
 //
-//  The NAV-series engines — getEquityCurve, calcTwrr, calcAllocationRisk —
-//  are projections of this object. The per-ticker engines
+//  The NAV-series engines — getEquityCurve, calcTwrr, and the YTD return
+//  in calcAllocationRisk — are projections of this object (its risk figures
+//  come from calcRiskModel, on its own weekly axis). The per-ticker engines
 //  (calcPortfolioPeriodPnL, calcAttribution, calcYtdAttribution) keep
 //  per-ticker windowing BY DESIGN: a shared global axis is precisely what
 //  caused the weekend-bake 1-Day collapse, so they share effectiveReturn()

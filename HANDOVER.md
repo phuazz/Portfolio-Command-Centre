@@ -197,10 +197,20 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   November). Owner decision 2026-10-02: a separate session. Until then NAV
   omits the Crasus value and the 4004.JP mark carries any ex-spin-off fall as
   a loss.
-- Engine architecture: the NAV-series engines (equity curve, TWRR,
-  allocation risk) run as projections of the memoised `buildDailyBook()`
+- Engine architecture: the NAV-series engines (equity curve, TWRR, the
+  allocation YTD return) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
   FIFO) keep per-ticker windowing by design.
+- Risk model (3 Oct 2026): `calcRiskModel()` owns all volatility and risk
+  contribution on the Allocation tab. It uses 52 weekly SGD returns (the last
+  close of each calendar week, keyed by `_riskWeekKey`) at current weights,
+  with Euler contribution w × beta to the book, so the book figure no longer
+  changes with the pivot; buckets sum their members. It sits behind the
+  security-level card and the top-12 correlation heatmap, and gives betas to
+  ES3 and S27. A one-session jump of more than 40% that reverses the next
+  session is dropped as a bad print and listed on the card (3010.HK
+  2025-10-24 at the time). The daily basis is computed for comparison only.
+  `node scripts/risk_week_key.test.mjs` covers the week bucketing.
 - Attribution carries an explicit Local / FX / Total decomposition on every
   horizon plus a portfolio FX-contribution tile (Phase C.1, 13 Jun 2026).
   The YTD FIFO engine is now FX-aware (proceeds at sell-date FX, marks at
