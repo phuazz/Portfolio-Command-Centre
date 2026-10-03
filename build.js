@@ -53,6 +53,10 @@ const FX_SYMBOLS = ['HKDSGD=X', 'SGDJPY=X', 'USDSGD=X', 'AUDSGD=X', 'EURSGD=X'];
 // trades.json, replacing the old regex scan of the HTML. Closed-out tickers
 // stay in the universe via their trade rows, so attribution keeps its history.
 const TRADES_SRC = path.join(__dirname, 'trades.json');
+// Benchmark legs, kept in the universe whether or not they are held: ES3.SI
+// (STI, SGD) and S27.SI (S&P 500, USD). Must match BENCHMARK_DEFS in
+// template.html.
+const BENCHMARK_SYMBOLS = ['ES3.SI', 'S27.SI'];
 const BOOK_SRC = path.join(__dirname, 'book.json');
 
 function readLedger() {
@@ -72,7 +76,12 @@ function readLedger() {
   }
   for (const m of Object.values(book.meta || {})) if (m.yf) symbols.add(m.yf);
   for (const t of trades) if (t.yf) symbols.add(t.yf);
-  // Applied after both loops so a trade row cannot re-admit an excluded symbol.
+  // The benchmark legs are fetched on every bake, held or not: the
+  // Performance comparison and the Allocation betas read them from the
+  // baked feed when the tracker is not in the book (template.html,
+  // BENCHMARK_DEFS).
+  for (const yf of BENCHMARK_SYMBOLS) symbols.add(yf);
+  // Applied after the loops so a trade row cannot re-admit an excluded symbol.
   for (const yf of noQuoteYf) symbols.delete(yf);
   return { trades, book, symbols: [...symbols], noQuote };
 }
@@ -228,8 +237,9 @@ async function fetchTicker(symbol, range = '10y', directOnly = false) {
       // The dashboard's intraday engines gate on it — a print at or before the
       // prior US close is not a live tick, however much it differs from the
       // marked close (thinly traded SGX names routinely differ for days).
-      // exchangeTz groups tickers by trading calendar for the session audit and,
-      // like volume, is stripped before the file is written.
+      // exchangeTz groups tickers by trading calendar for the session audit.
+      // It is published to the client as tz (see stripAudit in main), which
+      // dates each bar to its exchange-local session.
       // name: the feed's security name, kept in history.json so the client can
       // label tickers that have no book.json meta entry (names closed during
       // the year). longName reads better than shortName ("WisdomTree Physical
@@ -772,11 +782,22 @@ async function main() {
   // Merge
   const allData = { ...stockData, ...fxData };
 
-  // Audit-only fields never reach the client: volume exists solely to tell a
-  // real session from a fabricated one, and exchangeTz solely to group tickers
-  // by trading calendar. Stripping at serialisation avoids copying an 11 MB
-  // structure just to delete two keys.
-  const stripAudit = (k, val) => (k === 'v' || k === 'exchangeTz') ? undefined : val;
+  // Volume never reaches the client: it exists solely to tell a real session
+  // from a fabricated one. The exchange timezone is published once per
+  // symbol as tz (since 2026-10-03), because the client needs it to date each
+  // bar to its local session: Yahoo stamps ASX bars at the 10:00 Sydney open,
+  // the previous UTC day during Australian daylight saving, and FX bars at
+  // London midnight, the previous UTC day under British Summer Time.
+  // Rewriting at serialisation (a shallow copy of each symbol object, the
+  // history array shared) avoids copying an 11 MB structure.
+  const stripAudit = (k, val) => {
+    if (k === 'v') return undefined;
+    if (val && typeof val === 'object' && !Array.isArray(val) && 'exchangeTz' in val) {
+      const { exchangeTz, ...rest } = val;
+      return exchangeTz ? { ...rest, tz: exchangeTz } : rest;
+    }
+    return val;
+  };
 
   // Size estimate
   const jsonStr = JSON.stringify(allData, stripAudit);

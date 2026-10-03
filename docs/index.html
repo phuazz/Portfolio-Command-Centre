@@ -489,15 +489,18 @@ function _buildFxHistory(results) {
     if (!entry) continue;
     const hist = entry.history;
     if (!hist || hist.length === 0) { FX_HISTORY[ccy] = []; continue; }
-    // historyToFull has already converted bars into { date: Date, close, adjclose, ... }.
-    // Prefer adjclose (continuous), fall back to close.
+    // historyToFull has already converted bars into { date: Date, ds, close, adjclose, ... }.
+    // Prefer adjclose (continuous), fall back to close. The date is the bar's
+    // London session date (ds): Yahoo stamps FX bars at London midnight, which
+    // under British Summer Time is 23:00 UTC the day before, so until
+    // 2026-10-03 the UTC date filed each summer rate one day early and
+    // fxAtDate returned the following session's rate.
     const series = hist
       .map(b => {
-        const d = b.date instanceof Date ? b.date : new Date(b.date);
         const rate = b.adjclose != null && isFinite(b.adjclose) ? b.adjclose
                   : (b.close    != null && isFinite(b.close)    ? b.close : null);
         if (rate == null) return null;
-        return { date: d.toISOString().slice(0, 10), rate };
+        return { date: _barDate(b), rate };
       })
       .filter(x => x !== null)
       .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
@@ -704,15 +707,98 @@ function parseYahooResponse(json) {
   // Thinly traded SGX names can carry a print hours or days old while the
   // exchange still marks an official close; the intraday engines gate on this
   // timestamp so a stale print is never mistaken for a live tick.
-  return { price: currentPrice, prevClose, history, quoteTime: meta.regularMarketTime || null };
+  // tz: the exchange timezone, which dates each bar to its local session
+  // (see _sessionDater).
+  return { price: currentPrice, prevClose, history, quoteTime: meta.regularMarketTime || null, tz: meta.exchangeTimezoneName || null };
 }
 
-function historyToFull(compact) {
+// ─── Exchange-local session dates ────────────────────────────────
+// Yahoo stamps a daily bar at the session's opening time in the exchange's
+// own timezone, so the UTC calendar date of the stamp is not always the
+// session date. ASX opens at 10:00 Sydney time, which during Australian
+// daylight saving is 23:00 UTC on the PREVIOUS day: the 2 January 2026
+// session carried a 2026-01-01 UTC date, and 125 ASX bars in the year to
+// 2 October 2026 read one day early, 25 of them as Sundays. Yahoo FX bars
+// are stamped at midnight London time, so under British Summer Time every
+// FX bar carried the previous UTC date and fxAtDate returned the next
+// session's rate. SGX, HKEX, Tokyo, the European exchanges and the US all
+// stamp inside their own local day, so their dates are unchanged.
+//
+// The session date is the calendar date of the stamp in the exchange's
+// timezone. The timezone comes from the feed (Yahoo exchangeTimezoneName,
+// kept in history.json as `tz` since 2026-10-03 and read from each live
+// payload). Payloads written before then carry no timezone, so it is
+// inferred from the symbol suffix; a symbol whose suffix is not in the map
+// falls back to the UTC date, which was the behaviour for every symbol
+// before this change.
+const _TZ_BY_SUFFIX = {
+  AX: 'Australia/Sydney', T: 'Asia/Tokyo', HK: 'Asia/Hong_Kong', SI: 'Asia/Singapore',
+  L: 'Europe/London', DE: 'Europe/Berlin', F: 'Europe/Berlin', PA: 'Europe/Paris',
+  AS: 'Europe/Amsterdam', MI: 'Europe/Rome', SW: 'Europe/Zurich', MC: 'Europe/Madrid',
+};
+function _inferExchangeTz(sym) {
+  if (!sym) return null;
+  if (sym.includes('=')) return 'Europe/London';            // Yahoo FX crosses
+  const m = /\.([A-Z]+)$/.exec(sym);
+  if (!m) return /^[A-Z]{1,5}$/.test(sym) ? 'America/New_York' : null;   // plain US ticker
+  return _TZ_BY_SUFFIX[m[1]] || null;
+}
+const _utcDay = sec => new Date(sec * 1000).toISOString().slice(0, 10);
+const _sessionDaterCache = {};
+// Returns a function from epoch SECONDS to the 'YYYY-MM-DD' session date in
+// tz. Formatting every bar through Intl costs about 2 microseconds a bar, or
+// half a second over the full 10-year bake, so the zone's UTC offset range
+// is sampled once (the 15th of each month of the current year) and a bar
+// whose time of day cannot cross local midnight at any offset in that range
+// is dated by arithmetic. Only a bar that could fall either side, such as a
+// London-midnight FX stamp, goes through Intl. The sampled range assumes the
+// zone's daylight-saving rules have been stable over the history held, which
+// holds for every zone above since 2008.
+function _sessionDater(tz) {
+  if (!tz) return _utcDay;
+  if (_sessionDaterCache[tz]) return _sessionDaterCache[tz];
+  let fmt;
+  try {
+    fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return (_sessionDaterCache[tz] = _utcDay); }
+  const parts = ms => { const o = {}; for (const x of fmt.formatToParts(new Date(ms))) o[x.type] = x.value; return o; };
+  // Offset in seconds. Intl month parts are 1-indexed; Date.UTC takes a
+  // 0-indexed month, hence the − 1.
+  const offsetSec = ms => { const o = parts(ms); return (Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour % 24, +o.minute) - ms) / 1000; };
+  const yr = new Date().getUTCFullYear();
+  let minOff = Infinity, maxOff = -Infinity;
+  for (let m = 0; m < 12; m++) {             // m is a 0-indexed month for Date.UTC
+    const off = offsetSec(Date.UTC(yr, m, 15, 12));
+    if (off < minOff) minOff = off;
+    if (off > maxOff) maxOff = off;
+  }
+  const dater = sec => {
+    const tod = ((sec % 86400) + 86400) % 86400;
+    const day0 = sec - tod;
+    if (tod + minOff >= 0 && tod + maxOff < 86400) return _utcDay(day0);
+    if (tod + minOff >= 86400) return _utcDay(day0 + 86400);
+    if (tod + maxOff < 0) return _utcDay(day0 - 86400);
+    const o = parts(sec * 1000);
+    return `${o.year}-${o.month}-${o.day}`;
+  };
+  return (_sessionDaterCache[tz] = dater);
+}
+// Session date of a full bar: the exchange-local date set by historyToFull,
+// else the UTC date for a bar object built without one.
+function _barDate(bar) {
+  if (bar.ds) return bar.ds;
+  return (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+}
+
+function historyToFull(compact, sym, tz) {
   // Convert compact cache format to full format used by rest of app.
   // adjclose (h.ac) was added later — fall back to raw close for cached entries
   // that pre-date the change. Those entries will refresh on the next fetch.
+  // ds is the exchange-local session date (see _sessionDater); a caller that
+  // passes neither symbol nor timezone gets the UTC date, as before.
+  const dater = _sessionDater(tz || _inferExchangeTz(sym));
   return compact.map(h => ({
-    date: new Date(h.d * 1000), close: h.c, adjclose: h.ac != null ? h.ac : h.c,
+    date: new Date(h.d * 1000), ds: dater(h.d), close: h.c, adjclose: h.ac != null ? h.ac : h.c,
     open: h.o, high: h.h, low: h.l
   }));
 }
@@ -751,13 +837,16 @@ function periodReturn(historyFull, mode, snapshotPx) {
   return numerator / refAc - 1;
 }
 
-function mergeHistory(cached, fresh) {
-  // Dedup by UTC calendar date (not raw epoch) so a finalised bar always
+function mergeHistory(cached, fresh, sym, tz) {
+  // Dedup by session date (not raw epoch) so a finalised bar always
   // replaces a provisional one for the same trading session, even if Yahoo
   // shifts the epoch between the live-quote and the finalised-close fetches.
   // Rule: finalised wins over provisional; otherwise fresh wins over cached.
+  // The key is the exchange-local session date: on the UTC date an ASX
+  // session stamped at the 10:00 open (23:00 UTC the day before) and a live
+  // print later in the same session fell on different keys.
   const map = new Map();
-  const key = d => new Date(d * 1000).toISOString().slice(0, 10);
+  const key = _sessionDater(tz || _inferExchangeTz(sym));
   const accept = bar => {
     const k = key(bar.d);
     const existing = map.get(k);
@@ -834,7 +923,7 @@ async function fetchAllPrices() {
             price: e.price, prevClose: e.prevClose,
             dayChange: e.price - (e.prevClose || e.price),
             dayChangePct: e.prevClose ? ((e.price - e.prevClose) / e.prevClose) * 100 : 0,
-            history: historyToFull(e.history || [])
+            history: historyToFull(e.history || [], p.yf, e.tz)
           };
         }
       });
@@ -904,7 +993,7 @@ async function fetchAllPrices() {
       price: entry.price, prevClose: entry.prevClose,
       dayChange: entry.price - entry.prevClose,
       dayChangePct: ((entry.price - entry.prevClose) / entry.prevClose) * 100,
-      history: historyToFull(entry.history)
+      history: historyToFull(entry.history, c.sym, entry.tz)
     };
     cacheHitCount++;
   }
@@ -954,7 +1043,7 @@ async function fetchAllPrices() {
                   quoteTime: pre.quoteTime != null ? pre.quoteTime : null,
                   dayChange: pre.price - (pre.prevClose || pre.price),
                   dayChangePct: pre.prevClose ? ((pre.price - pre.prevClose) / pre.prevClose) * 100 : 0,
-                  history: historyToFull(pre.history)
+                  history: historyToFull(pre.history, item.sym, pre.tz)
                 };
               }
             }
@@ -974,13 +1063,15 @@ async function fetchAllPrices() {
             incrementalCount--;
             continue;
           }
-          const merged = mergeHistory(baseHist, data.history);
+          const preTz = (typeof PRELOADED_HISTORY !== 'undefined' && PRELOADED_HISTORY[item.sym]) ? PRELOADED_HISTORY[item.sym].tz : null;
+          const tz = data.tz || preTz || null;
+          const merged = mergeHistory(baseHist, data.history, item.sym, tz);
           results[item.sym] = {
             price: data.price, prevClose: data.prevClose,
             quoteTime: data.quoteTime,
             dayChange: data.price - data.prevClose,
             dayChangePct: ((data.price - data.prevClose) / data.prevClose) * 100,
-            history: historyToFull(merged)
+            history: historyToFull(merged, item.sym, tz)
           };
           incrementalCount++;
         } else {
@@ -990,7 +1081,7 @@ async function fetchAllPrices() {
             quoteTime: data.quoteTime,
             dayChange: data.price - data.prevClose,
             dayChangePct: ((data.price - data.prevClose) / data.prevClose) * 100,
-            history: historyToFull(data.history)
+            history: historyToFull(data.history, item.sym, data.tz)
           };
           fullFetchCount++;
         }
@@ -2374,10 +2465,10 @@ function renderHeadline(split, ytd) {
       const names = { STI: 'STI', SPX: 'S&amp;P 500', BLEND: '50/50 STI / S&amp;P 500 blend' };
       const frags = [];
       for (const sym of [BENCHMARK_DEFAULT]) {
-        const bench = getBenchmarkCurve(ps, sym, startDate);
+        const bench = getBenchmarkCurve(ps, sym, startDate, curve.anchorDate);
         if (!bench || !isFinite(bench.endReturn)) continue;
         const alpha = curve.totalReturnPct - bench.endReturn;
-        const tip = `TWRR basis, matching the Performance tab: portfolio ${fmtPct(curve.totalReturnPct)} vs ${bench.label} ${fmtPct(bench.endReturn)} since 1 Jan. The S$ figure is the money-weighted FIFO YTD P&amp;L from the KPI strip; the two bases are shown side by side, never differenced.`;
+        const tip = `TWRR basis, matching the Performance tab: portfolio ${fmtPct(curve.totalReturnPct)} vs ${bench.label} ${fmtPct(bench.endReturn)} from the ${curve.anchorDate} close, both valued at that close. The S$ figure is the money-weighted FIFO YTD P&amp;L from the KPI strip; the two bases are shown side by side, never differenced.`;
         if (Math.abs(alpha) < 0.005) {
           frags.push(`<span title="${tip}">level with the ${names[sym]}</span>`);
         } else {
@@ -2950,25 +3041,62 @@ function renderPositions(el) {
 //  (the fixed-weights, ex-ante convention). A name's contribution is its
 //  weight times its beta to the book, w_i · cov(r_i, r_p) / var(r_p), which
 //  sums to 100% across the book; a bucket's contribution is the sum of its
-//  members'. Bonds, cash and names without a priced feed carry weight and a
-//  zero return, so they dilute volatility without contributing to it.
+//  members'. Bonds and cash carry weight and a zero return by convention, so
+//  they dilute volatility without contributing to it; the card says so.
 //
 //  Weekly returns are the default because the book spans SGX, HKEX, Tokyo,
 //  ASX, Europe and the US. A daily close-to-close return pairs an Asian
 //  session with a US session that has not yet traded, so cross-region
-//  covariances read low and the book's volatility with them. Sampling each
-//  name at its last close of the calendar week leaves at most a part-session
-//  offset in five. The daily basis is computed over the same window for
-//  comparison only.
+//  covariances read low, and the book's beta to the S&P 500 with them. The
+//  daily basis is computed on the same endpoints for comparison only.
 //
-//  Before 2026-10-03 the allocation engine built each bucket's value series
-//  by summing its members and differencing the sum, so a member whose feed
-//  started inside the window entered as a return, and the book's volatility
-//  differed by pivot (9.30% by theme, 11.01% by region, measured that day).
-//  Returns are now taken per name and weighted, which removes the jump.
+//  One common observation window (since 2026-10-03). Every included risky
+//  holding and every benchmark is observed at every endpoint of the window;
+//  no return is filled with zero before a series began. The window is the
+//  latest RISK_WINDOW_WEEKS weekly intervals, shortened to start at the
+//  first week-end on which every included holding had a price, and a
+//  holding is included only if that leaves at least RISK_MIN_WEEKS
+//  intervals. A risky holding with less history than that, with no priced
+//  feed, or whose feed stopped more than two week-ends before the latest
+//  close, is not given a proxy and is not dropped silently: the model
+//  reports incomplete coverage and the whole-book figure is withheld.
+//  Ordinary exchange holidays carry the last close forward; a series is
+//  never carried back before its first close. All series share one matrix,
+//  so the book volatility, the Euler contributions and the betas reconcile.
+//
+//  Annualisation is from elapsed time: periods per year = intervals ÷ years
+//  between the first and last sampled sessions, on both bases, so a window
+//  shortened to 26 weeks is not scaled as though it were a year.
+//
+//  Before 2026-10-03 a name whose feed began inside the 52-week window had
+//  zeros in place of its missing returns, and those zeros entered every
+//  statistic. GLS, listed 30 March 2026, showed an annualised volatility of
+//  13.0% over 52 "returns" of which 26 were real; its 26 observed weekly
+//  returns annualise to 18.5%.
 // ═══════════════════════════════════════════════════════════════
-const RISK_WINDOW_WEEKS = 52;
-const RISK_BENCHMARKS = { STI: 'ES3.SI', SPX: 'S27.SI' };   // SGD-terms total return, as getBenchmarkCurve
+const RISK_WINDOW_WEEKS = 52;   // cap: the latest 52 weekly intervals
+const RISK_MIN_WEEKS = 26;      // shortest common window for an unqualified book figure
+
+// Prints excluded from every risk series that carries the symbol: holdings,
+// benchmark legs, Performance benchmark curves. Each entry names its basis.
+// Unusual moves that are NOT listed here are kept and flagged on the card
+// (RISK_FLAG_LOG); nothing is removed by a generic rule. The rule this
+// replaced (drop any one-session move above 0.4 in log terms that reversed
+// to within 0.1 the next session) erased a genuine 100 → 160 → 100 round
+// trip, missed a two-session error such as 100 → 10 → 10 → 100, and never
+// tested the first or last bar.
+const RISK_PRINT_EXCLUSIONS = [
+  { yf: '3010.HK', ticker: '3010.HK', date: '2025-10-24',
+    basis: 'suspected vendor anomaly in the Yahoo daily feed: raw closes 70.78 (23 Oct), 9.1617 (24 Oct), 72.36 (27 Oct 2025), an 87% one-session fall fully reversed at the next close; not verified against exchange records' },
+];
+function _excludedPrint(yf, ds) {
+  for (const x of RISK_PRINT_EXCLUSIONS) if (x.yf === yf && x.date === ds) return true;
+  return false;
+}
+// |ln(P_t / P_{t-1})| above 0.4 is a fall of more than 33.0% or a rise of
+// more than 49.2% in one session (e^-0.4 = 0.670, e^0.4 = 1.492). Such a move
+// inside the window is flagged on the card, not removed.
+const RISK_FLAG_LOG = 0.4;
 
 // Week key: the Saturday that ends the calendar week containing ds (ISO
 // date). Built on the Date object: getUTCDay() is 0 = Sunday … 6 = Saturday,
@@ -2980,80 +3108,153 @@ function _riskWeekKey(ds) {
   return d.toISOString().slice(0, 10);
 }
 
+// The RISK_WINDOW_WEEKS + 1 week-ending Saturdays that bound the longest
+// window, oldest first, ending with the week of lastClose. Stepped by
+// setUTCDate(−7), which rolls month and year boundaries.
+function _riskEndpoints(lastClose) {
+  const d = new Date(_riskWeekKey(lastClose) + 'T00:00:00Z');
+  const out = [];
+  for (let k = 0; k <= RISK_WINDOW_WEEKS; k++) {
+    out.unshift(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() - 7);
+  }
+  return out;
+}
+
+// Prices of an ascending [{ ds, px }] series at ascending sample dates: the
+// last point on or before each date, carried forward (null before the first).
+function _sampleSeries(series, keys) {
+  const out = new Array(keys.length);
+  let j = 0, last = null;
+  for (let t = 0; t < keys.length; t++) {
+    while (j < series.length && series[j].ds <= keys[t]) last = series[j++].px;
+    out[t] = last;
+  }
+  return out;
+}
+
+// Inputs shared by both bases: per-name SGD series, coverage, the common
+// window and its sampled sessions. Memoised per data version.
+let _riskInputsCache = null;
+function _riskInputs(ps) {
+  const memoKey = _dataVersion + '|' + ps.length;
+  if (_riskInputsCache && _riskInputsCache._key === memoKey && _riskInputsCache._ps === ps) return _riskInputsCache;
+
+  const totalMV = ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
+  const names = ps.map(p => {
+    const w = totalMV > 0 ? (p.mktValueSGD || 0) / totalMV : 0;
+    const risky = p.type !== 'Bond' && p.type !== 'Cash';
+    const n = { p, w, risky, status: risky ? 'nofeed' : 'zero-risk', series: null, first: null, last: null };
+    if (risky && p.history && p.history.length >= 2) {
+      const s = _legSeriesSGD({ bars: p.history, ccy: p.ccy, yf: p.yf });
+      if (s.length >= 2) { n.series = s; n.first = s[0].ds; n.last = s[s.length - 1].ds; n.status = 'pending'; }
+    }
+    return n;
+  });
+
+  let lastClose = '';
+  for (const n of names) if (n.series && n.last > lastClose) lastClose = n.last;
+  const out = { _key: memoKey, _ps: ps, totalMV, names, lastClose: lastClose || null, keysW: [], keysD: [], weekEnds: [] };
+  if (!lastClose) { out.complete = false; _riskInputsCache = out; return out; }
+
+  const ends = _riskEndpoints(lastClose);          // ends[RISK_WINDOW_WEEKS] is the week of lastClose
+  const staleBefore = ends[RISK_WINDOW_WEEKS - 2];  // last close more than two week-ends back
+  let w0 = 0;
+  for (const n of names) {
+    if (n.status !== 'pending') continue;
+    if (n.last < staleBefore) { n.status = 'stale'; continue; }
+    let k = 0;
+    while (k < ends.length && ends[k] < n.first) k++;
+    n.available = RISK_WINDOW_WEEKS - k;           // weekly intervals the series can supply
+    if (n.available < RISK_MIN_WEEKS) { n.status = 'short'; continue; }
+    n.status = 'included';
+    n.firstIdx = k;
+    if (k > w0) w0 = k;
+  }
+  const included = names.filter(n => n.status === 'included');
+
+  // Sampled sessions. The daily keys are the union of the included names'
+  // session dates from the last session on or before the first week-end to
+  // the latest close. Each weekly endpoint samples the last of those
+  // sessions on or before its Saturday, so the weekly keys are a subset of
+  // the daily keys and both bases share their first and last prices.
+  const weekEnds = ends.slice(w0);
+  const sessions = new Set();
+  for (const n of included) for (const x of n.series) sessions.add(x.ds);
+  const all = [...sessions].sort();
+  let s0 = null;
+  for (const d of all) { if (d <= weekEnds[0]) s0 = d; else break; }
+  const keysD = s0 ? all.filter(d => d >= s0 && d <= lastClose) : [];
+  const keysW = [];
+  let j = 0;
+  for (const we of weekEnds) {
+    while (j + 1 < keysD.length && keysD[j + 1] <= we) j++;
+    if (keysD.length && keysD[j] <= we && keysW[keysW.length - 1] !== keysD[j]) keysW.push(keysD[j]);
+  }
+  const days = keysD.length > 1 ? (Date.parse(keysD[keysD.length - 1] + 'T00:00:00Z') - Date.parse(keysD[0] + 'T00:00:00Z')) / 86400000 : 0;
+
+  // Benchmarks on the same keys: STI, S&P 500 and the canonical daily-
+  // rebalanced 50/50 (_blendSeriesSGD), closes only. A benchmark with no
+  // close on or before the first key is left out rather than padded.
+  const bench = {};
+  for (const sym of ['STI', 'SPX', 'BLEND']) {
+    const s = _benchmarkSeriesSGD(ps, sym, false);
+    if (s && s.length && keysD.length && s[0].ds <= keysD[0]) bench[sym] = s;
+  }
+
+  // Unusual moves inside the window, on local adjusted closes, across the
+  // included names and the two benchmark legs. Every interval whose later
+  // close falls inside [first key, last key] is tested, the first and last
+  // included.
+  const flags = [];
+  const flagScan = (series, ticker) => {
+    for (let i = 1; i < series.length; i++) {
+      const d = series[i].ds;
+      if (d < keysD[0] || d > lastClose) continue;
+      const a = series[i - 1].loc, b = series[i].loc;
+      if (a > 0 && b > 0 && Math.abs(Math.log(b / a)) > RISK_FLAG_LOG) flags.push({ ticker, date: d, prevDate: series[i - 1].ds, from: a, to: b });
+    }
+  };
+  if (keysD.length) {
+    for (const n of included) flagScan(n.series, n.p.ticker);
+    for (const sym of ['STI', 'SPX']) {
+      const leg = _benchmarkLeg(ps, sym);
+      if (leg && !included.some(n => n.p.yf === leg.yf)) flagScan(_legSeriesSGD(leg), leg.ticker);
+    }
+  }
+  const usedYf = new Set(included.map(n => n.p.yf));
+  for (const sym of ['STI', 'SPX']) usedYf.add(BENCHMARK_DEFS[sym].yf);
+  const exclusions = keysD.length ? RISK_PRINT_EXCLUSIONS.filter(x => usedYf.has(x.yf) && x.date >= keysD[0] && x.date <= lastClose) : [];
+
+  const riskyNames = names.filter(n => n.risky);
+  const excluded = riskyNames.filter(n => n.status !== 'included');
+  Object.assign(out, {
+    weekEnds, keysW, keysD, years: days / 365.25,
+    shortened: w0 > 0,
+    binding: w0 > 0 ? included.filter(n => n.firstIdx === w0).map(n => ({ ticker: n.p.ticker, first: n.first })) : [],
+    complete: excluded.length === 0 && included.length > 0,
+    coverage: {
+      riskyCount: riskyNames.length, includedCount: included.length,
+      riskyW: riskyNames.reduce((s, n) => s + n.w, 0) * 100,
+      includedW: included.reduce((s, n) => s + n.w, 0) * 100,
+      excluded: excluded.map(n => ({ ticker: n.p.ticker, status: n.status, first: n.first, last: n.last, available: n.available != null ? n.available : 0, weight: n.w * 100 })),
+    },
+    bench, flags, exclusions,
+  });
+  _riskInputsCache = out;
+  return out;
+}
+
 const _riskModelCache = {};
 function calcRiskModel(ps, basis) {
   basis = basis === 'daily' ? 'daily' : 'weekly';
-  const memoKey = _dataVersion + '|' + ps.length;
+  const inp = _riskInputs(ps);
   const hit = _riskModelCache[basis];
-  if (hit && hit._key === memoKey && hit._ps === ps) return hit;
+  if (hit && hit._inp === inp) return hit;
 
-  const isoOf = bar => (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
-  const periodOf = basis === 'daily' ? (ds => ds) : _riskWeekKey;
-  // SGD price by period: the period's last adjusted close at that bar's FX.
-  // Bars ascend, so the last write in a period is its last close.
-  // A single bar that moves more than 40% (log) from the prior close and is
-  // undone to within 10% by the next one is a bad print, not a price, and is
-  // dropped: 3010.HK carried a 9.16 close between 70.78 and 72.36 on
-  // 2025-10-24, which alone put its weekly volatility near 700%.
-  const dropped = [];
-  let lastClose = '';
-  const priceByPeriod = (bars, ccy, allKeys, tk) => {
-    const byKey = {};
-    const pxOf = b => (b && (b.adjclose != null ? b.adjclose : b.close)) || null;
-    for (let i = 0; i < bars.length; i++) {
-      const bar = bars[i];
-      const px = pxOf(bar);
-      if (px == null || !(px > 0)) continue;
-      const before = i > 0 ? pxOf(bars[i - 1]) : null, after = pxOf(bars[i + 1]);
-      if (before > 0 && after > 0 && Math.abs(Math.log(px / before)) > 0.4 && Math.abs(Math.log(after / before)) < 0.1) {
-        if (tk) dropped.push({ ticker: tk, date: isoOf(bar) });
-        continue;
-      }
-      const ds = isoOf(bar);
-      const k = periodOf(ds);
-      byKey[k] = px * fxAtDate(ccy, ds);
-      if (allKeys) { allKeys.add(k); if (ds > lastClose) lastClose = ds; }
-    }
-    return byKey;
-  };
-
-  const totalMV = ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
-  const allKeys = new Set();
-  const names = ps.map(p => {
-    const hasFeed = !!(p.history && p.history.length >= 50 && p.type !== 'Bond' && p.type !== 'Cash');
-    return { p, hasFeed, byKey: hasFeed ? priceByPeriod(p.history, p.ccy, allKeys, p.ticker) : {} };
-  });
-
-  // Window: the last RISK_WINDOW_WEEKS + 1 week ends observed in the feed.
-  // The daily basis spans the same weeks: it starts at the last session on or
-  // before the first week end, so both bases measure the same interval.
-  const sortedKeys = [...allKeys].sort();
-  const weekEnds = [...new Set(sortedKeys.map(basis === 'daily' ? _riskWeekKey : (k => k)))].sort().slice(-(RISK_WINDOW_WEEKS + 1));
-  let keys;
-  if (basis === 'daily') {
-    let start = 0;
-    for (let i = 0; i < sortedKeys.length; i++) if (sortedKeys[i] <= weekEnds[0]) start = i;
-    keys = sortedKeys.slice(start);
-  } else {
-    keys = weekEnds;
-  }
+  const keys = basis === 'daily' ? inp.keysD : inp.keysW;
   const T = keys.length, N = Math.max(0, T - 1);
-
-  // Forward-filled period prices, seeded from the last price before the
-  // window, then simple returns. A period with no price at either end is a
-  // zero return and is not counted as an observation.
-  const toRets = byKey => {
-    const ks = Object.keys(byKey).sort();
-    const rets = new Array(N).fill(0);
-    let j = 0, last = null, prev = null, obs = 0;
-    for (let t = 0; t < T; t++) {
-      while (j < ks.length && ks[j] <= keys[t]) { last = byKey[ks[j]]; j++; }
-      if (t > 0 && prev != null && last != null) { rets[t - 1] = last / prev - 1; obs++; }
-      prev = last;
-    }
-    return { rets, obs };
-  };
-
+  const toRets = px => { const r = new Array(N); for (let t = 0; t < N; t++) r[t] = px[t + 1] / px[t] - 1; return r; };
   const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
   const cov = (a, b) => {
     if (a.length < 2) return 0;
@@ -3062,72 +3263,69 @@ function calcRiskModel(ps, basis) {
     for (let i = 0; i < a.length; i++) s += (a[i] - ma) * (b[i] - mb);
     return s / (a.length - 1);
   };
-  // Periods per year from the window itself: the daily axis is the union of
-  // every exchange's sessions, which is more than 252 a year.
-  const perYear = RISK_WINDOW_WEEKS > 0 ? N * 52 / RISK_WINDOW_WEEKS : 52;
+  const perYear = inp.years > 0 ? N / inp.years : 0;
   const ann = Math.sqrt(perYear);
 
+  // Book return: included names at their book weights; bonds and cash at a
+  // zero return. Names outside the coverage do not enter it.
   const rp = new Array(N).fill(0);
-  for (const n of names) {
-    Object.assign(n, toRets(n.byKey));
-    n.w = totalMV > 0 ? (n.p.mktValueSGD || 0) / totalMV : 0;
-    for (let t = 0; t < N; t++) rp[t] += n.w * n.rets[t];
+  const retsOf = new Map();
+  for (const n of inp.names) {
+    if (n.status === 'included' && T > 1) {
+      const r = toRets(_sampleSeries(n.series, keys));
+      retsOf.set(n, r);
+      for (let t = 0; t < N; t++) rp[t] += n.w * r[t];
+    } else if (n.status === 'zero-risk') {
+      retsOf.set(n, new Array(N).fill(0));
+    }
   }
   const varP = cov(rp, rp);
 
-  // Benchmarks: the held tracker's live bars when present, else the baked feed.
   const bench = {};
-  for (const [sym, yf] of Object.entries(RISK_BENCHMARKS)) {
-    const held = ps.find(p => p.yf === yf || p.ticker === yf.replace('.SI', ''));
-    let bars = held && held.history && held.history.length >= 50 ? held.history : null;
-    let ccy = held ? held.ccy : null;
-    if (!bars && PRELOADED_HISTORY[yf] && PRELOADED_HISTORY[yf].history) {
-      bars = historyToFull(PRELOADED_HISTORY[yf].history);
-      ccy = (LEDGER_BOOK && LEDGER_BOOK.meta[yf.replace('.SI', '')] || {}).ccy || 'SGD';
-    }
-    if (!bars) continue;
-    const { rets } = toRets(priceByPeriod(bars, ccy, null));
+  for (const [sym, s] of Object.entries(inp.bench)) {
+    const rets = toRets(_sampleSeries(s, keys));
     const v = cov(rets, rets);
     if (v > 0) bench[sym] = { rets, var: v };
-  }
-  // 50/50 blend of the two, rebalanced each period: the Performance tab's
-  // default benchmark. It is all equity, while the whole book here carries
-  // bonds and cash at zero risk, so the book's beta to it sits below 1 by
-  // roughly the equity weight.
-  if (bench.STI && bench.SPX) {
-    const rets = bench.STI.rets.map((x, i) => 0.5 * x + 0.5 * bench.SPX.rets[i]);
-    const v = cov(rets, rets);
-    if (v > 0) bench.BLEND = { rets, var: v };
   }
   const betaTo = (r, sym) => bench[sym] ? cov(r, bench[sym].rets) / bench[sym].var : null;
   const r2To = (r, sym) => { if (!bench[sym]) return null; const c = cov(r, bench[sym].rets), v = cov(r, r); return v > 0 ? c * c / (v * bench[sym].var) : null; };
 
-  const rows = names.map(n => {
-    const vi = cov(n.rets, n.rets);
-    const cv = cov(n.rets, rp);
+  const rows = inp.names.map(n => {
+    const inc = n.status === 'included';
+    const base = { p: n.p, ticker: n.p.ticker, theme: n.p.theme || 'Other', status: n.status, priced: inc, weight: n.w * 100, rets: retsOf.get(n) || null, obs: inc ? N : 0 };
+    if (!inc) return { ...base, vol: null, corr: null, betaBook: n.status === 'zero-risk' ? 0 : null, contrib: n.status === 'zero-risk' ? 0 : null, betaSTI: null, betaSPX: null };
+    const ri = base.rets, vi = cov(ri, ri), cv = cov(ri, rp);
     return {
-      p: n.p, ticker: n.p.ticker, theme: n.p.theme || 'Other', priced: n.hasFeed,
-      rets: n.rets, obs: n.obs, shortHistory: n.hasFeed && n.obs < N / 2,
-      weight: n.w * 100,
+      ...base,
       vol: Math.sqrt(vi) * ann * 100,
       corr: vi > 0 && varP > 0 ? cv / Math.sqrt(vi * varP) : null,
       betaBook: varP > 0 ? cv / varP : 0,
       contrib: varP > 0 ? n.w * cv / varP * 100 : 0,
-      betaSTI: n.hasFeed ? betaTo(n.rets, 'STI') : null,
-      betaSPX: n.hasFeed ? betaTo(n.rets, 'SPX') : null,
+      betaSTI: betaTo(ri, 'STI'),
+      betaSPX: betaTo(ri, 'SPX'),
     };
   });
 
+  const sigma = Math.sqrt(varP) * ann * 100;
   const out = {
-    _key: memoKey, _ps: ps, basis,
-    // from / to are period keys (week-ending Saturdays on the weekly basis);
-    // lastClose is the latest session actually priced in the window.
-    from: keys[0] || null, to: keys[T - 1] || null, lastClose, periods: N,
-    totalMV, portRets: rp,
-    portVol: Math.sqrt(varP) * ann * 100,
+    _inp: inp, basis,
+    // from / to are the week-ending Saturdays that bound the window; first /
+    // lastClose are the first and last sessions actually sampled, identical
+    // on both bases.
+    from: inp.weekEnds[0] || null, to: inp.weekEnds[inp.weekEnds.length - 1] || null,
+    first: keys[0] || null, lastClose: inp.lastClose, periods: N, perYear, years: inp.years,
+    weeks: Math.max(0, inp.keysW.length - 1), shortened: inp.shortened, binding: inp.binding,
+    complete: inp.complete, coverage: inp.coverage,
+    totalMV: inp.totalMV, portRets: rp,
+    // portVol is the whole-book figure and is withheld (null) when a risky
+    // holding is outside the coverage; coveredVol is always the volatility of
+    // the covered holdings with bonds and cash, at book weights.
+    portVol: inp.complete ? sigma : null,
+    coveredVol: sigma,
     betaSTI: betaTo(rp, 'STI'), betaSPX: betaTo(rp, 'SPX'),
     betaBlend: betaTo(rp, 'BLEND'), r2Blend: r2To(rp, 'BLEND'),
-    droppedPrints: dropped.filter(x => keys.length && x.date >= keys[0] && x.date <= keys[T - 1]),
+    benchmarks: Object.keys(bench),
+    exclusions: inp.exclusions, flags: inp.flags,
     rows,
   };
   _riskModelCache[basis] = out;
@@ -3136,17 +3334,21 @@ function calcRiskModel(ps, basis) {
 
 // Bucket view of the risk model: contribution is the sum of the members'
 // contributions; volatility and return come from the bucket's own series,
-// the members' returns weighted by current value within the bucket.
+// the members' returns weighted by current value within the bucket, on the
+// same window and annualisation as the book. A member outside the coverage
+// is left out of its bucket's series and the bucket is marked partial.
 function riskByBucket(rm, pivot) {
   const acc = {};
   for (const r of rm.rows) {
     const k = _bucketKeyFor(r.p, pivot);
-    if (!acc[k]) acc[k] = { contrib: 0, w: 0, rets: new Array(rm.periods).fill(0) };
+    if (!acc[k]) acc[k] = { contrib: 0, w: 0, rets: new Array(rm.periods).fill(0), partial: false, included: 0 };
+    if (!r.rets) { acc[k].partial = true; continue; }
+    if (r.priced) acc[k].included++;
     acc[k].contrib += r.contrib;
     acc[k].w += r.weight;
     for (let t = 0; t < rm.periods; t++) acc[k].rets[t] += r.weight * r.rets[t];
   }
-  const ann = Math.sqrt(rm.periods * 52 / RISK_WINDOW_WEEKS);
+  const ann = Math.sqrt(rm.perYear);
   const res = {};
   for (const [k, a] of Object.entries(acc)) {
     const rets = a.w > 0 ? a.rets.map(x => x / a.w) : a.rets;
@@ -3154,9 +3356,15 @@ function riskByBucket(rm, pivot) {
     const v = rets.length > 1 ? rets.reduce((s, x) => s + (x - m) * (x - m), 0) / (rets.length - 1) : 0;
     let cum = 1;
     for (const x of rets) cum *= (1 + x);
-    res[k] = { contrib: a.contrib, vol: Math.sqrt(v) * ann * 100, ret: (cum - 1) * 100 };
+    res[k] = { contrib: a.contrib, vol: Math.sqrt(v) * ann * 100, ret: (cum - 1) * 100, partial: a.partial, included: a.included };
   }
   return res;
+}
+
+// Short label for a risk window: "26 weekly returns, 3 Apr to 2 Oct 2026".
+function _riskWindowLabel(rm) {
+  const f = d => d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+  return `${rm.periods} ${rm.basis === 'daily' ? 'daily' : 'weekly'} returns, ${f(rm.first)} to ${f(rm.lastClose)}`;
 }
 const PIVOT_LABELS = {region:'Region', sector:'Sector', assetClass:'Asset Class', theme:'Theme'};
 const SECTOR_COLORS = {
@@ -3210,8 +3418,9 @@ function _bucketColorFor(pivot, key) {
 }
 
 // Bucketed weight, YTD return and risk. YTD return links daily bucket
-// returns since the epoch at current quantities; volatility and contribution
-// come from calcRiskModel (trailing 52 weekly returns, current weights).
+// returns from the 31 December close (the daily book's anchor date) at
+// current quantities; volatility and contribution come from calcRiskModel
+// (the common weekly window, up to 52 weeks, at current weights).
 function calcAllocationRisk(ps, trades, pivot) {
   const startDateStr = '2026-01-01';
   const totalMV = ps.reduce((s, p) => s + (p.mktValueSGD || 0), 0);
@@ -3226,8 +3435,8 @@ function calcAllocationRisk(ps, trades, pivot) {
   }
 
   // Priced subset, date axis and forward-filled close rows come from the
-  // unified core (the axis starts at the epoch, which is this engine's
-  // window start). Fixed-current-quantity convention below is unchanged:
+  // unified core (the axis opens on the last session before the epoch, the
+  // valuation anchor of this engine's YTD window). Fixed-current-quantity convention below is unchanged:
   // vol decomposition of the CURRENT allocation over historical moves.
   const book = buildDailyBook(ps, trades);
   const priced = book.priced;
@@ -3263,7 +3472,7 @@ function calcAllocationRisk(ps, trades, pivot) {
     let cum = 1;
     for (const r of bucketReturns[k]) cum *= (1 + r);
     const ytdReturn = (cum - 1) * 100;
-    const br = risk[k] || { vol: 0, contrib: 0, ret: 0 };
+    const br = risk[k] || { vol: 0, contrib: 0, ret: 0, partial: false };
     const volAnnual = br.vol;
     result.push({
       key: k,
@@ -3273,6 +3482,7 @@ function calcAllocationRisk(ps, trades, pivot) {
       volAnnual,
       volContrib: br.contrib,
       riskRet: br.ret,
+      riskPartial: br.partial,
       count: g.positions.length,
       color: _bucketColorFor(pivot, k)
     });
@@ -3285,8 +3495,10 @@ function calcAllocationRisk(ps, trades, pivot) {
   const effectiveN = hhi > 0 ? 1/hhi : 0;
   const top5 = result.slice(0,5).reduce((s,b)=>s+b.weight, 0);
   const wAvgVolFrac = result.reduce((s,b)=>s + (b.weight/100) * (b.volAnnual/100), 0);
-  const portVolAnnual = rm.portVol / 100;
-  const divRatio = portVolAnnual > 0 ? wAvgVolFrac / portVolAnnual : 0;
+  // The diversification ratio needs the whole-book volatility, so it is
+  // withheld with it when coverage is incomplete.
+  const portVolAnnual = rm.portVol != null ? rm.portVol / 100 : 0;
+  const divRatio = portVolAnnual > 0 ? wAvgVolFrac / portVolAnnual : null;
 
   return {
     totalMV,
@@ -3319,8 +3531,8 @@ function setAllocSort(col) {
 
 // ─── Risk by security (Allocation tab) ───────────────────────────
 // Per-name view of calcRiskModel: weight, volatility, correlation and beta
-// to the book, risk share (weight × beta to book, sums to 100% with the
-// unpriced names at zero), and beta to the two benchmark trackers.
+// to the book, risk share (weight × beta to book, sums to 100% with bonds
+// and cash at zero), and beta to the two benchmark trackers.
 const RISK_SEC_COLS = [
   ['ticker', 'Security', 'left'], ['theme', 'Theme', 'left'], ['weight', 'Weight'],
   ['vol', 'Vol (ann.)'], ['corr', 'Corr. to book'], ['betaBook', 'Beta to book'],
@@ -3328,6 +3540,29 @@ const RISK_SEC_COLS = [
 ];
 const RISK_SEC_TOP = 15;
 
+// HTML-escape a data-derived string for text or a quoted attribute: tickers,
+// security names and themes come from book.json, trades.json and the price
+// feed, so none of them may reach innerHTML as markup.
+function _escHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Sort comparator for the security table. A missing value (null, or a
+// non-finite number) sorts last in BOTH directions, so a name with no beta
+// never heads an ascending sort; zero and negative values sort as numbers.
+function _riskSecCompare(col, dir) {
+  const missing = v => v == null || (typeof v === 'number' && !isFinite(v));
+  return (a, b) => {
+    const va = a[col], vb = b[col], ma = missing(va), mb = missing(vb);
+    if (ma || mb) return ma === mb ? 0 : (ma ? 1 : -1);
+    if (typeof va === 'string') return dir === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb);
+    return dir === 'desc' ? vb - va : va - vb;
+  };
+}
+
+// Sort column and the Show-all toggle live in `state`, which every redraw
+// reads (live polls, pivot changes and the two controls all re-render the
+// pane), so both survive a redraw.
 function setRiskSecSort(col) {
   if (!state.riskSecSort) state.riskSecSort = { col: 'contrib', dir: 'desc' };
   if (state.riskSecSort.col === col) state.riskSecSort.dir = state.riskSecSort.dir === 'desc' ? 'asc' : 'desc';
@@ -3342,26 +3577,41 @@ function toggleRiskSecAll() {
   if (pane) renderAllocation(pane);
 }
 
+const _riskDateLabel = d => d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+
+// Window and coverage, stated beside the figures they qualify.
+function _riskCoverageHTML(rm) {
+  const esc = _escHtml, cv = rm.coverage || { excluded: [] };
+  const why = { short: 'history too short', stale: 'feed stopped', nofeed: 'no priced feed' };
+  const parts = [];
+  parts.push(`<strong style="color:var(--t2)">Window:</strong> ${rm.weeks} weekly returns, sessions ${_riskDateLabel(rm.first)} to ${_riskDateLabel(rm.lastClose)}; the daily figures use the same first and last sessions.`);
+  if (rm.shortened) {
+    parts.push(`Shortened from ${RISK_WINDOW_WEEKS} weeks so that every included holding is priced at every endpoint: ${rm.binding.map(b => `${esc(b.ticker)} first priced ${_riskDateLabel(b.first)}`).join(', ')}.`);
+  }
+  parts.push(`<strong style="color:var(--t2)">Coverage:</strong> ${cv.includedCount} of ${cv.riskyCount} risky holdings (${fmt(cv.includedW, 1)}% of the book).`);
+  if (cv.excluded.length) {
+    parts.push(`<span style="color:var(--r)">Not covered: ${cv.excluded.map(x => `${esc(x.ticker)} (${fmt(x.weight, 1)}%, ${why[x.status] || x.status}${x.status === 'short' ? `: ${x.available} weekly returns, ${RISK_MIN_WEEKS} needed` : ''})`).join(', ')}. The whole-book volatility is withheld; the figures shown cover the remaining holdings.</span>`);
+  }
+  return parts.join(' ');
+}
+
 function _riskSecurityCardHTML(ps, rm) {
+  const esc = _escHtml;
   const daily = calcRiskModel(ps, 'daily');
   if (!state.riskSecSort) state.riskSecSort = { col: 'contrib', dir: 'desc' };
   const { col, dir } = state.riskSecSort;
   const rows = rm.rows.filter(r => r.priced).map(r => ({ ...r, skew: r.contrib - r.weight }));
-  rows.sort((a, b) => {
-    const va = a[col], vb = b[col];
-    if (typeof va === 'string') return dir === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb);
-    const x = va == null ? -Infinity : va, y = vb == null ? -Infinity : vb;
-    return dir === 'desc' ? y - x : x - y;
-  });
+  rows.sort(_riskSecCompare(col, dir));
   const shown = state.riskSecAll ? rows : rows.slice(0, RISK_SEC_TOP);
 
   const byContrib = [...rows].sort((a, b) => b.contrib - a.contrib);
   const top5 = byContrib.slice(0, 5);
   const top5Risk = top5.reduce((s, r) => s + r.contrib, 0);
   const top5W = top5.reduce((s, r) => s + r.weight, 0);
-  const unpricedW = rm.rows.filter(r => !r.priced).reduce((s, r) => s + r.weight, 0);
+  const zeroW = rm.rows.filter(r => r.status === 'zero-risk').reduce((s, r) => s + r.weight, 0);
   const f2 = v => v == null || !isFinite(v) ? '—' : fmt(v, 2);
-  const sgn = v => (v >= 0 ? '+' : '') + fmt(v, 1);
+  const f1 = v => v == null || !isFinite(v) ? '—' : fmt(v, 1);
+  const sgn = v => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + fmt(v, 1);
   const arrow = c => col === c ? `<span style="color:var(--t1);margin-left:3px">${dir === 'desc' ? '▼' : '▲'}</span>` : '';
   const tile = (label, value, sub) => `
       <div>
@@ -3374,33 +3624,46 @@ function _riskSecurityCardHTML(ps, rm) {
     const name = securityName(r.ticker);
     return `
     <tr style="border-bottom:1px solid var(--bd)">
-      <td style="padding:7px 6px;font-size:12px;font-weight:600;color:var(--t1);white-space:nowrap">${r.ticker}${name ? `<div style="font-weight:400;font-size:11px;color:var(--t3);max-width:180px;overflow:hidden;text-overflow:ellipsis">${name}</div>` : ''}</td>
-      <td style="padding:7px 6px;font-size:11px;color:var(--t2)">${r.theme}</td>
-      <td style="${cell}">${fmt(r.weight, 1)}%</td>
-      <td style="${cell};color:var(--t2)">${fmt(r.vol, 0)}%</td>
+      <td style="padding:7px 6px;font-size:12px;font-weight:600;color:var(--t1);white-space:nowrap">${esc(r.ticker)}${name ? `<div style="font-weight:400;font-size:11px;color:var(--t3);max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${esc(name)}">${esc(name)}</div>` : ''}</td>
+      <td style="padding:7px 6px;font-size:11px;color:var(--t2)">${esc(r.theme)}</td>
+      <td style="${cell}">${f1(r.weight)}%</td>
+      <td style="${cell};color:var(--t2)">${r.vol == null ? '—' : fmt(r.vol, 0) + '%'}</td>
       <td style="${cell};color:var(--t2)">${f2(r.corr)}</td>
       <td style="${cell};color:var(--t2)">${f2(r.betaBook)}</td>
-      <td style="${cell};font-weight:700;color:${r.contrib < 0 ? 'var(--g)' : 'var(--t1)'}">${fmt(r.contrib, 1)}%</td>
+      <td style="${cell};font-weight:700;color:${r.contrib < 0 ? 'var(--g)' : 'var(--t1)'}">${f1(r.contrib)}%</td>
       <td style="${cell};color:${r.skew > 0 ? 'var(--r)' : 'var(--g)'}">${sgn(r.skew)}pp</td>
       <td style="${cell};color:var(--t2)">${f2(r.betaSTI)}</td>
       <td style="${cell};color:var(--t2)">${f2(r.betaSPX)}</td>
     </tr>`;
   }).join('');
-  const dropped = rm.droppedPrints.length
-    ? ` Dropped as bad prints (one-session jump of more than 40% reversed the next session): ${rm.droppedPrints.map(d => `${d.ticker} ${d.date}`).join(', ')}.`
-    : '';
+
+  const N = rm.weeks;
+  const seCoef = N > 2 ? Math.sqrt(0.75 / (N - 2)) : null;
+  const inWindow = rm.exclusions.map(x => `${esc(x.ticker)} ${x.date} (${esc(x.basis)})`);
+  const outWindow = RISK_PRINT_EXCLUSIONS.filter(x => !rm.exclusions.includes(x)).map(x => `${esc(x.ticker)} ${x.date}`);
+  const pct = (a, b) => ((b / a - 1) * 100);
+  const exclText = (inWindow.length ? ` <strong style="color:var(--t2)">Excluded print${inWindow.length > 1 ? 's' : ''}:</strong> ${inWindow.join('; ')}.` : '')
+    + (outWindow.length ? ` Registered exclusion${outWindow.length > 1 ? 's' : ''} outside this window, so not applied: ${outWindow.join(', ')}.` : '');
+  const flagText = rm.flags.length
+    ? ` <strong style="color:var(--t2)">Flagged, not removed:</strong> ${rm.flags.map(f => `${esc(f.ticker)} ${f.date} (${f.from.toPrecision(4)} → ${f.to.toPrecision(4)}, ${pct(f.from, f.to) >= 0 ? '+' : ''}${pct(f.from, f.to).toFixed(1)}%)`).join(', ')}; a session move of this size is kept unless it is named as an exclusion with its basis.`
+    : ` No session inside the window moved by more than the flag threshold (|log return| above ${RISK_FLAG_LOG}, a fall of more than 33% or a rise of more than 49%).`;
+  const qual = rm.complete ? '' : ' of covered holdings';
+  const volTile = rm.portVol != null
+    ? tile('Book Vol (ann.)', fmt(rm.portVol, 1) + '%', `${N} weekly returns · daily, same endpoints: ${f1(daily.portVol)}%`)
+    : tile('Book Vol (ann.)', 'Withheld', `coverage incomplete · covered holdings ${f1(rm.coveredVol)}% (daily ${f1(daily.coveredVol)}%)`);
 
   return `
     <div class="card mb">
-      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--r)"></span>Risk Contribution by Security — ${rm.periods} weekly returns to the ${rm.lastClose} close</div></div>
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--r)"></span>Risk Contribution by Security — ${N} weekly returns to the ${rm.lastClose} close</div></div>
       <div class="card-body">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;padding:12px 14px;background:var(--bg2);border-radius:6px;margin-bottom:12px">
-          ${tile('Book Vol (ann.)', fmt(rm.portVol, 1) + '%', `daily closes, same window: ${fmt(daily.portVol, 1)}%`)}
-          ${tile('Top-5 Risk Share', fmt(top5Risk, 1) + '%', `on ${fmt(top5W, 1)}% of capital · ${top5.map(r => r.ticker).join(' · ')}`)}
-          ${tile('Book Beta to STI', f2(rm.betaSTI), `daily closes: ${f2(daily.betaSTI)}`)}
-          ${tile('Book Beta to S&amp;P 500', f2(rm.betaSPX), `daily closes: ${f2(daily.betaSPX)}`)}
-          ${tile('Book Beta to 50/50', f2(rm.betaBlend), `R² ${f2(rm.r2Blend)} · priced holdings ${fmt(rm.rows.filter(r => r.priced).reduce((s, r) => s + r.weight, 0), 0)}% of book`)}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;padding:12px 14px;background:var(--bg2);border-radius:6px;margin-bottom:8px">
+          ${volTile}
+          ${tile('Top-5 Risk Share', f1(top5Risk) + '%', `on ${f1(top5W)}% of capital · ${top5.map(r => esc(r.ticker)).join(' · ')}`)}
+          ${tile('Book Beta to STI', f2(rm.betaSTI), `daily, same endpoints: ${f2(daily.betaSTI)}`)}
+          ${tile('Book Beta to S&amp;P 500', f2(rm.betaSPX), `daily, same endpoints: ${f2(daily.betaSPX)}`)}
+          ${tile('Book Beta to 50/50', f2(rm.betaBlend), `R² ${f2(rm.r2Blend)} · whole book incl. bonds and cash`)}
         </div>
+        <div data-risk-coverage style="padding:6px 10px 10px;font-size:11px;color:var(--t3);line-height:1.5;max-width:52ch">${_riskCoverageHTML(rm)}</div>
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
           <table style="width:100%;min-width:820px;border-collapse:collapse;font-size:12px">
             <thead>
@@ -3411,23 +3674,37 @@ function _riskSecurityCardHTML(ps, rm) {
             <tbody>${body}</tbody>
           </table>
         </div>
-        ${rows.length > RISK_SEC_TOP ? `<div style="margin-top:8px"><button class="fbtn" onclick="toggleRiskSecAll()">${state.riskSecAll ? `Show top ${RISK_SEC_TOP}` : `Show all ${rows.length}`}</button></div>` : ''}
-        <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:11px;color:var(--t3);line-height:1.5">
-          <strong style="color:var(--t2)">Risk share</strong> is weight × beta to the book, the name's share of the book's variance; it sums to 100% across the book, so a name above its weight adds risk faster than capital and a negative share is a hedge.
-          <strong style="color:var(--t2)">Basis:</strong> ${rm.periods} weekly SGD total returns (last adjusted close of each calendar week, FX as of that close), weeks ending ${rm.from} to ${rm.to} (last close ${rm.lastClose}), applied to current weights; this is the current book's risk over past price moves, not the realised risk of the book as it was held.
+        ${rows.length > RISK_SEC_TOP ? `<div style="margin-top:8px"><button class="fbtn" data-risk-toggle onclick="toggleRiskSecAll()">${state.riskSecAll ? `Show top ${RISK_SEC_TOP}` : `Show all ${rows.length}`}</button></div>` : ''}
+        <div data-risk-notes style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:11px;color:var(--t3);line-height:1.5;max-width:52ch">
+          <strong style="color:var(--t2)">Risk share</strong> is weight × beta to the book, the name's share of the book's variance${qual}; it sums to 100%, so a name above its weight adds risk faster than capital and a negative share is a hedge.
+          <strong style="color:var(--t2)">Basis:</strong> ${N} weekly SGD total returns (the last adjusted close on or before each Saturday, FX as of that close's session), weeks ending ${rm.from} to ${rm.to}, applied to current weights, and annualised by the number of returns per year actually elapsed (${f1(rm.perYear)} a year). This is the current book's risk over past price moves, not the realised risk of the book as it was held. Every covered holding and benchmark is observed at every endpoint; no missing return is filled with zero, and an exchange holiday carries the previous close.
           Weekly sampling is used because the book spans Asian, European and US closes: daily returns pair sessions that do not overlap, which leaves book volatility almost unchanged here but understates the book's beta to the S&amp;P 500.
-          Benchmarks are the STI ETF (ES3) and the SGX-listed S&amp;P 500 tracker (S27), both in SGD; 50/50 is the two rebalanced weekly, the Performance tab's default comparison. It is all equity, so against this whole book, with bonds and cash at zero risk, a beta below 1 by about the non-equity share is expected. R² is the share of the book's weekly variance the blend explains; the rest is theme and name risk.
-          Single-name betas on 52 observations are approximate: the standard error is about 0.12 × (name vol ÷ benchmark vol) at a correlation of 0.5.
-          ${unpricedW > 0 ? `Bonds, cash and unpriced holdings (${fmt(unpricedW, 1)}% of the book) carry weight and no risk and are not listed.` : ''}${dropped}
+          Benchmarks are the STI ETF (ES3) and the SGX-listed S&amp;P 500 tracker (S27), both in SGD. 50/50 is the two rebalanced to equal weights at every close, the same series the Performance tab compares against, sampled here at the weekly endpoints. Scope differs between the tabs: the beta here is of the whole book with bonds and cash at zero risk, so it sits below 1 by roughly the non-equity share (${f1(zeroW)}% of the book), while the Performance curve excludes bonds. R² is the share of the book's weekly variance the blend explains; the remainder is residual variance, from theme, name and currency exposure and from sampling noise.
+          ${seCoef != null ? `Single-name betas on ${N} observations are approximate: the standard error is about ${seCoef.toFixed(2)} × (name vol ÷ benchmark vol) at a correlation of 0.5.` : ''}
+          ${zeroW > 0 ? `Bonds and cash (${f1(zeroW)}% of the book) carry weight and zero risk by convention and are not listed.` : ''}${exclText}${flagText}
         </div>
       </div>
     </div>
 
     <div class="card mb">
-      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>Correlation — top 12 names by risk share, weekly returns to the ${rm.lastClose} close</div></div>
+      <div class="card-head"><div class="card-title"><span class="indicator" style="background:var(--b)"></span>Correlation — top 12 names by risk share, ${N} weekly returns to the ${rm.lastClose} close</div></div>
       <div class="card-body"><div id="riskCorrHeatmap" style="height:440px"></div></div>
     </div>`;
 }
+
+// Cell values print only where a 12-column grid leaves room for them; on a
+// phone the colour carries the reading and a tap gives the value. The test
+// is on the heatmap container's own width, re-run by one ResizeObserver
+// whenever the container is resized (window resize, orientation change,
+// the pane being shown), and the observer is replaced on every render, so
+// redraws never accumulate listeners.
+const RISK_HEATMAP_TEXT_MIN = 600;
+const _riskHeatmapShowsText = width => width >= RISK_HEATMAP_TEXT_MIN;
+let _riskHeatmapRO = null, _riskHeatmapWide = null;
+
+// Plotly reads a subset of HTML in labels; escaping makes a ticker render
+// as literal text.
+const _plotlyText = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function _renderRiskCorrHeatmap(rm) {
   const elx = document.getElementById('riskCorrHeatmap');
@@ -3440,14 +3717,13 @@ function _renderRiskCorrHeatmap(rm) {
     for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
     return saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0;
   };
-  const labels = top.map(r => r.ticker);
+  const labels = top.map(r => _plotlyText(r.ticker));
   const z = top.map(a => top.map(b => corr(a.rets, b.rets)));
+  _riskHeatmapWide = _riskHeatmapShowsText(elx.clientWidth);
   Plotly.newPlot('riskCorrHeatmap', [{
     type: 'heatmap', x: labels, y: labels, z, zmin: -1, zmax: 1,
     colorscale: [[0, '#1d4ed8'], [0.5, '#ffffff'], [1, '#b91c1c']],
-    // Cell values print only where a 12-column grid leaves room for them;
-    // on a phone the colour carries the reading and a tap gives the value.
-    text: z.map(row => row.map(v => v.toFixed(2))), texttemplate: elx.clientWidth >= 600 ? '%{text}' : '', textfont: { size: 11, family: 'JetBrains Mono' },
+    text: z.map(row => row.map(v => v.toFixed(2))), texttemplate: _riskHeatmapWide ? '%{text}' : '', textfont: { size: 11, family: 'JetBrains Mono' },
     hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
     colorbar: { thickness: 10, tickfont: { size: 11 } },
   }], {
@@ -3456,6 +3732,27 @@ function _renderRiskCorrHeatmap(rm) {
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
     font: { family: 'DM Sans', size: 11, color: '#1a1a18' },
   }, { displayModeBar: false, responsive: true });
+  if (_riskHeatmapRO) _riskHeatmapRO.disconnect();
+  _riskHeatmapRO = null;
+  if (typeof ResizeObserver === 'undefined') return;
+  _riskHeatmapRO = new ResizeObserver(() => {
+    if (document.getElementById('riskCorrHeatmap') !== elx || !elx.isConnected) { if (_riskHeatmapRO) _riskHeatmapRO.disconnect(); return; }
+    _riskHeatmapSync();
+  });
+  _riskHeatmapRO.observe(elx);
+}
+
+// Re-test the heatmap's width against the 600px threshold and restyle only
+// on a crossing. A zero width means the pane is hidden and is skipped; the
+// observer fires again when the pane is shown. Returns true on a restyle.
+function _riskHeatmapSync() {
+  const elx = document.getElementById('riskCorrHeatmap');
+  if (!elx || !elx.data || elx.clientWidth === 0) return false;
+  const wide = _riskHeatmapShowsText(elx.clientWidth);
+  if (wide === _riskHeatmapWide) return false;
+  _riskHeatmapWide = wide;
+  Plotly.restyle(elx, { texttemplate: wide ? '%{text}' : '' });
+  return true;
 }
 
 function renderAllocation(el) {
@@ -3463,6 +3760,8 @@ function renderAllocation(el) {
   if (!state.allocPivot) state.allocPivot = 'theme';
   const pivot = state.allocPivot;
   const out = calcAllocationRisk(ps, TRADES_YTD, pivot);
+  const rm = out.risk, esc = _escHtml;
+  const volStr = out.portfolioVol != null ? fmt(out.portfolioVol,1) + '%' : 'Withheld';
 
   // Sort state — default to vol contribution descending so risk centres
   // surface first. Click handlers in the table headers toggle this.
@@ -3499,23 +3798,23 @@ function renderAllocation(el) {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:12px 14px;background:var(--bg2);border-radius:6px;margin-bottom:12px">
       <div>
         <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Portfolio Vol (ann.)</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${fmt(out.portfolioVol,1)}%</div>
-        <div style="font-size:10px;color:var(--t3)">total risk envelope</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${volStr}</div>
+        <div style="font-size:10px;color:var(--t3)">${out.portfolioVol != null ? `${rm.weeks} weekly returns to ${rm.lastClose}` : `coverage incomplete · covered ${fmt(rm.coveredVol,1)}%`}</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Top-3 Risk Share</div>
         <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--t1)">${fmt(top3Vol,1)}%</div>
-        <div style="font-size:10px;color:var(--t3)">${byVol.slice(0,3).map(b=>b.key).join(' · ')}</div>
+        <div style="font-size:10px;color:var(--t3)">${byVol.slice(0,3).map(b=>esc(b.key)).join(' · ')}</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Diversifiers</div>
         <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${diversifiers.length>0?'var(--g)':'var(--t3)'}">${diversifiers.length}${diversifiers.length>0?` (${fmt(diversifierContrib,1)}%)`:''}</div>
-        <div style="font-size:10px;color:var(--t3)">${diversifiers.length>0?diversifiers.map(b=>b.key).slice(0,2).join(' · '):'no negative vol contrib'}</div>
+        <div style="font-size:10px;color:var(--t3)">${diversifiers.length>0?diversifiers.map(b=>esc(b.key)).slice(0,2).join(' · '):'no negative vol contrib'}</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Biggest Risk Skew</div>
         <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${topSkew&&topSkew.skew>0?'var(--r)':'var(--t1)'}">${topSkew?(topSkew.skew>=0?'+':'')+fmt(topSkew.skew,1)+'pp':'—'}</div>
-        <div style="font-size:10px;color:var(--t3)">${topSkew?`${topSkew.key} (${fmt(topSkew.weight,1)}% w → ${fmt(topSkew.vc,1)}% risk)`:'—'}</div>
+        <div style="font-size:10px;color:var(--t3)">${topSkew?`${esc(topSkew.key)} (${fmt(topSkew.weight,1)}% w → ${fmt(topSkew.vc,1)}% risk)`:'—'}</div>
       </div>
     </div>`;
 
@@ -3535,7 +3834,7 @@ function renderAllocation(el) {
 
   const rowHTML = out.buckets.map(b => `
     <tr style="border-bottom:1px solid var(--bd)">
-      <td style="padding:8px 6px;font-size:12px;font-weight:600;color:var(--t2)">${b.key} <span style="color:var(--t4);font-weight:400;font-size:10px">(${b.count})</span></td>
+      <td style="padding:8px 6px;font-size:12px;font-weight:600;color:var(--t2)">${esc(b.key)} <span style="color:var(--t4);font-weight:400;font-size:10px">(${b.count}${b.riskPartial ? ', partly covered' : ''})</span></td>
       <td style="padding:8px 6px;width:30%"><div class="alloc-bar" style="height:18px"><div class="alloc-fill" style="width:${b.weight}%;background:${b.color};color:#fff;font-size:10px">${b.weight>10?fmt(b.weight,1)+'%':''}</div></div></td>
       <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${fmt(b.weight,1)}%</td>
       <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:${retCol(b.ytdReturn)};font-weight:600">${b.ytdReturn === 0 && b.volAnnual === 0 ? '—' : fmtPct(b.ytdReturn)}</td>
@@ -3569,10 +3868,10 @@ function renderAllocation(el) {
             <tbody>${rowHTML}</tbody>
           </table>
         </div>
-        <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:10px;color:var(--t3);line-height:1.5">
-          <strong style="color:var(--t2)">Vol Contribution</strong> decomposes total portfolio volatility (${fmt(out.portfolioVol,1)}%) by bucket: the sum of each member's weight × beta to the book, so it sums to 100% and the book figure is the same under every pivot.
+        <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border-radius:5px;font-size:10px;color:var(--t3);line-height:1.5;max-width:52ch">
+          <strong style="color:var(--t2)">Vol Contribution</strong> decomposes ${out.portfolioVol != null ? `total portfolio volatility (${fmt(out.portfolioVol,1)}%)` : `the volatility of the covered holdings (${fmt(rm.coveredVol,1)}%; the whole-book figure is withheld because coverage is incomplete)`} by bucket: the sum of each member's weight × beta to the book, so it sums to 100% and the book figure is the same under every pivot.
           A bucket whose vol contribution exceeds its weight is adding risk faster than capital.
-          <strong style="color:var(--t2)">Basis:</strong> Vol and Vol Contribution use ${out.risk.periods} weekly SGD returns, weeks ending ${out.risk.from} to ${out.risk.to} (last close ${out.risk.lastClose}), at current weights. YTD Return links daily returns since 1 Jan 2026 at current quantities.
+          <strong style="color:var(--t2)">Basis:</strong> Vol and Vol Contribution use ${rm.weeks} weekly SGD returns, weeks ending ${rm.from} to ${rm.to} (sessions ${rm.first} to ${rm.lastClose}), at current weights, annualised from the elapsed window${rm.shortened ? `; the window is shorter than ${RISK_WINDOW_WEEKS} weeks because ${rm.binding.map(b => esc(b.ticker)).join(', ')} has no earlier price, and no holding's missing history is filled` : ''}. YTD Return links daily returns from the 31 December 2025 close at current quantities, a different window.
           Buckets without priced history (Bonds, Cash) show — for return and vol.
         </div>
       </div>
@@ -3582,7 +3881,7 @@ function renderAllocation(el) {
 
     <div class="g2 mb">
       <div class="card">
-        <div class="card-head"><div class="card-title"><span class="indicator" style="background:#dc2626"></span>Risk vs Return — ${PIVOT_LABELS[pivot]} Buckets (trailing ${RISK_WINDOW_WEEKS} weeks to the ${out.risk.lastClose} close)</div></div>
+        <div class="card-head"><div class="card-title"><span class="indicator" style="background:#dc2626"></span>Risk vs Return — ${PIVOT_LABELS[pivot]} Buckets (${rm.weeks} weekly returns to the ${rm.lastClose} close)</div></div>
         <div class="card-body"><div id="allocScatterChart" style="height:340px"></div></div>
       </div>
       <div class="card">
@@ -3592,8 +3891,8 @@ function renderAllocation(el) {
             <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">HHI</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.hhi,0)}</div><div style="font-size:10px;color:var(--t3)">${out.concentration.hhi<1500?'Diversified':out.concentration.hhi<2500?'Moderate':'Concentrated'}</div></div>
             <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Effective N</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.effectiveN,1)}</div><div style="font-size:10px;color:var(--t3)">equivalent equal-weighted buckets</div></div>
             <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Top 5 Share</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.top5,1)}%</div><div style="font-size:10px;color:var(--t3)">of total exposure</div></div>
-            <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Diversification Ratio</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.concentration.divRatio,2)}</div><div style="font-size:10px;color:var(--t3)">${out.concentration.divRatio>1.4?'strong':out.concentration.divRatio>1.15?'moderate':'weak'} diversification benefit</div></div>
-            <div style="grid-column:1/3"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Portfolio Volatility (annualised)</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${fmt(out.portfolioVol,1)}%</div></div>
+            <div><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Diversification Ratio</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${out.concentration.divRatio == null ? '—' : fmt(out.concentration.divRatio,2)}</div><div style="font-size:10px;color:var(--t3)">${out.concentration.divRatio == null ? 'withheld with the book volatility' : (out.concentration.divRatio>1.4?'strong':out.concentration.divRatio>1.15?'moderate':'weak') + ' diversification benefit'}</div></div>
+            <div style="grid-column:1/3"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px">Portfolio Volatility (annualised)</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--t1)">${volStr}</div><div style="font-size:11px;color:var(--t3)">${rm.weeks} weekly returns to ${rm.lastClose}</div></div>
           </div>
         </div>
       </div>
@@ -3613,7 +3912,7 @@ function renderAllocation(el) {
         <div class="card-body">
           ${sorted.slice(0,10).map((p,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--bd)">
             <span style="font-family:var(--mono);font-size:10px;color:var(--t4);width:14px">${i+1}</span>
-            <span style="font-size:11px;font-weight:600;width:65px">${p.ticker}</span>
+            <span style="font-size:11px;font-weight:600;width:65px">${esc(p.ticker)}</span>
             <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${p.weight*3}%;background:${exchColors[p.exchange]||'#64748b'}"></div></div>
             <span style="font-family:var(--mono);font-size:11px;width:45px;text-align:right">${fmt(p.weight,1)}%</span>
           </div>`).join('')}
@@ -3639,7 +3938,7 @@ function renderAllocation(el) {
       // returns. The table's YTD column is a different window.
       x: buckets.map(b => b.volAnnual),
       y: buckets.map(b => b.riskRet),
-      text: buckets.map(b => b.key),
+      text: buckets.map(b => _plotlyText(b.key)),
       mode: 'markers+text',
       textposition: 'top center',
       textfont: { size: 10, family: 'DM Sans', color: '#374151' },
@@ -3650,10 +3949,10 @@ function renderAllocation(el) {
         opacity: 0.85
       },
       customdata: buckets.map(b => [b.weight, b.volContrib, b.count]),
-      hovertemplate: '<b>%{text}</b><br>Weight: %{customdata[0]:.1f}%<br>Vol Contribution: %{customdata[1]:.1f}%<br>Annualised Vol: %{x:.1f}%<br>52-week Return: %{y:.1f}%<br>Positions: %{customdata[2]}<extra></extra>'
+      hovertemplate: `<b>%{text}</b><br>Weight: %{customdata[0]:.1f}%<br>Vol Contribution: %{customdata[1]:.1f}%<br>Annualised Vol: %{x:.1f}%<br>${rm.weeks}-week Return: %{y:.1f}%<br>Positions: %{customdata[2]}<extra></extra>`
     }], {
       xaxis: { title: { text: 'Annualised Volatility, weekly (%)', font: { size: 11 } }, zeroline: false, gridcolor: '#e5e7eb' },
-      yaxis: { title: { text: '52-week Return at current weights (%)', font: { size: 11 } }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#e5e7eb' },
+      yaxis: { title: { text: `${rm.weeks}-week Return at current weights (%)`, font: { size: 11 } }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#e5e7eb' },
       margin: { l: 55, r: 20, t: 15, b: 55 },
       paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
       font: { family: 'DM Sans', size: 11, color: '#1a1a18' },
@@ -3663,11 +3962,11 @@ function renderAllocation(el) {
 
   // Render treemap
   setTimeout(()=>{
-    const labels = ps.map(p=>p.ticker);
+    const labels = ps.map(p=>_plotlyText(p.ticker));
     const parents = ps.map(p=>regionMap[p.exchange] || 'Other');
     const values = ps.map(p=>p.mktValueSGD);
     const colors = ps.map(p=>p.pnlPct>=0?`rgba(26,135,84,${Math.min(0.2+p.pnlPct/150,0.9)})`:`rgba(192,57,43,${Math.min(0.2+Math.abs(p.pnlPct)/100,0.9)})`);
-    const text = ps.map(p=>`${p.ticker}<br>${fmtPct(p.pnlPct)}<br>${fmt(p.weight,1)}%`);
+    const text = ps.map(p=>`${_plotlyText(p.ticker)}<br>${fmtPct(p.pnlPct)}<br>${fmt(p.weight,1)}%`);
     const regions = [...new Set(parents)];
     const allLabels = [...regions, ...labels];
     const allParents = [...regions.map(()=>''), ...parents];
@@ -5819,7 +6118,7 @@ function buildDailyBook(ps, trades) {
       const live = m.yf ? state.liveData[m.yf] : null;
       let bars = (live && live.history && live.history.length >= 50) ? live.history : null;
       if (!bars && m.yf && PRELOADED_HISTORY[m.yf] && PRELOADED_HISTORY[m.yf].history) {
-        const full = historyToFull(PRELOADED_HISTORY[m.yf].history);
+        const full = historyToFull(PRELOADED_HISTORY[m.yf].history, m.yf, PRELOADED_HISTORY[m.yf].tz);
         if (full.length >= 50) bars = full;
       }
       const epochClose = LEDGER_BOOK.epochCloses ? LEDGER_BOOK.epochCloses[tk] : null;
@@ -5831,22 +6130,32 @@ function buildDailyBook(ps, trades) {
 
   // 1. Axis: union of bar dates >= epoch across priced tickers, extended
   //    with today when any live snapshot is fresher than its last bar.
-  //    Closed names contribute their bar dates too.
+  //    Closed names contribute their bar dates too. Dates are exchange-local
+  //    session dates (_barDate).
+  //
+  //    The axis opens with one date before the epoch: the last session any
+  //    priced ticker traded before it (2025-12-31 for the 2026 book). That
+  //    date is the valuation anchor for a window starting on 1 January,
+  //    so the first session of the year counts as a return. Every window
+  //    is anchored the same way, at the last axis date before its start
+  //    (_bookAnchorIndex), and the benchmarks are valued at that same date.
+  //    Before 2026-10-03 the book took its first in-window session as the
+  //    anchor and read that session's return as zero, while the benchmarks
+  //    were measured from the close before it. YTD happened to agree only
+  //    because an ASX bar dated by UTC put a 2026-01-01 point on the axis.
   const allDates = new Set();
-  for (const p of priced) {
-    for (const bar of p.history) {
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+  let anchorDs = '';
+  const scanBars = bars => {
+    for (const bar of bars) {
+      const ds = _barDate(bar);
       if (ds >= BOOK_EPOCH) allDates.add(ds);
+      else if (ds > anchorDs) anchorDs = ds;
     }
-  }
-  for (const c of closedBook) {
-    if (!c.bars) continue;
-    for (const bar of c.bars) {
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
-      if (ds >= BOOK_EPOCH) allDates.add(ds);
-    }
-  }
+  };
+  for (const p of priced) scanBars(p.history);
+  for (const c of closedBook) if (c.bars) scanBars(c.bars);
   let dates = [...allDates].sort();
+  if (anchorDs) dates.unshift(anchorDs);
   dates = _maybeAppendTodayDate(dates, priced);
   const idx = {};
   dates.forEach((d, i) => { idx[d] = i; });
@@ -5860,11 +6169,11 @@ function buildDailyBook(ps, trades) {
     let seed = null;
     for (let i = p.history.length - 1; i >= 0; i--) {
       const bar = p.history[i];
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+      const ds = _barDate(bar);
       if (ds < BOOK_EPOCH) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
     }
     for (const bar of p.history) {
-      const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+      const ds = _barDate(bar);
       byDate[ds] = bar.adjclose != null ? bar.adjclose : bar.close;
     }
     if (dates.length > 0 && dates[dates.length - 1] === todayISO && p.mktPrice != null) {
@@ -5885,11 +6194,11 @@ function buildDailyBook(ps, trades) {
       let seed = null;
       for (let i = c.bars.length - 1; i >= 0; i--) {
         const bar = c.bars[i];
-        const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+        const ds = _barDate(bar);
         if (ds < BOOK_EPOCH) { seed = bar.adjclose != null ? bar.adjclose : bar.close; break; }
       }
       for (const bar of c.bars) {
-        const ds = (bar.date instanceof Date ? bar.date : new Date(bar.date)).toISOString().slice(0, 10);
+        const ds = _barDate(bar);
         byDate[ds] = bar.adjclose != null ? bar.adjclose : bar.close;
       }
       // No live-snapshot override for closed names: quantity is zero on
@@ -5981,14 +6290,26 @@ function buildDailyBook(ps, trades) {
   return _dailyBook;
 }
 
+// Valuation anchor of a window: the last book-axis date strictly before the
+// window's first calendar day, so a start falling on a weekend or holiday
+// anchors on the preceding session and the first session inside the window
+// counts. The book, the cash-drag bridge and every benchmark share it. With
+// no axis date before the start (a window opening before the book) the
+// first axis date is the anchor.
+function _bookAnchorIndex(dates, startDateStr) {
+  let idx = 0;
+  for (let i = 0; i < dates.length; i++) { if (dates[i] < startDateStr) idx = i; else break; }
+  return idx;
+}
+
 function calcTwrr(ps, trades, startDateStr) {
   // Projection of the unified core: geometric linking of daily Modified
   // Dietz sub-period returns over the equity NAV series, with tracked trade
-  // flows as the external cash flows of the equity sub-portfolio.
+  // flows as the external cash flows of the equity sub-portfolio. Anchored
+  // at _bookAnchorIndex, the same valuation date as getEquityCurve.
   const book = buildDailyBook(ps, trades);
   if (book.priced.length === 0) return { equityTwrr: 0, days: 0, flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'No priced equity positions' };
-  let startIdx = 0;
-  while (startIdx < book.dates.length && book.dates[startIdx] < startDateStr) startIdx++;
+  const startIdx = _bookAnchorIndex(book.dates, startDateStr);
   const n = book.dates.length - startIdx;
   if (n < 2) return { equityTwrr: 0, days: Math.max(0, n), flowCount: 0, flowTotalSGD: 0, bmv: 0, emv: 0, error: 'Not enough trading dates in window' };
 
@@ -6026,10 +6347,12 @@ function getEquityCurve(ps, trades, startDateStr) {
   // Projection of the unified core: slice the daily book at the window start
   // and hand the equity NAV, tracked-flow and untracked-flow series to the
   // cash walk and Modified Dietz machinery below.
+  // The slice opens at the valuation anchor (_bookAnchorIndex): the close
+  // before the window, which plots as 0%, so the first session inside the
+  // window carries its return.
   const book = buildDailyBook(ps, trades);
   if (book.priced.length === 0) return { dates: [], nav: [], error: 'No priced positions' };
-  let startIdx = 0;
-  while (startIdx < book.dates.length && book.dates[startIdx] < startDateStr) startIdx++;
+  const startIdx = _bookAnchorIndex(book.dates, startDateStr);
   const dates = book.dates.slice(startIdx);
   if (dates.length < 2) return { dates, nav: [], error: 'Not enough trading days' };
   const equityAll = book.navRow.slice(startIdx);
@@ -6181,6 +6504,9 @@ function getEquityCurve(ps, trades, startDateStr) {
 
   return {
     dates, nav, cf, dailyReturn, cumReturn, drawdown,
+    // anchorDate: the valuation date the curve is rebased to (dates[0]); the
+    // benchmark curves are valued at the same date (getBenchmarkCurve).
+    anchorDate: dates[0],
     startNav: nav[0],
     currentNav: nav[nav.length - 1],
     totalReturnPct: cumReturn[cumReturn.length - 1],
@@ -6199,121 +6525,180 @@ function getEquityCurve(ps, trades, startDateStr) {
   };
 }
 
-// Window-start date for chart selectors. Returns ISO date string.
-function _perfWindowStart(windowKey) {
+// Window-start date for chart selectors. Returns ISO date string: the first
+// calendar day of the window. The valuation anchor is the last session
+// before it (_bookAnchorIndex), so the start may fall on any day.
+//
+// Months are counted on the UTC calendar date of `now`, clamped to the end
+// of the target month: 31 October less one month is 30 September. The
+// previous setMonth() call rolled over instead (31 October became
+// 1 October). Date.UTC takes a 0-indexed month; day 0 of the following
+// month is the last day of the target month.
+function _perfWindowStart(windowKey, now) {
   if (windowKey === 'YTD') return '2026-01-01';
-  const today = new Date();
-  if (windowKey === '1M') today.setMonth(today.getMonth() - 1);
-  else if (windowKey === '3M') today.setMonth(today.getMonth() - 3);
-  else if (windowKey === '6M') today.setMonth(today.getMonth() - 6);
-  return today.toISOString().slice(0, 10);
+  const back = { '1M': 1, '3M': 3, '6M': 6 }[windowKey];
+  const t = now instanceof Date ? now : new Date();
+  if (!back) return t.toISOString().slice(0, 10);
+  const y = t.getUTCFullYear(), m = t.getUTCMonth() - back;   // 0-indexed month, may be negative
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(t.getUTCDate(), lastDay))).toISOString().slice(0, 10);
 }
 
-// Render the equity-curve + drawdown card. Called by renderPerformance.
-// Returns a benchmark cumulative-return series over the same window as the
-// equity curve, rebased to 0% at the bar BEFORE the window start (so the
-// benchmark and portfolio share the same anchor point). Uses adjclose for
-// total return, converted to SGD at same-date FX via fxAtDate — the same
-// series the portfolio NAV rows are converted on — so the curve is the
-// SGD-terms total return of holding the tracker. ES3 trades in SGD (factor 1
-// throughout); S27 trades in USD on SGX, so before this conversion its
-// clause ran in USD terms (measured 2026 YTD wedge at the time of the fix:
-// USDSGD -0.28%, alpha understated by ~0.3pp — small that year, material in
-// a big-USD year). Snapshot-aware closeNow when today's bar is missing.
+// ─── Benchmarks ──────────────────────────────────────────────────────
+// Benchmark series are defined independently of the holdings. Each leg names
+// its Yahoo symbol and its trading currency explicitly, and the currency is
+// never inferred: S27 trades in USD on SGX and is converted to SGD at
+// same-date FX, so every benchmark is an SGD total return (adjusted closes),
+// like the portfolio curve. A leg reads the held position's bars when the
+// tracker is held, else the live or baked feed for its symbol; build.js
+// fetches both symbols on every bake whether or not they are held. Before
+// 2026-10-03 the Performance tab read the benchmark from the position alone,
+// so selling ES3 or S27 would have removed the default comparison and the
+// headline clause.
 //
-// sym: 'STI' (-> ES3.SI), 'SPX' (-> S27.SI). Both are existing portfolio
-// positions that double as benchmark proxies. 'BLEND' is 50% STI / 50%
-// S&P 500 rebalanced daily, built from those two curves (see below).
-const BENCHMARK_TICKERS = { STI: 'ES3', SPX: 'S27' };
-const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI, SGD terms)', BLEND: '50/50 STI / S&P 500 (SGD)' };
+// STI -> ES3.SI (SGD), SPX -> S27.SI (USD, converted to SGD). BLEND is the
+// canonical 50/50 benchmark: the two legs in SGD, rebalanced to equal
+// weights at every close (_blendSeriesSGD). The Performance tab plots it and
+// the Allocation tab samples the same series at its weekly endpoints.
+const BENCHMARK_DEFS = {
+  STI: { yf: 'ES3.SI', ticker: 'ES3', ccy: 'SGD' },
+  SPX: { yf: 'S27.SI', ticker: 'S27', ccy: 'USD' },
+};
+const BENCHMARK_LABELS  = { STI: 'STI Index (ES3.SI)', SPX: 'S&P 500 (S27.SI, SGD terms)', BLEND: '50/50 STI / S&P 500 (SGD, rebalanced daily)' };
 const BENCHMARK_SHORT   = { STI: 'STI', SPX: 'S&P 500', BLEND: '50/50' };
 const BENCHMARK_DEFAULT = 'BLEND';
 
-// 50/50 blend, rebalanced to equal weights every session: each day's return
-// is the mean of the two trackers' SGD total returns. Both trade on SGX, so
-// their sessions coincide; a date one of them lacks carries that leg flat.
-// Chosen 2026-10-03 because the equity curve covers equities and cash only
-// (bonds excluded) and splits roughly 57/43 Singapore / overseas, while a
-// weekly fit of the whole book put the best two-index mix near 40/60; 50/50
-// sits between the capital split and the fit.
-function _blendBenchmarkCurve(ps, startDateStr) {
-  const a = getBenchmarkCurve(ps, 'STI', startDateStr);
-  const b = getBenchmarkCurve(ps, 'SPX', startDateStr);
-  if (!a || !b) return null;
-  const level = c => { const m = {}; c.dates.forEach((d, i) => { m[d] = 1 + c.cumReturn[i] / 100; }); return m; };
-  const la = level(a), lb = level(b);
-  const dates = [...new Set([...a.dates, ...b.dates])].sort();
-  let pa = 1, pb = 1, idx = 1;   // both curves are rebased to 0% at the same anchor
-  const cumReturn = [];
-  for (const d of dates) {
-    const na = la[d] != null ? la[d] : pa, nb = lb[d] != null ? lb[d] : pb;
-    idx *= 1 + 0.5 * (na / pa - 1) + 0.5 * (nb / pb - 1);
-    pa = na; pb = nb;
-    cumReturn.push((idx - 1) * 100);
+let _benchLegCache = { key: null, legs: {} };
+function _benchmarkLeg(ps, sym) {
+  const def = BENCHMARK_DEFS[sym];
+  if (!def) return null;
+  const held = (ps || []).find(p => p.yf === def.yf || p.ticker === def.ticker);
+  if (held && held.history && held.history.length >= 50) {
+    if (held.ccy && held.ccy !== def.ccy) console.warn(`[benchmark] ${def.ticker} is held in ${held.ccy}; the benchmark uses its defined currency ${def.ccy}`);
+    return { sym, ...def, bars: held.history, snapPrice: held.mktPrice, quoteTime: held.quoteTime, source: 'held' };
   }
-  return { ticker: 'ES3+S27', name: BENCHMARK_LABELS.BLEND, label: BENCHMARK_LABELS.BLEND, dates, cumReturn, endReturn: cumReturn[cumReturn.length - 1] };
+  if (_benchLegCache.key !== _dataVersion) _benchLegCache = { key: _dataVersion, legs: {} };
+  if (sym in _benchLegCache.legs) return _benchLegCache.legs[sym];
+  let leg = null;
+  const live = state.liveData ? state.liveData[def.yf] : null;
+  const pre = PRELOADED_HISTORY[def.yf];
+  if (live && live.history && live.history.length >= 50) {
+    leg = { sym, ...def, bars: live.history, snapPrice: live.price, quoteTime: live.quoteTime, source: 'feed' };
+  } else if (pre && pre.history && pre.history.length >= 50) {
+    leg = { sym, ...def, bars: historyToFull(pre.history, def.yf, pre.tz), snapPrice: pre.price, quoteTime: pre.quoteTime, source: 'baked' };
+  }
+  _benchLegCache.legs[sym] = leg;
+  return leg;
 }
 
-function getBenchmarkCurve(ps, sym, startDateStr) {
-  if (!sym || sym === 'NONE') return null;
-  if (sym === 'BLEND') return _blendBenchmarkCurve(ps, startDateStr);
-  const tk = BENCHMARK_TICKERS[sym];
-  if (!tk) return null;
-  const pos = ps.find(p => p.ticker === tk);
-  if (!pos || !pos.history || pos.history.length === 0) return null;
+// A leg's SGD price series: one point per session date, ascending, the named
+// print exclusions applied (RISK_PRINT_EXCLUSIONS), each adjusted close
+// converted at its own session's FX.
+function _legSeriesSGD(leg) {
+  const out = [];
+  for (const bar of leg.bars) {
+    const loc = bar.adjclose != null ? bar.adjclose : bar.close;
+    if (loc == null || !(loc > 0)) continue;
+    const ds = _barDate(bar);
+    if (_excludedPrint(leg.yf, ds)) continue;
+    const pt = { ds, px: loc * fxAtDate(leg.ccy, ds), loc };
+    if (out.length && out[out.length - 1].ds === ds) out[out.length - 1] = pt;
+    else out.push(pt);
+  }
+  return out;
+}
 
-  // Seed = last adjclose strictly before the window (so day-0 plots as 0%),
-  // converted at its own date's FX: the anchor must carry the same currency
-  // basis as every later point, or the FX move between the seed date and the
-  // window start leaks into the first return.
-  let seed = null;
-  for (let i = pos.history.length - 1; i >= 0; i--) {
-    const bar = pos.history[i];
-    const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-    const ds = d.toISOString().slice(0, 10);
-    if (ds < startDateStr) {
-      const adj = bar.adjclose != null ? bar.adjclose : bar.close;
-      seed = adj != null ? adj * fxAtDate(pos.ccy, ds) : null;
-      break;
-    }
-  }
-  // Filter history bars at or after window start, converting each at its
-  // own date's FX.
-  const window = [];
-  for (const bar of pos.history) {
-    const d = bar.date instanceof Date ? bar.date : new Date(bar.date);
-    const ds = d.toISOString().slice(0, 10);
-    if (ds >= startDateStr) {
-      const adj = bar.adjclose != null ? bar.adjclose : bar.close;
-      window.push({ ds, adj: adj != null ? adj * fxAtDate(pos.ccy, ds) : null });
-    }
-  }
-  if (window.length === 0) return null;
-  const base = seed != null ? seed : window[0].adj;
-  if (!isFinite(base) || base <= 0) return null;
-
-  const dates = [];
-  const cumReturn = [];
-  for (const w of window) {
-    dates.push(w.ds);
-    cumReturn.push((w.adj / base - 1) * 100);
-  }
-  // Snapshot-aware extension: append today if the snapshot is fresher than
-  // the last bar AND its quote postdates the prior US close (timestamp gate —
-  // a stale or weekend print must not extend the benchmark series either).
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const lastBar = pos.history[pos.history.length - 1];
+// Today's point for a leg: appended only when the quote is fresher than the
+// last bar AND postdates the prior US close (timestamp gate), so a stale or
+// weekend print cannot extend the series; converted at today's FX.
+function _legSnapshotPoint(leg, lastDs) {
+  const lastBar = leg.bars[leg.bars.length - 1];
   const lastAdj = lastBar.adjclose != null ? lastBar.adjclose : lastBar.close;
-  if (pos.mktPrice != null && Math.abs(pos.mktPrice - lastAdj) > 1e-6 && _quoteIsPostBoundary(pos.quoteTime, _usCloseBoundary()) && todayISO > dates[dates.length - 1]) {
-    dates.push(todayISO);
-    // The freshness test above compares quote to last bar in local currency;
-    // the appended point converts at today's FX like every other point.
-    cumReturn.push((pos.mktPrice * fxAtDate(pos.ccy, todayISO) / base - 1) * 100);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  if (leg.snapPrice != null && Math.abs(leg.snapPrice - lastAdj) > 1e-6
+      && _quoteIsPostBoundary(leg.quoteTime, _usCloseBoundary()) && todayISO > lastDs) {
+    return { ds: todayISO, px: leg.snapPrice * fxAtDate(leg.ccy, todayISO), loc: leg.snapPrice };
   }
+  return null;
+}
+
+// SGD price series of a benchmark, [{ ds, px }] ascending. withSnapshot adds
+// today's point under the gate above (the Performance tab; the risk model
+// works on closes only).
+function _benchmarkSeriesSGD(ps, sym, withSnapshot) {
+  if (sym === 'BLEND') return _blendSeriesSGD(ps, withSnapshot);
+  const leg = _benchmarkLeg(ps, sym);
+  if (!leg) return null;
+  const s = _legSeriesSGD(leg);
+  if (withSnapshot && s.length) {
+    const t = _legSnapshotPoint(leg, s[s.length - 1].ds);
+    if (t) s.push(t);
+  }
+  return s;
+}
+
+// The 50/50 blend as an SGD index level: on every session date in the union
+// of the two legs' calendars, from the first date both are priced, the day's
+// return is the mean of the two legs' SGD returns (rebalanced daily); a leg
+// with no session that day carries its last close. Its level ratio over any
+// interval depends only on the daily returns inside it, so the same series
+// serves every window and every sampling frequency. Chosen 2026-10-03: the
+// equity curve covers equities and cash only (bonds excluded) and splits
+// roughly 57/43 Singapore / overseas, while a weekly fit of the whole book
+// put the best two-index mix near 40/60; 50/50 sits between the two.
+function _blendSeriesSGD(ps, withSnapshot) {
+  const a = _benchmarkSeriesSGD(ps, 'STI', withSnapshot);
+  const b = _benchmarkSeriesSGD(ps, 'SPX', withSnapshot);
+  if (!a || !b || !a.length || !b.length) return null;
+  const start = a[0].ds > b[0].ds ? a[0].ds : b[0].ds;
+  const dates = [...new Set([...a, ...b].map(x => x.ds))].filter(d => d >= start).sort();
+  let ia = 0, ib = 0, la = null, lb = null, pa = null, pb = null, idx = 1;
+  const out = [];
+  for (const d of dates) {
+    while (ia < a.length && a[ia].ds <= d) la = a[ia++].px;
+    while (ib < b.length && b[ib].ds <= d) lb = b[ib++].px;
+    if (pa != null) idx *= 1 + 0.5 * (la / pa - 1) + 0.5 * (lb / pb - 1);
+    pa = la; pb = lb;
+    out.push({ ds: d, px: idx });
+  }
+  return out;
+}
+
+// Benchmark cumulative-return series over the same window as the equity
+// curve, rebased to 0% at the SAME valuation date as the book: anchorDate,
+// the last book-axis date before the window (getEquityCurve's anchorDate,
+// computed here from the daily book when not passed). The benchmark's level
+// at that date is its last close on or before it, so a benchmark that did
+// not trade on the anchor date (an SGX holiday on a US session, say) is
+// valued at its preceding close, and the first session inside the window
+// counts on both sides. A benchmark with no close on or before the anchor
+// returns null rather than being rebased to a later session.
+function getBenchmarkCurve(ps, sym, startDateStr, anchorDate) {
+  if (!sym || sym === 'NONE') return null;
+  if (!BENCHMARK_DEFS[sym] && sym !== 'BLEND') return null;
+  const series = _benchmarkSeriesSGD(ps, sym, true);
+  if (!series || !series.length) return null;
+  let A = anchorDate || null;
+  if (!A) {
+    try {
+      const book = buildDailyBook(ps, TRADES_YTD);
+      if (book.dates.length) A = book.dates[_bookAnchorIndex(book.dates, startDateStr)];
+    } catch (e) { /* no book: fall back to the benchmark's own calendar */ }
+  }
+  if (!A) for (const x of series) { if (x.ds < startDateStr) A = x.ds; else break; }
+  if (!A) return null;
+  let base = null, j = 0;
+  while (j < series.length && series[j].ds <= A) base = series[j++].px;
+  if (base == null || !(base > 0)) return null;
+  const dates = [A], cumReturn = [0];
+  for (; j < series.length; j++) { dates.push(series[j].ds); cumReturn.push((series[j].px / base - 1) * 100); }
+  const leg = sym === 'BLEND' ? null : _benchmarkLeg(ps, sym);
   return {
-    ticker: tk,
-    name: pos.name,
-    label: BENCHMARK_LABELS[sym] || sym,
+    ticker: sym === 'BLEND' ? 'ES3+S27' : BENCHMARK_DEFS[sym].ticker,
+    name: BENCHMARK_LABELS[sym],
+    label: BENCHMARK_LABELS[sym],
+    source: leg ? leg.source : null,
+    anchorDate: A,
     dates,
     cumReturn,
     endReturn: cumReturn[cumReturn.length - 1],
@@ -6466,7 +6851,7 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
   // downstream uses gate on that.
   const mode_pre = state.perfChartMode || 'pct';
   const benchmarkSel = state.perfBenchmark || BENCHMARK_DEFAULT;
-  const benchmarkCurve = (mode_pre === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate) : null;
+  const benchmarkCurve = (mode_pre === 'pct') ? getBenchmarkCurve(ps, benchmarkSel, startDate, curve.anchorDate) : null;
   const alpha = benchmarkCurve ? (curve.totalReturnPct - benchmarkCurve.endReturn) : null;
 
   // YTD return reconciliation. A reader meets three different YTD percentages
@@ -6510,9 +6895,9 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
 
   // KPI strip values
   const kpis = [
-    { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: curve.dates[0] },
+    { label: 'Window Start NAV', value: fmtSGD(curve.startNav), sub: `${curve.anchorDate} close (anchor)` },
     { label: 'Current NAV',      value: fmtSGD(curve.currentNav), sub: curve.dates[curve.dates.length - 1] },
-    { label: 'Total Return (TWRR)', value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length} trading days · Modified Dietz daily` },
+    { label: 'Total Return (TWRR)', value: fmtPct(curve.totalReturnPct), cls: curve.totalReturnPct >= 0 ? 'pos' : 'neg', sub: `${curve.dates.length - 1} sessions from the anchor · Modified Dietz daily` },
     { label: 'MWRR (cross-check)',  value: fmtPct(curve.mwrrPct), cls: curve.mwrrPct >= 0 ? 'pos' : 'neg', sub: `Δ ${(curve.mwrrPct - curve.totalReturnPct).toFixed(2)} pp vs TWRR${Math.abs(curve.mwrrPct - curve.totalReturnPct) > 3 ? ' ⚠' : ''}` },
     ...(benchmarkCurve ? [{ label: `vs ${BENCHMARK_SHORT[benchmarkSel] || benchmarkSel}`, value: (alpha >= 0 ? '+' : '') + alpha.toFixed(2) + ' pp', cls: alpha >= 0 ? 'pos' : 'neg', sub: `Bench ${fmtPct(benchmarkCurve.endReturn)} · You ${fmtPct(curve.totalReturnPct)}` }] : []),
     { label: 'Max Drawdown',     value: fmtPct(curve.maxDrawdown.value), cls: 'neg', sub: `${curve.maxDrawdown.from} → ${curve.maxDrawdown.date}` },
@@ -6554,9 +6939,10 @@ function renderEquityCurve(elId, ps, trades, windowKey) {
       </div>
       <div id="equityCurveChart" style="height:420px"></div>
       <!-- NAV-scope-note -->
-      <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;font-size:11px;color:var(--t3);line-height:1.55">
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-left:3px solid var(--b);border-radius:0 4px 4px 0;font-size:11px;color:var(--t3);line-height:1.55;max-width:52ch">
         <strong style="color:var(--t2)">Performance scope.</strong>
         Curve covers the equity sub-portfolio <em>plus</em> the cash actually held over time. Cash is rebuilt forward from a near-zero 1 January base — sells add to it, buys draw it down — so each tactical cash tranche drags only for the days it is genuinely held, not the whole year. Purchases funded from outside the book are detected as <strong>external deposits</strong> and stripped from the return; genuine equity-to-cash rotations net to zero. <strong>Singapore Savings Bonds and the V7AB PE bond are excluded</strong> — they generate no equity-style return and would just dilute the volatility signal. The landing-page <strong>Total Market Value of ${fmtSGD(state.totalValueSGD || 0)}</strong> additionally includes the bonds (~S\$260k) that this chart does not display.
+        <strong style="color:var(--t2)">Anchor.</strong> The curve and the benchmark are both valued at the ${curve.anchorDate} close, the last session before the window, so the first session inside the window counts on both sides. Benchmarks are SGD total returns; the 50/50 is ES3 and S27 rebalanced to equal weights at every close, the same series the Allocation tab samples weekly for its beta, where the whole book including bonds and cash is measured instead.
       </div>
       ${reconcileHTML}
     </div>`;
@@ -7315,7 +7701,7 @@ function loadPreloadedData() {
       // FX symbols: keep the daily series so _buildFxHistory can populate
       // FX_HISTORY and fxAtDate() can convert at the rate observed on each date.
       // (Previously hardcoded to [], which silently disabled FX-as-of-date.)
-      results[sym] = { price: entry.price, prevClose: entry.prevClose, dayChange: 0, dayChangePct: 0, history: historyToFull(entry.history || []) };
+      results[sym] = { price: entry.price, prevClose: entry.prevClose, dayChange: 0, dayChangePct: 0, history: historyToFull(entry.history || [], sym, entry.tz) };
       continue;
     }
     results[sym] = {
@@ -7324,7 +7710,7 @@ function loadPreloadedData() {
       quoteTime: entry.quoteTime != null ? entry.quoteTime : null,
       dayChange: entry.price - (entry.prevClose || entry.price),
       dayChangePct: entry.prevClose ? ((entry.price - entry.prevClose) / entry.prevClose) * 100 : 0,
-      history: historyToFull(entry.history || [])
+      history: historyToFull(entry.history || [], sym, entry.tz)
     };
   }
   // Update FX from preloaded

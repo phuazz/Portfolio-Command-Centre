@@ -201,16 +201,72 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   allocation YTD return) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
   FIFO) keep per-ticker windowing by design.
-- Risk model (3 Oct 2026): `calcRiskModel()` owns all volatility and risk
-  contribution on the Allocation tab. It uses 52 weekly SGD returns (the last
-  close of each calendar week, keyed by `_riskWeekKey`) at current weights,
-  with Euler contribution w × beta to the book, so the book figure no longer
-  changes with the pivot; buckets sum their members. It sits behind the
-  security-level card and the top-12 correlation heatmap, and gives betas to
-  ES3 and S27. A one-session jump of more than 40% that reverses the next
-  session is dropped as a bad print and listed on the card (3010.HK
-  2025-10-24 at the time). The daily basis is computed for comparison only.
-  `node scripts/risk_week_key.test.mjs` covers the week bucketing.
+- Risk model (3 Oct 2026, revised the same day after review):
+  `calcRiskModel()` owns all volatility and risk contribution on the
+  Allocation tab, at current weights, with Euler contribution w × beta to the
+  book, so the book figure is the same under every pivot and buckets sum
+  their members. One common observation window covers every included risky
+  holding and every benchmark: the latest 52 weekly intervals, shortened to
+  start at the first week-end on which every included holding had a price.
+  Nothing before a series' first close is filled; exchange holidays carry
+  the last close forward. A holding is included only if that leaves at least
+  26 weekly intervals (`RISK_MIN_WEEKS`); a risky holding with less history,
+  no priced feed, or a feed that stopped more than two week-ends before the
+  latest close is named on the card, the whole-book volatility and the
+  diversification ratio are withheld, and the figures shown are labelled as
+  covering the remaining holdings. Each weekly endpoint samples the last
+  session on or before its Saturday, so the daily comparison uses exactly
+  the same first and last sessions, and both bases annualise by the returns
+  per year actually elapsed (intervals ÷ years between those sessions). At
+  the 2 October 2026 close GLS (first priced 30 March 2026) shortens the
+  window to 26 weeks, 3 April to 2 October; the card says so beside the
+  figures. Bonds and cash carry weight at zero risk by convention. Unusual
+  moves are not removed by rule: a session move with |log return| above 0.4
+  (a fall of more than 33% or a rise of more than 49%) is flagged on the card
+  and kept (MRNA.US +177% on 2026-08-19, genuine, at the time), and only a
+  print listed in `RISK_PRINT_EXCLUSIONS` with its basis is removed, from
+  holdings and benchmark paths alike. The one entry is 3010.HK 2025-10-24, a
+  suspected Yahoo anomaly (raw closes 70.78, 9.1617, 72.36), not verified
+  against exchange records; it lies outside the current 26-week window. The
+  50/50 benchmark is one series, `_blendSeriesSGD`: ES3 and S27 in SGD,
+  rebalanced to equal weights at every close. The Performance tab plots it
+  and the Allocation beta and R² sample it at the weekly endpoints. Scope
+  differs and the card says so: Allocation measures the whole book with bonds
+  and cash at zero risk, the Performance curve excludes bonds. R² is
+  described as the share explained, the rest as residual variance.
+  `node scripts/risk_model.test.mjs` and `node scripts/risk_week_key.test.mjs`.
+- Benchmarks are independent of the holdings (3 Oct 2026). `BENCHMARK_DEFS`
+  names each leg's symbol and currency explicitly (ES3.SI in SGD, S27.SI in
+  USD converted to SGD at same-date FX; the currency is never inferred). A leg
+  reads the held position when the tracker is held, else the live or baked
+  feed; `build.js` adds both symbols to the bake universe whether or not they
+  are held, so selling either tracker no longer removes the default
+  comparison or the headline clause.
+- One valuation anchor (3 Oct 2026). Every Performance window (YTD, 1M, 3M,
+  6M) and every benchmark is valued from the same date: the last daily-book
+  axis date before the window's first calendar day (`_bookAnchorIndex`), so
+  the first session inside the window counts on both sides. The daily book's
+  axis opens with the last pre-epoch session (2025-12-31) for this purpose.
+  A benchmark that did not trade on the anchor date is valued at its
+  preceding close; one with no close on or before it returns no comparison
+  rather than a later rebase. Window starts clamp to month end (31 October
+  less one month is 30 September). Before this the book read its first
+  in-window session as zero while the benchmarks counted it; YTD agreed only
+  because a UTC-dated ASX bar put 2026-01-01 on the axis.
+- Exchange-local session dates (3 Oct 2026). Yahoo stamps a daily bar at the
+  session open in exchange time, so the UTC date was a day early for ASX
+  under Australian daylight saving (125 bars in the year to 2 October 2026,
+  25 of them on Sundays) and for every FX bar under British Summer Time,
+  where `fxAtDate` returned the following session's rate. `historyToFull`
+  now dates each bar in its exchange timezone (`ds`, read by `_barDate`);
+  the timezone comes from the feed (`tz` in history.json and fx.json, from
+  Yahoo's exchangeTimezoneName, written by `build.js` since this change, and
+  read from each live payload), and for payloads without it is inferred from
+  the symbol suffix, falling back to the UTC date for an unknown suffix. The
+  daily book, the FX history, the risk model, the benchmark series and the
+  live merge use session dates. The per-ticker engines (day split, period
+  P&L, FIFO attribution, charts) still date bars by UTC; only ASX bars differ
+  there, and only on one held name. `node scripts/session_dates.test.mjs`.
 - Attribution carries an explicit Local / FX / Total decomposition on every
   horizon plus a portfolio FX-contribution tile (Phase C.1, 13 Jun 2026).
   The YTD FIFO engine is now FX-aware (proceeds at sell-date FX, marks at
