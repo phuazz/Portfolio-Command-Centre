@@ -24,6 +24,15 @@ def load(name):
         return json.load(fh)
 
 
+def fmt_p(p):
+    return "p < 0.001" if p < 0.001 else f"p = {p:.3f}"
+
+
+def footer(fig, line1, line2):
+    fig.text(0.01, 0.028, line1, fontsize=6.3, color=GREY)
+    fig.text(0.01, 0.006, line2, fontsize=6.3, color=GREY)
+
+
 def main():
     res, cov = load("results.json"), load("coverage.json")
     CHART_DIR.mkdir(exist_ok=True)
@@ -31,14 +40,15 @@ def main():
     asof = f"Fills {first} to {last}; bars to {res['provenance']['history_last_session']}; n = {res['n']} fills in {cov['counts']['blocks']} clusters"
     H1 = res["H1"]; d1 = res["floors"]["H1_delta"]
     verdict_word = res["verdict"].split(";")[0].split(" (")[0]
+    pw = fmt_p(H1["p_one_sided_worse"])
     if verdict_word == "REJECTED":
-        finding = f"No adverse placement at the registered size: mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} (p = {H1['p_one_sided_worse']:.2f})"
+        finding = f"No adverse placement at the registered size: mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} ({pw})"
     elif verdict_word == "CONFIRMED":
-        finding = f"Fills sit at the adverse end of their week: mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} (p = {H1['p_one_sided_worse']:.3f})"
+        finding = f"Fills sit at the adverse end of their week: mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} ({pw})"
     elif verdict_word == "DETECTED-BELOW-FLOOR":
-        finding = f"Adverse placement real but below the floor: mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} (p = {H1['p_one_sided_worse']:.3f})"
+        finding = f"Adverse placement real but below the floor: mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} ({pw})"
     else:
-        finding = f"Mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} (p = {H1['p_one_sided_worse']:.3f}): {verdict_word}"
+        finding = f"Mean u {H1['actual']:.3f} against placebo {H1['null_mean']:.3f} ({pw}): {verdict_word}"
 
     # 1. the verdict chart: the blocked null distribution of the mean, the actual and the floor
     draws = np.array(res["distribution"]["null_mean_u_draws"])
@@ -54,8 +64,9 @@ def main():
     ax.set_ylabel("placebo sets")
     ax.set_title(finding, fontsize=10)
     ax.legend(fontsize=7.5, frameon=False, loc="upper left"); ax.spines[["top", "right"]].set_visible(False)
-    fig.text(0.01, 0.005, asof + ". Null: one placebo offset per cluster per set, seed 20261003, equal-weighted; one-sided p in the adverse direction. Source: trades.json; Yahoo daily bars as baked for the dashboard on 2026-10-03.", fontsize=6.3, color=GREY)
-    fig.tight_layout(rect=(0, 0.035, 1, 1)); fig.savefig(CHART_DIR / "fig1_verdict_null_mean_u.png"); plt.close(fig)
+    footer(fig, asof + ". Null: one placebo offset per cluster per set, seed 20261003, equal-weighted; one-sided p, adverse direction.",
+           "Source: trades.json; Yahoo daily bars as baked for the dashboard on 2026-10-03 (unadjusted, windows rebased for dividends).")
+    fig.tight_layout(rect=(0, 0.055, 1, 1)); fig.savefig(CHART_DIR / "fig1_verdict_null_mean_u.png"); plt.close(fig)
 
     # 2. every fill shown: strip of u by side over the placebo quantile bands
     rng_j = np.random.default_rng(7)
@@ -75,11 +86,12 @@ def main():
     tail_act = res["H2"]["actual"]; tail_null = res["H2"]["null_mean"]
     ax.set_title(f"One mark per fill: {tail_act * 100:.1f}% of fills within a tenth of the worst price, against {tail_null * 100:.1f}% under the placebo", fontsize=10)
     ax.spines[["top", "right", "left"]].set_visible(False)
-    fig.text(0.01, 0.005, asof + ". Grey bands: placebo pooled 5th to 95th and 25th to 75th percentiles, white line the median; the placebo is the same trade on a random nearby session at a random intraday price.", fontsize=6.3, color=GREY)
-    fig.tight_layout(rect=(0, 0.035, 1, 1)); fig.savefig(CHART_DIR / "fig2_u_by_fill.png"); plt.close(fig)
+    footer(fig, asof + ". Grey bands: placebo pooled 5th to 95th and 25th to 75th percentiles, white line the median.",
+           "The placebo is the same trade, same side, on a random session 4 to 60 bars either side at a random intraday price.")
+    fig.tight_layout(rect=(0, 0.055, 1, 1)); fig.savefig(CHART_DIR / "fig2_u_by_fill.png"); plt.close(fig)
 
     # 3. pre and post legs, actual against placebo, by side
-    fig, ax = plt.subplots(figsize=(8, 4.0), dpi=150)
+    fig, ax = plt.subplots(figsize=(8, 4.3), dpi=150)
     keys = ["buys_pre_pct", "buys_post_pct", "sells_pre_pct", "sells_post_pct"]
     labels = ["buys: pre leg\n(bought after a rise)", "buys: post leg\n(fell after the buy)", "sells: pre leg\n(sold after a fall)", "sells: post leg\n(rose after the sale)"]
     a_vals = [res["S7"][k]["actual"] for k in keys]; n_vals = [res["S7"][k]["null_mean"] for k in keys]
@@ -91,12 +103,13 @@ def main():
         ax.plot([xs[i] - 0.18, xs[i] - 0.18], [n_vals[i] + c[0], n_vals[i] + c[1]], color="black", lw=1)
     ax.axhline(0, color="black", lw=0.6)
     ax.set_xticks(xs); ax.set_xticklabels(labels, fontsize=8)
-    ax.set_ylabel("adverse move, per cent of price (positive = against the owner)")
+    ax.set_ylabel("adverse move, % of price (positive = against the owner)", fontsize=9)
     pre_p = res["S3_pre"]["p_one_sided_worse"]; post_p = res["S4"]["p_one_sided_worse_matched"]
-    ax.set_title(f"Did the price run before the fill and turn after it? Pre leg p = {pre_p:.2f}; post leg p = {post_p:.2f} against the pre-matched placebo", fontsize=10)
+    ax.set_title(f"The price ran before the fill ({fmt_p(pre_p)}); buys gave some back after it ({fmt_p(post_p)}, pre-matched placebo)", fontsize=10)
     ax.legend(fontsize=8, frameon=False); ax.spines[["top", "right"]].set_visible(False)
-    fig.text(0.01, 0.005, asof + ". Pre: t-3 close to fill; post: fill to t+3 close; whiskers are the 95% cluster-bootstrap interval on the actual mean. The post-leg p is against a pre-matched null drawn independently per fill (a reversal check, not the verdict comparator).", fontsize=6.0, color=GREY)
-    fig.tight_layout(rect=(0, 0.035, 1, 1)); fig.savefig(CHART_DIR / "fig3_pre_post_legs.png"); plt.close(fig)
+    footer(fig, asof + ". Pre: t-3 close to fill; post: fill to t+3 close; whiskers: 95% cluster-bootstrap interval.",
+           "The post-leg p is against a pre-matched null drawn independently per fill (a reversal check, not the verdict comparator).")
+    fig.tight_layout(rect=(0, 0.055, 1, 1)); fig.savefig(CHART_DIR / "fig3_pre_post_legs.png"); plt.close(fig)
 
     # 4. cost anchor: cumulative S$ against the null band
     pf = res["C1"]["per_fill"]
@@ -107,10 +120,12 @@ def main():
     ax.axhspan(-1.96 * sd, 1.96 * sd, color="#dcfce7", label="within 1.96 sd of the placebo total (same within noise)")
     ax.axhline(0, color="black", lw=0.6)
     ax.set_xlabel("fills in date order"); ax.set_ylabel("S$")
-    ax.set_title(f"S$ anchor: {res['C1']['excess_cost_sgd']:,.0f} on S${res['C1']['traded_notional_sgd']:,.0f} traded = {res['C1']['excess_cost_bps_of_notional']:.1f} bps (p = {res['C1']['p_one_sided_worse']:.2f})", fontsize=10)
+    comm = res["C1"]["commission_measured_bps_one_way_sgd_terms"]
+    ax.set_title(f"Excess placement S\\${res['C1']['excess_cost_sgd']:,.0f} on S\\${res['C1']['traded_notional_sgd']:,.0f} traded: {res['C1']['excess_cost_bps_of_notional']:.0f} bps, {res['C1']['excess_cost_bps_of_notional'] / comm:.1f}x one-way commission ({fmt_p(res['C1']['p_one_sided_worse'])})", fontsize=9.5)
     ax.legend(fontsize=7.5, frameon=False, loc="upper left"); ax.spines[["top", "right"]].set_visible(False)
-    fig.text(0.01, 0.005, asof + f". SGD at fill-date FX. Commission measured from the ledger fees, SGD terms: {res['C1']['commission_measured_bps_one_way_sgd_terms']:.1f} bps one-way.", fontsize=6.3, color=GREY)
-    fig.tight_layout(rect=(0, 0.035, 1, 1)); fig.savefig(CHART_DIR / "fig4_cost_anchor.png"); plt.close(fig)
+    footer(fig, asof + ". SGD at fill-date FX; cost = (actual u less placebo-median u) x window range x quantity: a counterfactual placement, not realised P&L.",
+           f"Commission measured from the ledger fees in SGD terms: {comm:.1f} bps one-way on these fills (rate card 21.8 bps USD, an unreviewed figure).")
+    fig.tight_layout(rect=(0, 0.055, 1, 1)); fig.savefig(CHART_DIR / "fig4_cost_anchor.png"); plt.close(fig)
     print("charts written to", CHART_DIR, "- marks in fig 2:", sum(len(r[2]) for r in rows))
 
 

@@ -1,0 +1,364 @@
+{
+ "verdict": "CONFIRMED; TAIL-ELEVATED",
+ "clause_status": {
+  "H1": "PASS",
+  "H2": "PASS"
+ },
+ "powered": {
+  "H1": true,
+  "H2": true
+ },
+ "floors": {
+  "H1_delta": 0.06,
+  "H2_delta": 0.05
+ },
+ "n": 151,
+ "H1": {
+  "label": "H1 mean u, equal-weighted",
+  "n": 151,
+  "actual": 0.6385,
+  "null_mean": 0.4982,
+  "null_sd": 0.0212,
+  "effect": 0.1403,
+  "effect_ci95_block_bootstrap": [
+   0.1115,
+   0.1631
+  ],
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "null_p95": 0.5332
+ },
+ "H2": {
+  "label": "H2 share of fills with u > 0.9",
+  "n": 151,
+  "actual": 0.1192,
+  "null_mean": 0.0399,
+  "null_sd": 0.0165,
+  "effect": 0.0793,
+  "effect_ci95_block_bootstrap": [
+   0.0293,
+   0.1169
+  ],
+  "p_one_sided_worse": 0.0005,
+  "p_one_sided_better": 0.9999,
+  "null_p95": 0.0662
+ },
+ "S1": {
+  "label": "S1 mean u, SGD-notional-weighted",
+  "n": 151,
+  "actual": 0.6365,
+  "null_mean": 0.4981,
+  "null_sd": 0.0219,
+  "effect": 0.1385,
+  "effect_ci95_block_bootstrap": [
+   0.107,
+   0.1642
+  ],
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "null_p95": 0.5344
+ },
+ "S2": {
+  "label": "S2 share worse than all six neighbouring closes",
+  "n": 151,
+  "actual": 0.2252,
+  "null_mean": 0.0923,
+  "null_sd": 0.0252,
+  "effect": 0.1329,
+  "effect_ci95_block_bootstrap": [
+   0.041,
+   0.1996
+  ],
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "null_p95": 0.1391
+ },
+ "S3_pre": {
+  "label": "S3 pre leg, adverse-oriented, per cent",
+  "n": 151,
+  "actual": 5.1864,
+  "null_mean": 0.1521,
+  "null_sd": 0.6499,
+  "effect": 5.0343,
+  "effect_ci95_block_bootstrap": [
+   2.6773,
+   7.6415
+  ],
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "null_p95": 1.2063
+ },
+ "S3_post": {
+  "label": "S3 post leg, adverse-oriented, per cent",
+  "n": 151,
+  "actual": 0.9589,
+  "null_mean": -0.3141,
+  "null_sd": 0.7192,
+  "effect": 1.273,
+  "effect_ci95_block_bootstrap": [
+   -0.1341,
+   2.9879
+  ],
+  "p_one_sided_worse": 0.0385,
+  "p_one_sided_better": 0.9616,
+  "null_p95": 0.8648
+ },
+ "S4": {
+  "n": 151,
+  "actual_post_pct": 0.959,
+  "matched_placebo_post_pct": -0.229,
+  "unmatched_placebo_post_pct": -0.314,
+  "excess_over_matched_pct": 1.188,
+  "p_one_sided_worse_matched": 0.02,
+  "null_sd_matched_pct": 0.581,
+  "note": "the matched null draws independently per fill within the matched tercile; it is a reversal check, not the verdict comparator"
+ },
+ "S5": {
+  "n": 151,
+  "mean_v": 0.5752,
+  "null_mean": 0.5,
+  "se_uniform": 0.0235,
+  "z": 3.2,
+  "p_one_sided_worse": 0.0007,
+  "share_in_worst_quartile": 0.2715,
+  "share_in_best_quartile": 0.0861,
+  "buys_mean_v": 0.5693,
+  "sells_mean_v": 0.5825
+ },
+ "S6": {
+  "label": "S6 u at the session close (day choice alone)",
+  "n": 151,
+  "actual": 0.6447,
+  "null_mean": 0.4996,
+  "null_sd": 0.0215,
+  "effect": 0.1451,
+  "effect_ci95_block_bootstrap": [
+   0.11,
+   0.1695
+  ],
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "null_p95": 0.5351
+ },
+ "S8": {
+  "label": "S8 H1 with ex-date windows excluded (actual side only; placebo windows keep their rebased ex-dates)",
+  "n": 145,
+  "actual": 0.6332,
+  "null_mean": 0.4982,
+  "null_sd": 0.0214,
+  "effect": 0.1349,
+  "effect_ci95_block_bootstrap": [
+   0.1079,
+   0.1604
+  ],
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "null_p95": 0.5334
+ },
+ "S7": {
+  "buys": {
+   "label": "S7 buys",
+   "n": 84,
+   "actual": 0.65,
+   "null_mean": 0.4906,
+   "null_sd": 0.0284,
+   "effect": 0.1594,
+   "effect_ci95_block_bootstrap": [
+    0.1054,
+    0.2039
+   ],
+   "p_one_sided_worse": 0.0001,
+   "p_one_sided_better": 1.0,
+   "null_p95": 0.5377
+  },
+  "sells": {
+   "label": "S7 sells",
+   "n": 67,
+   "actual": 0.6241,
+   "null_mean": 0.5077,
+   "null_sd": 0.0322,
+   "effect": 0.1164,
+   "effect_ci95_block_bootstrap": [
+    0.0561,
+    0.1756
+   ],
+   "p_one_sided_worse": 0.0002,
+   "p_one_sided_better": 0.9999,
+   "null_p95": 0.561
+  },
+  "buys_pre_pct": {
+   "label": "buys pre leg",
+   "n": 84,
+   "actual": 6.4952,
+   "null_mean": 0.8751,
+   "null_sd": 0.9333,
+   "effect": 5.6201,
+   "effect_ci95_block_bootstrap": [
+    2.1432,
+    10.2709
+   ],
+   "p_one_sided_worse": 0.0001,
+   "p_one_sided_better": 1.0,
+   "null_p95": 2.3849
+  },
+  "sells_pre_pct": {
+   "label": "sells pre leg",
+   "n": 67,
+   "actual": 3.5455,
+   "null_mean": -0.7543,
+   "null_sd": 1.0463,
+   "effect": 4.2998,
+   "effect_ci95_block_bootstrap": [
+    1.783,
+    6.6075
+   ],
+   "p_one_sided_worse": 0.0001,
+   "p_one_sided_better": 1.0,
+   "null_p95": 0.9802
+  },
+  "buys_post_pct": {
+   "label": "buys post leg",
+   "n": 84,
+   "actual": 1.2208,
+   "null_mean": -1.1469,
+   "null_sd": 1.0462,
+   "effect": 2.3678,
+   "effect_ci95_block_bootstrap": [
+    0.2413,
+    4.6465
+   ],
+   "p_one_sided_worse": 0.01,
+   "p_one_sided_better": 0.9901,
+   "null_p95": 0.563
+  },
+  "sells_post_pct": {
+   "label": "sells post leg",
+   "n": 67,
+   "actual": 0.6304,
+   "null_mean": 0.73,
+   "null_sd": 1.1638,
+   "effect": -0.0996,
+   "effect_ci95_block_bootstrap": [
+    -3.3688,
+    3.9554
+   ],
+   "p_one_sided_worse": 0.5287,
+   "p_one_sided_better": 0.4714,
+   "null_p95": 2.647
+  },
+  "buys_tail": {
+   "label": "buys tail share",
+   "n": 84,
+   "actual": 0.1071,
+   "null_mean": 0.0393,
+   "null_sd": 0.0215,
+   "effect": 0.0679,
+   "effect_ci95_block_bootstrap": [
+    -0.008,
+    0.1274
+   ],
+   "p_one_sided_worse": 0.008,
+   "p_one_sided_better": 0.9961,
+   "null_p95": 0.0714
+  },
+  "sells_tail": {
+   "label": "sells tail share",
+   "n": 67,
+   "actual": 0.1343,
+   "null_mean": 0.0408,
+   "null_sd": 0.0253,
+   "effect": 0.0935,
+   "effect_ci95_block_bootstrap": [
+    0.0306,
+    0.1592
+   ],
+   "p_one_sided_worse": 0.003,
+   "p_one_sided_better": 0.999,
+   "null_p95": 0.0896
+  },
+  "raw_signed_price_change_pct": {
+   "buys_pre_mean": 6.495,
+   "sells_pre_mean": -3.546,
+   "buys_post_mean": -1.221,
+   "sells_post_mean": 0.63,
+   "note": "signed price changes: pre = t-3 close to fill, post = fill to t+3 close; positive means the price rose"
+  }
+ },
+ "S9": {
+  "effect_full": 0.1403,
+  "min_effect_loto": 0.135,
+  "max_effect_loto": 0.1486,
+  "sign_flips": false,
+  "largest_single_fill_share_of_effect": 0.022,
+  "largest_single_fill_share_note": "reported only when the pooled effect is at least 0.01 in u; a share of a near-zero effect is not meaningful"
+ },
+ "C1": {
+  "n": 151,
+  "traded_notional_sgd": 1662184,
+  "excess_cost_sgd": 34027,
+  "null_mean_sgd": -124,
+  "null_sd_sgd": 7350,
+  "null_p95_sgd": 12135,
+  "null_p05_sgd": -12232,
+  "p_one_sided_worse": 0.0001,
+  "p_one_sided_better": 1.0,
+  "excess_cost_bps_of_notional": 204.7,
+  "null_sd_bps_of_notional": 44.2,
+  "buys_cost_sgd": 21747,
+  "sells_cost_sgd": 12280,
+  "commission_measured_bps_one_way_sgd_terms": 23.5,
+  "commission_measured_by_ccy": {
+   "AUD": {
+    "n": 1,
+    "bps_one_way": 21.8
+   },
+   "EUR": {
+    "n": 5,
+    "bps_one_way": 32.8
+   },
+   "HKD": {
+    "n": 15,
+    "bps_one_way": 33.7
+   },
+   "JPY": {
+    "n": 5,
+    "bps_one_way": 21.8
+   },
+   "SGD": {
+    "n": 1,
+    "bps_one_way": 41.2
+   },
+   "USD": {
+    "n": 122,
+    "bps_one_way": 21.9
+   }
+  },
+  "commission_rate_card_bps_one_way_usd": 21.8,
+  "commission_on_the_151_fills_sgd": 3858,
+  "pnl_2026_sgd": 194578,
+  "pnl_source": "dashboard YTD P&L card, +S$194,578 (+20.72 per cent), read from the live page on 2026-10-03 at about 14:02 SGT with 55 live quotes and the intraday card baked to 3 October; single-source output of the dashboard's FX-aware total-return FIFO engine",
+  "excess_cost_share_of_pnl": 0.1749
+ },
+ "X1_summary": {
+  "20": {
+   "n": 60,
+   "median_regret_pct": -0.31,
+   "mean_regret_pct": 4.26,
+   "share_regret_positive": 0.483,
+   "median_sold_name_tr_pct": -3.15,
+   "mean_sold_name_tr_pct": -0.35,
+   "mean_destination_tr_pct": -4.62,
+   "n_with_traced_buy": 41
+  },
+  "60": {
+   "n": 48,
+   "median_regret_pct": -3.39,
+   "mean_regret_pct": -5.5,
+   "share_regret_positive": 0.417,
+   "median_sold_name_tr_pct": -1.42,
+   "mean_sold_name_tr_pct": -0.38,
+   "mean_destination_tr_pct": 5.13,
+   "n_with_traced_buy": 36
+  }
+ }
+}
