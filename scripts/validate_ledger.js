@@ -83,6 +83,26 @@ const pass = m => console.log('pass  ' + m);
   if (!missing.length && !bad.length) pass(`decision refs present on every fill dated ${REF_REQUIRED_FROM} onward (${legacy} earlier rows exempt)`);
 }
 
+// ── Cooling-off decision guard (PREREG_cooling-off-rule.md, registered 2026-10-03) ──
+// Inert until the rule is adopted; then every fill dated on or after the
+// adoption date must link to a matching decision row, and a fired decision
+// filled before it cleared or expired must be recorded as an override. The
+// logic is scripts/decisions.js guardFills(), tested in decisions.test.mjs.
+{
+  const D = require('./decisions');
+  const { data, exists } = D.loadDecisions(ROOT);
+  if (exists) {
+    const g = D.guardFills(trades, data, isFillRow);
+    for (const m of g.failures) fail(m);
+    for (const m of g.passes) pass(m);
+    for (const m of g.notes) console.log('note  ' + m);
+    const today = new Date().toISOString().slice(0, 10);
+    for (const r of D.staleOpen(data, today)) console.log(`note  open decision ${r.id} (${r.state}, ${r.d}) is older than ${D.RULE.STALE_DAYS} days: resolve it with check, drop or a fill, or it stays an orphan`);
+  } else {
+    console.log('note  no decisions.json yet; the cooling-off guard is inert until the first decision is logged and the rule adopted');
+  }
+}
+
 // ── Replay (mirrors template.html replayLedger) ──
 function replay() {
   const sorted = [...trades].filter(isFillRow).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
