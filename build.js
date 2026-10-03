@@ -41,6 +41,7 @@ const META_FILE = path.join(DATA_DIR, 'meta.json');
 const NOJEKYLL_FILE = path.join(DOCS_DIR, '.nojekyll');
 const CONCURRENCY = 5;
 const DELAY_MS = 150;       // Polite delay between requests
+const RETRY_PAUSE_MS = 5000; // Pause before the single retry pass over symbols the first pass lost
 const RANGE = '10y';        // 10 years for full backtest support
 // JPYSGD=X is illiquid/erratic on Yahoo (frequently a single, imprecise bar),
 // so we fetch the liquid SGDJPY=X cross instead and invert it to JPYSGD=X after
@@ -545,6 +546,48 @@ async function fetchAll(symbols, range) {
   return results;
 }
 
+// A symbol has a series when its entry carries at least one bar. An entry with
+// an empty history is as useless to the client as no entry at all, so the
+// retry, the held-position stop and the closing summary all judge by this.
+const hasSeries = d => !!(d && d.history && d.history.length);
+
+// ── Retry pass over symbols the first pass lost ──────────────────────────
+// A fetch that returns nothing is not evidence that the symbol has no data.
+// On 2026-10-03 a local bake lost TSLA, BNY, LLY and GDX.L in one consecutive
+// burst (items 44 to 48 of 96) alongside the permanently delisted CPRX, and a
+// direct probe of the four seconds later returned HTTP 200 with full series:
+// Yahoo had refused a short run of requests. The first pass cannot tell that
+// refusal from a dead symbol, and before this pass nothing tried to. Each lost
+// symbol gets one more attempt after a pause, one request at a time, direct
+// from Yahoo — the proxies are an availability fallback, not an equivalence
+// (see fetchTicker) — which separates the two cases for one request each.
+// Whatever is still missing afterwards is judged in main by whether the name
+// is held.
+async function retryFailedSymbols(results, failed, range) {
+  const recovered = [], stillFailed = [];
+  if (!failed.length) return { recovered, stillFailed };
+  await new Promise(r => setTimeout(r, RETRY_PAUSE_MS));
+  for (const sym of failed) {
+    const fresh = await fetchTicker(sym, range, true);
+    await new Promise(r => setTimeout(r, DELAY_MS));
+    if (hasSeries(fresh)) { results[sym] = fresh; recovered.push(sym); }
+    else stillFailed.push(sym);
+  }
+  return { recovered, stillFailed };
+}
+
+// Run the retry pass over whatever a fetchAll call lost and report it. The
+// first pass prints FAILED inline and the next progress line overwrites it,
+// so this is also the first place the lost symbols are named legibly.
+async function retryLost(results, symbols, range) {
+  const lost = symbols.filter(s => !hasSeries(results[s]));
+  if (!lost.length) return;
+  console.log(`  🔁 ${lost.length} symbol(s) returned nothing on the first pass — one retry each, direct from Yahoo, after ${RETRY_PAUSE_MS / 1000}s: ${lost.join(', ')}`);
+  const { recovered, stillFailed } = await retryFailedSymbols(results, lost, range);
+  if (recovered.length) console.log(`       recovered on retry: ${recovered.join(', ')} — the first failure was transient`);
+  if (stillFailed.length) console.log(`       still nothing after the retry: ${stillFailed.join(', ')}`);
+}
+
 // ── Derive JPYSGD=X from the liquid SGDJPY=X cross by inverting it bar by bar.
 // JPYSGD is ~0.008, so we keep 7 decimals (the usual 4-dp rounding would round
 // it to ~2 significant figures). On inversion high and low swap (1/low > 1/high).
@@ -585,8 +628,40 @@ async function main() {
   // Fetch stock data
   console.log(`📥 Fetching ${RANGE} history for ${symbols.length} tickers (concurrency: ${CONCURRENCY})...`);
   const stockData = await fetchAll(symbols, RANGE);
+  await retryLost(stockData, symbols, RANGE);
   const stockCount = Object.keys(stockData).length;
   console.log(`  ✅ ${stockCount}/${symbols.length} tickers fetched\n`);
+
+  // ── Held position with no series: hard stop ──
+  // The session audit below polices only tickers present in stockData, so a
+  // held name whose fetch failed outright is invisible to it, and before this
+  // gate the bake published history.json without the name and exited 0. The
+  // client then valued the position from book.json mktPriceSnap where one
+  // exists, else the template's hardcoded SNAPSHOT table, else its average
+  // cost; badged the row STALE; skipped it in the day cards; carried it flat
+  // in the equity curve; and skipped or degraded it in YTD attribution, all
+  // without saying so. Mirrors the data-gap stop: a red run beats a dashboard
+  // that is wrong without saying so. Only held names stop the bake — a
+  // closed-out name without a series costs attribution its look-back history
+  // and stays a warning (see the closing summary). A meta entry carrying a
+  // noQuote note is the one sanctioned permanent exemption: readLedger holds
+  // it out of the fetch universe, so it cannot reach this gate.
+  const held = heldYahooSymbols(book, trades);
+  const missingHeld = symbols.filter(s => held.has(s) && !hasSeries(stockData[s]));
+  if (missingHeld.length) {
+    const tickersOf = yf => Object.entries(book.meta || {}).filter(([, m]) => m.yf === yf).map(([tk]) => tk).join(', ');
+    console.error('\n❌ Bake stopped: a held position has no price series. The fetch returned nothing on');
+    console.error('   the first pass and nothing on a direct retry, so history.json would carry no entry');
+    console.error('   for the name. The client would value it from book.json mktPriceSnap where one exists,');
+    console.error('   else the hardcoded SNAPSHOT table, else its average cost; badge the Positions row');
+    console.error('   STALE; leave it out of the Intraday and 1-Day cards; carry it flat in the equity');
+    console.error('   curve; and skip or degrade it in YTD attribution, all without saying so. If Yahoo has');
+    console.error('   genuinely stopped carrying the symbol, record that in book.json: add a noQuote note to the meta');
+    console.error('   entry with the reason and the date verified, and maintain mktPriceSnap by hand at the');
+    console.error('   monthly reconciliation. Otherwise re-run the bake once the feed is back:\n');
+    missingHeld.forEach(s => console.error(`     ${s.padEnd(10)} book.json ${tickersOf(s)}`));
+    process.exit(1);
+  }
 
   // ── Session audit (see auditSessions above) ──
   // Three passes, escalating. Pass 1 proposes gaps. Every suspect is re-fetched
@@ -596,7 +671,6 @@ async function main() {
   // session, shows the counter did not trade, or cannot say. Pass 3 is the
   // final word, so only a gap that survives all three can stop the bake.
   console.log('🔍 Auditing exchange sessions...');
-  const held = heldYahooSymbols(book, trades);
   const passes = [];
   const pass1 = auditSessions(stockData, held);
   passes.push(pass1);
@@ -678,6 +752,10 @@ async function main() {
   // Fetch FX
   console.log(`💱 Fetching FX rates...`);
   const fxData = await fetchAll(FX_SYMBOLS, '1y');
+  // Same retry as the stock fetch. A lost FX pair is not a stop — the client
+  // falls back to its last baked rate — but a transient refusal should not
+  // cost a day of FX history either.
+  await retryLost(fxData, FX_SYMBOLS, '1y');
   // Convert the SGDJPY=X cross into a proper JPYSGD=X series (full history,
   // accurate level) and drop the raw cross so the output keys are unchanged.
   const jpy = deriveJpySgd(fxData['SGDJPY=X']);
@@ -786,10 +864,12 @@ async function main() {
   console.log(`✅ Wrote docs/index.html (${htmlSizeKB} KB, straight copy of template.html)`);
   console.log(`\n🚀 Ready to deploy: git add docs/ && git commit -m "Bake ${dateStr}" && git push`);
 
-  // Report failures
-  const failed = symbols.filter(s => !stockData[s]);
+  // Report failures. Every symbol still missing here is not held — a held one
+  // stopped the bake above — so the cost is attribution's look-back history
+  // for a closed-out name, which is worth a line and not a stop.
+  const failed = symbols.filter(s => !hasSeries(stockData[s]));
   if (failed.length > 0) {
-    console.log(`\n⚠️  Failed tickers (${failed.length}): ${failed.join(', ')}`);
+    console.log(`\n⚠️  Failed tickers (${failed.length}, none held — closed-out names, attribution history only): ${failed.join(', ')}`);
   }
 }
 
