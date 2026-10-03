@@ -2360,18 +2360,20 @@ function renderHeadline(split, ytd) {
     line += `Portfolio ${ytd.totalDollar >= 0 ? 'up' : 'down'} <span class="hs-num ${cls}">${fmtSGD(Math.abs(ytd.totalDollar))} (${fmtPct(ytd.portfolioRetPct)})</span> YTD`;
   }
 
-  // Benchmark clauses — TWRR on both sides, same anchor date. Both house
-  // benchmarks are shown: STI via ES3, and the S&amp;P 500 via the S27 proxy
-  // converted to SGD at same-date FX inside getBenchmarkCurve (S27 trades in
-  // USD on SGX), so the comparison is SGD terms end to end, like the
-  // portfolio curve.
+  // Benchmark clause — TWRR on both sides, same anchor date, against the
+  // Performance tab's default benchmark (BENCHMARK_DEFAULT, the 50/50 STI /
+  // S&amp;P 500 blend since 2026-10-03; before that the STI and S&amp;P 500 were
+  // shown as two separate clauses). The blend is built from ES3 and the S27
+  // proxy converted to SGD at same-date FX inside getBenchmarkCurve (S27
+  // trades in USD on SGX), so the comparison is SGD terms end to end, like
+  // the portfolio curve.
   try {
     const startDate = _perfWindowStart('YTD');
     const curve = getEquityCurve(ps, TRADES_YTD, startDate);
     if (curve && !curve.error && isFinite(curve.totalReturnPct)) {
-      const names = { STI: 'STI', SPX: 'S&amp;P 500' };
+      const names = { STI: 'STI', SPX: 'S&amp;P 500', BLEND: '50/50 STI / S&amp;P 500 blend' };
       const frags = [];
-      for (const sym of ['STI', 'SPX']) {
+      for (const sym of [BENCHMARK_DEFAULT]) {
         const bench = getBenchmarkCurve(ps, sym, startDate);
         if (!bench || !isFinite(bench.endReturn)) continue;
         const alpha = curve.totalReturnPct - bench.endReturn;
