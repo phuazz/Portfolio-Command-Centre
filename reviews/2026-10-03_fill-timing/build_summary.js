@@ -58,13 +58,24 @@ const spec = {
     { type: "h2", text: "7. Waiting one more day would not have fixed it" },
     { type: "p", text: "Had every trade been done one day later at the closing price, the total would have changed by minus S$436, a coin flip, because a delay only acts on what happens after the trade and the cost had already been paid before it." },
 
-    { type: "h1", text: "What this means, and what you could try" },
-    { type: "p", text: "The pattern is chasing: a sharp move draws the trade, and by the time the order goes in most of the move has happened. The study measured that; it did not test any cure, so what follows is a list of things worth testing, not a recommendation." },
+    { type: "h1", text: "The rule you adopted, and how to remember it" },
+    { type: "callout", text: "Three, three, five. If a name has moved more than 3 per cent your way over the last three sessions, do not trade it today. Re-check each morning. Trade on the first morning the last three completed sessions show 3 per cent or less, or on the fifth session after your decision whatever the price. Delay, never cancel." },
+    { type: "p", text: "Adopted from Monday 5 October 2026 under the registration PREREG_cooling-off-rule.md, which fixes these numbers until 150 fills have been made under the rule; they are not to be tuned before then. The wait is a condition with a cap, not a price target." },
     { type: "bullets", items: [
-      "A cooling-off rule: do not act on a name that has moved more than a set amount over the last three days; revisit it when it has settled.",
+      "The trigger: at the moment you decide, compare the close three sessions back with the price now. A move of more than 3 per cent in your direction fires the rule. A move the other way never fires: buying a dip or selling into strength is always allowed.",
+      "The clearing condition: each following morning, read the move over the three sessions already completed. The first morning it is 3 per cent or less, you may place the order. That happens either because the price gave some back or because the big day rolled out of the three-session window; neither is a pullback requirement.",
+      "The cap: on the fifth session after your decision you place the order regardless. If you abandon the trade after the wait, that is your decision, logged as a drop; the rule itself never cancels anything.",
+      "The order: market or limit at your choice once clear, recorded with the fill.",
+      "A worked example in weekdays: a name you want to buy has risen 6 per cent from Friday's close to Wednesday's. Wednesday you decide and the rule fires. Thursday morning the window is Monday to Wednesday, still 6 per cent, so you wait. Friday morning the window is Tuesday to Thursday; if the jump was mostly Monday's it has rolled out and you are clear, otherwise you wait. By the following Wednesday at the latest you buy. This year's fills would have waited two to three sessions on average.",
+      "Why not a fixed week, and why not a 4 per cent pullback: the chased buys gave back about 2 per cent over the next five sessions on average, but only one held-back trade in three was helped, and over three months the names bought rose 13 per cent on average, carried by a few winners. A fixed week delays the two in three that did not need it; a pullback target turns the delay into a cancellation and risks the winners. The rolling condition waits exactly as long as the move you reacted to stays in the window.",
+      "In practice: type /pcc-decide with the trade in plain words before placing any order; it logs the decision, reads the move and answers fired or clear; /pcc-decide check <id> is the morning re-read; /pcc-decide why prints this card and the study it came from.",
+    ] },
+    { type: "h1", text: "What else could be tested" },
+    { type: "p", text: "The pattern is chasing: a sharp move draws the trade, and by the time the order goes in most of the move has happened. The study measured that; the cooling-off rule is the one cure now under test, and these remain untested ideas, not recommendations." },
+    { type: "bullets", items: [
       "A price-limit habit: place the order at a price inside the last few days' range instead of at the market, and accept that some trades will not happen.",
       "A split entry: half now, half after the move has settled, so a chase costs half as much.",
-      "Whatever you choose, test it on trades made after you adopt it. The 151 trades here have been used to find the pattern and cannot also be used to prove the cure.",
+      "Whatever comes next must be tested on trades made after it is adopted. The 151 trades here found the pattern and cannot also prove a cure.",
     ] },
     { type: "callout", text: "The margin of error: with 151 trades, average scores within about 0.04 of each other cannot be told apart; your gap of 0.14 is more than three times that. The S$34,000 is a comparison with a random-day trader in the same week, not money that left your account, and it includes the price of waiting for a move to confirm itself, which you may judge worth paying." },
 
@@ -86,7 +97,7 @@ const spec = {
     ["Prepared by", "Claude Code research session (Fable 5.1), under direction of Zhenghao Phua"],
     ["Reviewed and approved by", ""],
     ["Date", ""],
-    ["Next step", "Yours: decide whether to test a cooling-off or price-limit rule on future trades"],
+    ["Next step", "The cooling-off rule is adopted from 5 October 2026; first read at 75 fills under it, verdict at 150"],
   ],
   disclaimer: "Personal research artefact on the owner's own ledger. The cost is a comparison with a simulated random-day trader, not realised profit or loss; nothing here is investment advice.",
 };
