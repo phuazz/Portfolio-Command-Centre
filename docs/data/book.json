@@ -35,9 +35,7 @@
     "XMED.GB": 125.58,
     "XPEV.US": 20.28
   },
-  "costAdjustments": {
-    "IGV.US": 3.06
-  },
+  "costAdjustments": {},
   "ledgerOverrides": {},
   "meta": {
     "4004.JP": {
