@@ -33,7 +33,9 @@ const D = require('./decisions');
 // --decision <id> links the fill to its row in decisions.json (the cooling-off
 // rule, PREREG_cooling-off-rule.md); required on every fill dated on or after
 // the adoption date. --override "<reason>" records a fill placed while a fired
-// decision had not cleared or expired: allowed, never hidden.
+// decision had not cleared or expired: allowed, never hidden. From the
+// sell-exemption date (PREREG_cooling-off-rule_v2.md) a sell still needs its
+// decision link but is never delayed and is refused as an override.
 const argvAll = process.argv.slice(2);
 const takeOpt = (name) => { const i = argvAll.indexOf(name); if (i === -1) return undefined; const v = argvAll[i + 1]; argvAll.splice(i, 2); return v; };
 const decisionId = takeOpt('--decision');
@@ -145,6 +147,7 @@ fs.writeFileSync(TRADES, out, 'utf8');
 if (decisionId) {
   const dr = decLog.data.rows.find(r => r.id === decisionId);
   dr.outcome = decOutcome; dr.fill = { d, p };
+  if (D.isExemptSell(a, d, decLog.data)) dr.exempt = true;   // keyed on the fill date, PREREG v2
   if (decOutcome === 'override') dr.override_reason = overrideReason;
   dr.resolved_at = new Date().toISOString();
   D.saveDecisions(ROOT, decLog.data);

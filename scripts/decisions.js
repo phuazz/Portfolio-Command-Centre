@@ -17,8 +17,14 @@
  * regardless. The parameters below are registration values: changing them
  * after adoption is an amendment and a new registration, never an edit.
  *
+ * R2 (PREREG_cooling-off-rule_v2.md, adopted 2026-10-15) keeps R1 for buys and
+ * exempts sells: a sell placed on or after `sells_exempt_from` is still logged
+ * with its read but is never delayed, is linked as filled whatever its state,
+ * and is never an override. The exemption keys on the date the sell is placed.
+ *
  * decisions.json shape:
- *   { "adopted": "YYYY-MM-DD" | null, "rule": { "T_pct", "K_sessions", "stale_days" },
+ *   { "adopted": "YYYY-MM-DD" | null, "sells_exempt_from": "YYYY-MM-DD" | null,
+ *     "rule": { "T_pct", "K_sessions", "stale_days" },
  *     "rows": [ { id, d, t, a, q, yf, ccy, px, px_source, close_t3, close_t3_date,
  *                 move3, state, outcome, fill, cleared_on, expired_on, wait_sessions,
  *                 override_reason, ref, note } ] }
@@ -32,7 +38,23 @@ const RULE = Object.freeze({ T_PCT: 3.0, K_SESSIONS: 5, STALE_DAYS: 10, LINK_DAY
 function decisionsPath(root) { return path.join(root, 'decisions.json'); }
 
 function emptyLog() {
-  return { adopted: null, rule: { T_pct: RULE.T_PCT, K_sessions: RULE.K_SESSIONS, stale_days: RULE.STALE_DAYS }, rows: [] };
+  return { adopted: null, sells_exempt_from: null, rule: { T_pct: RULE.T_PCT, K_sessions: RULE.K_SESSIONS, stale_days: RULE.STALE_DAYS }, rows: [] };
+}
+
+// R2: a sell placed on or after the exemption date is never delayed.
+function isExemptSell(side, dateISO, data) {
+  return side === 'S' && !!data.sells_exempt_from && dateISO >= data.sells_exempt_from;
+}
+
+// R2 (PREREG v2 section 2): a buy read holds for its own session only. A clear
+// buy is placed on its decision session; a fired buy on the session whose
+// re-read cleared it (cleared_on is that session), or on or after expiry.
+// Returns null when the timing complies, else the reason it does not.
+function r2BuyTiming(row, fillDate, data) {
+  if (row.a !== 'B' || !data.sells_exempt_from || fillDate < data.sells_exempt_from) return null;
+  if (row.state === 'clear') return fillDate === row.d ? null : `clear read of ${row.d} holds for that session only; a buy placed on ${fillDate} needs a fresh decision`;
+  if (row.cleared_on === fillDate || (row.expired_on && fillDate >= row.expired_on)) return null;
+  return `fired on ${row.d} and no re-read cleared it on ${fillDate}, nor had the wait expired`;
 }
 
 function loadDecisions(root) {
@@ -46,8 +68,8 @@ function loadDecisions(root) {
 
 // One row per line, so a diff shows exactly the row that changed.
 function serialiseDecisions(data) {
-  const head = { _comment: 'Decision log for the cooling-off rule (PREREG_cooling-off-rule.md). Written by scripts/add_decision.js and scripts/add_trade.js, never by hand. One row per intended trade at the moment of decision; outcome filled, dropped or override. Never a broker, account or statement reference.',
-    adopted: data.adopted == null ? null : data.adopted, rule: data.rule };
+  const head = { _comment: 'Decision log for the cooling-off rule (PREREG_cooling-off-rule.md, superseded from 2026-10-15 by PREREG_cooling-off-rule_v2.md: buys delayed, sells logged and never delayed). Written by scripts/add_decision.js and scripts/add_trade.js, never by hand. One row per intended trade at the moment of decision; outcome filled, dropped or override. Never a broker, account or statement reference.',
+    adopted: data.adopted == null ? null : data.adopted, sells_exempt_from: data.sells_exempt_from == null ? null : data.sells_exempt_from, rule: data.rule };
   const headText = JSON.stringify(head, null, 2).replace(/\n}$/, '');
   const rows = data.rows.map(r => '    ' + JSON.stringify(r)).join(',\n');
   return headText + ',\n  "rows": [\n' + rows + (rows ? '\n' : '') + '  ]\n}\n';
@@ -101,14 +123,17 @@ function closeThreeBefore(history, decisionDateISO, tz) {
 
 // The re-read on session `checkDateISO`: the close-to-close move over the three
 // sessions completed before that session, and the number of completed sessions
-// since the decision session. `expired` when that count reaches K.
+// since the decision session. `expired` on the K-th session after the decision,
+// which is the check session after K − 1 completed ones (both registrations say
+// "on the fifth session after the decision"; before 2026-10-16 this expired one
+// session late, at K completed, and no R1 decision reached expiry).
 function reread(history, decisionDateISO, checkDateISO, side, tz, rule = RULE) {
   const done = barsBefore(history, checkDateISO, tz);
   if (done.length < 4) return null;
   const last = done[done.length - 1], base = done[done.length - 4];
   const move = move3Pct(side, last.c, base.c);
   const sessionsSince = done.filter(b => b.date > decisionDateISO).length;
-  const expired = sessionsSince >= (rule.K_sessions || rule.K_SESSIONS);
+  const expired = sessionsSince >= (rule.K_sessions || rule.K_SESSIONS) - 1;
   return { move3: move, lastClose: last.c, lastDate: last.date, baseClose: base.c, baseDate: base.date, sessionsSince, expired,
     clear: move <= (rule.T_pct ?? rule.T_PCT) };
 }
@@ -148,6 +173,17 @@ function assessLink(data, id, fill, overrideReason) {
   if (row.outcome) return { ok: false, reason: `decision ${id} already resolved as ${row.outcome}` };
   if (fill.d < row.d) return { ok: false, reason: `fill dated ${fill.d} precedes the decision dated ${row.d}` };
   if (daysBetween(row.d, fill.d) > RULE.LINK_DAYS) return { ok: false, reason: `fill dated ${fill.d} is more than ${RULE.LINK_DAYS} calendar days after the decision ${row.d}; log a new decision` };
+  if (isExemptSell(fill.a, fill.d, data)) {
+    if (overrideReason) return { ok: false, reason: `a sell placed on or after ${data.sells_exempt_from} is never delayed, so it cannot be an override; drop --override` };
+    return { ok: true, outcome: 'filled' };
+  }
+  if (data.sells_exempt_from && fill.a === 'B' && fill.d >= data.sells_exempt_from) {
+    const why = r2BuyTiming(row, fill.d, data);
+    if (!why && overrideReason) return { ok: false, reason: `decision ${id}: the buy complies with the rule on ${fill.d}, so it cannot be an override; drop --override` };
+    if (!why) return { ok: true, outcome: 'filled' };
+    if (overrideReason) return { ok: true, outcome: 'override' };
+    return { ok: false, reason: `decision ${id}: ${why}; run "node scripts/add_decision.js check ${id}" on the fill session, log a fresh decision, or pass --override "<reason>" to record a breach` };
+  }
   if (row.state === 'fired') {
     const clearedBy = row.cleared_on && fill.d >= row.cleared_on;
     const expiredBy = row.expired_on && fill.d >= row.expired_on;
@@ -185,7 +221,11 @@ function guardFills(trades, data, isFillRow) {
     if (!r) { failures.push(`fill ${t.d} ${t.t} links to decision ${t.dec}, which does not exist`); continue; }
     if (r.t !== t.t || r.a !== t.a) { failures.push(`fill ${t.d} ${t.t} ${t.a} links to decision ${t.dec}, which is ${r.t} ${r.a}`); continue; }
     if (t.d < r.d || daysBetween(r.d, t.d) > RULE.LINK_DAYS) { failures.push(`fill ${t.d} ${t.t} is outside the ${RULE.LINK_DAYS}-day window after its decision ${r.d}`); continue; }
-    if (r.state === 'fired' && r.outcome !== 'override') {
+    if (isExemptSell(t.a, t.d, data) && r.outcome === 'override') { failures.push(`fill ${t.d} ${t.t} S is an exempt sell (on or after ${data.sells_exempt_from}) but its decision ${r.id} is recorded as an override`); continue; }
+    if (data.sells_exempt_from && t.a === 'B' && t.d >= data.sells_exempt_from) {
+      const why = r2BuyTiming(r, t.d, data);
+      if (why && r.outcome !== 'override') { failures.push(`fill ${t.d} ${t.t} B: decision ${r.id} ${why}, and it is not recorded as an override`); continue; }
+    } else if (r.state === 'fired' && r.outcome !== 'override' && !isExemptSell(t.a, t.d, data)) {
       const clearedBy = r.cleared_on && t.d >= r.cleared_on, expiredBy = r.expired_on && t.d >= r.expired_on;
       if (!clearedBy && !expiredBy) { failures.push(`fill ${t.d} ${t.t} was placed while decision ${r.id} (fired ${r.d}) had not cleared or expired, and is not recorded as an override`); continue; }
     }
@@ -193,8 +233,20 @@ function guardFills(trades, data, isFillRow) {
     linked++;
   }
   const overrideShare = post.length ? counts.override / post.length : 0;
-  if (!failures.length) passes.push(`cooling-off guard: ${post.length} post-adoption fills since ${data.adopted}, all linked to a decision (${counts.override} overrides, ${(overrideShare * 100).toFixed(0)}% of post-adoption fills; the adoption gate reads NOT ADOPTED above 20%)`);
-  if (overrideShare > 0.2) notes.push(`override share ${(overrideShare * 100).toFixed(0)}% exceeds the 20% adoption gate; the study would read NOT ADOPTED at this rate`);
+  if (!failures.length) passes.push(data.sells_exempt_from
+    ? `cooling-off guard: ${post.length} post-adoption fills since ${data.adopted}, all linked to a decision (${counts.override} overrides in all, the R2 gate below counts buys only)`
+    : `cooling-off guard: ${post.length} post-adoption fills since ${data.adopted}, all linked to a decision (${counts.override} overrides, ${(overrideShare * 100).toFixed(0)}% of post-adoption fills; the adoption gate reads NOT ADOPTED above 20%)`);
+  if (data.sells_exempt_from) {
+    // R2 gate (PREREG v2, S3): overrides among buy fills placed on or after the exemption date.
+    const buys = post.filter(t => t.a === 'B' && t.d >= data.sells_exempt_from);
+    const buyOverrides = buys.filter(t => byId[t.dec] && byId[t.dec].outcome === 'override').length;
+    const sells = post.filter(t => t.a === 'S' && t.d >= data.sells_exempt_from).length;
+    const share = buys.length ? buyOverrides / buys.length : 0;
+    const r2Rows = data.rows.filter(r => r.fill && r.fill.d >= data.sells_exempt_from);
+    const after = r2Rows.filter(r => r.logged_after_fill).length;
+    notes.push(`R2 since ${data.sells_exempt_from} (PREREG v2): ${buys.length} buy fills, ${buyOverrides} overrides (${(share * 100).toFixed(0)}%; NOT ADOPTED above 20%); ${sells} exempt sells logged; ${after} of ${r2Rows.length} filled decisions flagged as logged after the fill; the R1 record before that date is closed`);
+    if (share > 0.2) notes.push(`R2 buy override share ${(share * 100).toFixed(0)}% exceeds the 20% adoption gate; the study would read NOT ADOPTED at this rate`);
+  } else if (overrideShare > 0.2) notes.push(`override share ${(overrideShare * 100).toFixed(0)}% exceeds the 20% adoption gate; the study would read NOT ADOPTED at this rate`);
   for (const r of data.rows) {
     if (r.outcome === 'filled' || r.outcome === 'override') {
       const f = r.fill && fills.find(t => t.dec === r.id);
@@ -209,5 +261,5 @@ function staleOpen(data, todayISO) {
   return data.rows.filter(r => !r.outcome && daysBetween(r.d, todayISO) > RULE.STALE_DAYS);
 }
 
-module.exports = { RULE, decisionsPath, emptyLog, loadDecisions, saveDecisions, serialiseDecisions, move3Pct, decisionState,
+module.exports = { RULE, isExemptSell, r2BuyTiming,decisionsPath, emptyLog,loadDecisions, saveDecisions, serialiseDecisions, move3Pct, decisionState,
   sessionDate, barsBefore, closeThreeBefore, reread, weekdaysAfter, daysBetween, newId, assessLink, guardFills, staleOpen };

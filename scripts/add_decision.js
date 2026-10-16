@@ -5,7 +5,7 @@
  * `adopt` command is run on the owner's instruction).
  *
  * Usage:
- *   node scripts/add_decision.js <YYYY-MM-DD> <B|S> <qty> <TICKER> "<ref>" [--price <px>] [--dry-run]
+ *   node scripts/add_decision.js <YYYY-MM-DD> <B|S> <qty> <TICKER> "<ref>" [--price <px>] [--after-fill] [--dry-run]
  *       Log an intended trade at the moment of decision. Fetches the name's
  *       last month of daily bars and the live quote from Yahoo (direct, no
  *       proxies), computes the three-session move in the trade's direction
@@ -20,6 +20,9 @@
  *   node scripts/add_decision.js adopt <YYYY-MM-DD>
  *       Set the adoption date (once). From that date add_trade.js requires
  *       --decision <id> and validate_ledger.js refuses a fill without one.
+ *   node scripts/add_decision.js exempt-sells <YYYY-MM-DD>
+ *       Set once (PREREG_cooling-off-rule_v2.md): from that date a sell is
+ *       logged with its read but never delayed and never an override.
  *   node scripts/add_decision.js report
  *       Reconcile the log against trades.json and list open decisions.
  *
@@ -35,8 +38,9 @@ const { isFillRow } = require('./ledger_actions');
 const ROOT = path.join(__dirname, '..');
 const argv = process.argv.slice(2);
 const dryRun = argv.includes('--dry-run');
+const FLAGS = ['--dry-run', '--after-fill'];   // options that take no value
 const opt = (name) => { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : undefined; };
-const positional = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--') && argv[i - 1] !== '--dry-run'));
+const positional = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--') && !FLAGS.includes(argv[i - 1])));
 
 function die(msg) { console.error(msg); process.exit(1); }
 function isoDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + 'T00:00:00Z')); }
@@ -79,7 +83,7 @@ function resolveMeta(t) {
 }
 
 async function cmdNew() {
-  if (positional.length !== 5) die('Usage: node scripts/add_decision.js <YYYY-MM-DD> <B|S> <qty> <TICKER> "<ref>" [--price <px>] [--dry-run]');
+  if (positional.length !== 5) die('Usage: node scripts/add_decision.js <YYYY-MM-DD> <B|S> <qty> <TICKER> "<ref>" [--price <px>] [--after-fill] [--dry-run]');
   const [d, a, qStr, t, refRaw] = positional;
   if (!isoDate(d)) die(`Invalid date: ${d} (expected YYYY-MM-DD, the session date on the name's exchange)`);
   if (a !== 'B' && a !== 'S') die(`Invalid action: ${a} (expected B or S)`);
@@ -107,9 +111,17 @@ async function cmdNew() {
     close_t3: base.close, close_t3_date: base.date, last_close: base.lastClose, last_close_date: base.lastDate,
     move3, state, outcome: null, fill: null, cleared_on: null, expired_on: null, wait_sessions: null, override_reason: null, ref,
     logged_at: new Date().toISOString() };
+  const exempt = D.isExemptSell(a, d, data);
+  if (exempt) row.exempt = true;
+  // PREREG v2: an owner-typed price is kept beside the feed's, and a decision
+  // logged after the order was placed says so (a disclosure in S3).
+  if (pxOpt != null && chart.price > 0) { row.px_feed = chart.price; row.px_feed_time = chart.quoteTime ? new Date(chart.quoteTime * 1000).toISOString() : null; }
+  if (argv.includes('--after-fill')) row.logged_after_fill = true;
   console.log('Decision: ' + JSON.stringify(row));
   console.log(`three-session move in the trade's direction: ${move3 >= 0 ? '+' : ''}${move3}% (close ${base.close} on ${base.date} to ${px} now; threshold ${data.rule.T_pct}%)`);
-  if (state === 'fired') {
+  if (exempt) {
+    console.log(`EXEMPT (${state}, logged only): a sell on or after ${data.sells_exempt_from} is never delayed (PREREG_cooling-off-rule_v2.md). Enter the fill with: node scripts/add_trade.js ${d} ${a} ${q} ${t} <price> "<ref>" --decision ${row.id}`);
+  } else if (state === 'fired') {
     console.log(`FIRED: do not place the order on ${d}. From the next session run "node scripts/add_decision.js check ${row.id}" before placing it; the order may go on the first session the check reads clear, or on about ${D.weekdaysAfter(d, data.rule.K_sessions)} (the ${data.rule.K_sessions}th session after, weekday estimate) regardless.`);
   } else {
     console.log(`CLEAR: the order may be placed on ${d}. Enter the fill with: node scripts/add_trade.js ${d} ${a} ${q} ${t} <price> "<ref>" --decision ${row.id}`);
@@ -133,6 +145,11 @@ async function cmdCheck() {
   const checkDate = opt('--date') || todayInTz(tz);
   if (!isoDate(checkDate)) die(`Invalid --date ${checkDate}`);
   if (checkDate <= row.d) die(`The check session ${checkDate} must be after the decision session ${row.d}`);
+  // A future session would read today's unfinished bar as a completed close and
+  // could record a clearance that session's own re-read never gave.
+  if (checkDate > todayInTz(tz)) die(`The check session ${checkDate} is later than today on the exchange (${todayInTz(tz)}); a session is checked on the day.`);
+  if (D.isExemptSell(row.a, checkDate, data)) { console.log(`Decision ${id} is a sell and sells on or after ${data.sells_exempt_from} are never delayed (PREREG_cooling-off-rule_v2.md); no wait applies. Enter the fill with add_trade.js --decision ${id}.`); return; }
+  if (row.state === 'clear' && row.a === 'B' && data.sells_exempt_from && checkDate >= data.sells_exempt_from) die(`Decision ${id} read clear on ${row.d}, and a clear buy read holds for that session only (PREREG_cooling-off-rule_v2.md). Drop it and log a fresh decision on ${checkDate}.`);
   if (row.state === 'clear') { console.log(`Decision ${id} was clear on ${row.d}; no wait applies. Enter the fill with add_trade.js --decision ${id}.`); return; }
   const rr = D.reread(chart.history, row.d, checkDate, row.a, tz, data.rule);
   if (!rr) die('Fewer than four completed sessions in the feed; cannot re-read.');
@@ -140,13 +157,16 @@ async function cmdCheck() {
   console.log(`${id}: close-to-close three-session move ${m} (${rr.baseClose} on ${rr.baseDate} to ${rr.lastClose} on ${rr.lastDate}); ${rr.sessionsSince} session(s) completed since the decision; threshold ${data.rule.T_pct}%, wait ${data.rule.K_sessions}`);
   if (rr.clear || rr.expired) {
     const key = rr.clear ? 'cleared_on' : 'expired_on';
-    console.log(rr.clear ? `CLEAR on ${checkDate}: the order may be placed this session.` : `EXPIRED on ${checkDate}: the wait of ${data.rule.K_sessions} sessions is over; the order may be placed this session.`);
-    if (!row[key] || row[key] > checkDate) {
+    console.log(rr.clear ? `CLEAR on ${checkDate}: the order may be placed this session${data.sells_exempt_from ? ' only; a later session needs a fresh check' : ''}.` : `EXPIRED on ${checkDate}: the wait of ${data.rule.K_sessions} sessions is over; the order may be placed this session.`);
+    // Under R2 cleared_on is the latest session a re-read cleared, since a buy
+    // may be placed only on that session; expired_on stays the earliest.
+    const r2 = !!data.sells_exempt_from && checkDate >= data.sells_exempt_from;
+    if (!row[key] || row[key] > checkDate || (r2 && rr.clear && row[key] < checkDate)) {
       row[key] = checkDate;
       if (!dryRun) { D.saveDecisions(ROOT, data); console.log(`Recorded ${key} = ${checkDate}.`); }
     }
   } else {
-    console.log(`STILL FIRED on ${checkDate}: do not place the order; check again next session (${data.rule.K_sessions - rr.sessionsSince} session(s) of wait remain).`);
+    console.log(`STILL FIRED on ${checkDate}: do not place the order; check again next session (${data.rule.K_sessions - rr.sessionsSince - 1} session(s) of wait remain after this one).`);
   }
 }
 
@@ -174,6 +194,19 @@ function cmdAdopt() {
   console.log(`Record in PREREG_cooling-off-rule.md, Amendments: "(a) Adoption date: ${date}, threshold ${data.rule.T_pct} per cent, wait ${data.rule.K_sessions} sessions."`);
 }
 
+// R2 (PREREG_cooling-off-rule_v2.md): set once; a change is a new registration.
+function cmdExemptSells() {
+  const date = positional[1];
+  if (!date || !isoDate(date)) die('Usage: node scripts/add_decision.js exempt-sells <YYYY-MM-DD>');
+  const { data } = D.loadDecisions(ROOT);
+  if (!data.adopted) die('The rule is not adopted; the sell exemption amends an adopted rule.');
+  if (data.sells_exempt_from) die(`Sells are already exempt from ${data.sells_exempt_from}; a change is a new registration, not an edit.`);
+  if (date < data.adopted) die(`The exemption date ${date} precedes the adoption date ${data.adopted}.`);
+  data.sells_exempt_from = date;
+  if (!dryRun) D.saveDecisions(ROOT, data);
+  console.log(`Sells exempt from ${date}: a sell placed on or after that date is logged and never delayed, never an override.${dryRun ? ' (dry run, nothing written)' : ''}`);
+}
+
 function cmdReport() {
   const { data, exists } = D.loadDecisions(ROOT);
   if (!exists) { console.log('No decisions.json yet; the first decision creates it.'); return; }
@@ -195,6 +228,7 @@ function cmdReport() {
   if (cmd === 'check') await cmdCheck();
   else if (cmd === 'drop') cmdDrop();
   else if (cmd === 'adopt') cmdAdopt();
+  else if (cmd === 'exempt-sells') cmdExemptSells();
   else if (cmd === 'report') cmdReport();
   else await cmdNew();
 })().catch(e => die(e.message || String(e)));

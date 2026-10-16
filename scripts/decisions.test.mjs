@@ -50,9 +50,20 @@ test('the re-read uses the three sessions completed before the check session and
   // check on 10-06: base 09-30 (108) to 10-05 (108): 0%, clear.
   r = D.reread(bars, '2026-09-30', '2026-10-06', 'B', 'America/New_York', rule);
   assert.equal(r.clear, true); assert.equal(r.baseDate, '2026-09-30');
-  // expiry: five completed sessions after the decision by the check on 10-08
-  r = D.reread(bars, '2026-09-30', '2026-10-08', 'B', 'America/New_York', rule);
-  assert.equal(r.sessionsSince, 5); assert.equal(r.expired, true);
+  // expiry on the fifth session after the decision (10-01, 10-02, 10-05, 10-06, 10-07): not on 10-06, yes on 10-07
+  r = D.reread(bars, '2026-09-30', '2026-10-06', 'B', 'America/New_York', rule);
+  assert.equal(r.sessionsSince, 3); assert.equal(r.expired, false);
+  r = D.reread(bars, '2026-09-30', '2026-10-07', 'B', 'America/New_York', rule);
+  assert.equal(r.sessionsSince, 4); assert.equal(r.expired, true);
+});
+
+test('expiry falls on the named fifth session: decision Monday 2026-10-12, expiry Monday 2026-10-19', () => {
+  const bars = [['2026-10-07', 100], ['2026-10-08', 100], ['2026-10-09', 100], ['2026-10-12', 110], ['2026-10-13', 110],
+    ['2026-10-14', 110], ['2026-10-15', 110], ['2026-10-16', 110]].map(([d, c]) => ({ d: ts(d, 13), c }));
+  const rule = { T_pct: 3, K_sessions: 5 };
+  assert.equal(D.weekdaysAfter('2026-10-12', 5), '2026-10-19');
+  assert.equal(D.reread(bars, '2026-10-12', '2026-10-16', 'B', 'America/New_York', rule).expired, false, 'the fourth session after');
+  assert.equal(D.reread(bars, '2026-10-12', '2026-10-19', 'B', 'America/New_York', rule).expired, true, 'the fifth session after');
 });
 
 test('weekday estimate skips weekends', () => {
@@ -118,8 +129,98 @@ test('assessLink refuses a fired, uncleared decision without an override and acc
   assert.equal(D.assessLink(fx, 'F', { d: '2026-11-01', t: 'MU.US', a: 'B' }).ok, false, 'fill precedes the decision');
 });
 
+// R2 (PREREG_cooling-off-rule_v2.md): sells placed on or after the exemption date.
+const fixtureR2 = (from) => {
+  const fx = fixture('2026-11-01');
+  fx.sells_exempt_from = from;
+  fx.rows[2].cleared_on = null;                                         // G: a fired sell that never cleared
+  fx.rows[2].outcome = null; fx.rows[2].fill = null;
+  return fx;
+};
+
+test('assessLink: an exempt sell links as filled whatever its state, and refuses an override', () => {
+  const fill = { d: '2026-11-04', t: 'SLV.US', a: 'S' };
+  assert.equal(D.assessLink(fixtureR2(null), 'G', fill).ok, false, 'fails first: no exemption, a fired sell needs an override');
+  const fx = fixtureR2('2026-11-04');
+  const v = D.assessLink(fx, 'G', fill);
+  assert.equal(v.ok, true); assert.equal(v.outcome, 'filled');
+  assert.equal(D.assessLink(fx, 'G', fill, 'owner 2026-11-04: reason').ok, false, 'an exempt sell is never an override');
+  assert.equal(D.assessLink(fx, 'F', { d: '2026-11-04', t: 'MU.US', a: 'B' }).ok, false, 'buys keep the delay');
+});
+
+test('guard: a fired, uncleared sell placed on or after the exemption date passes; before it, it fails', () => {
+  const linked = (fx, d) => { fx.rows[2].outcome = 'filled'; fx.rows[2].fill = { d, p: 80 }; return fx; };
+  const trades = (d) => [T('2026-11-02', 'XLE.US', 'B', { dec: 'A' }), T(d, 'SLV.US', 'S', { dec: 'G' })];
+  let g = D.guardFills(trades('2026-11-06'), linked(fixtureR2('2026-11-09'), '2026-11-06'), isFillRow);
+  assert.ok(g.failures.some(m => /had not cleared or expired/.test(m)), 'fails first: the sell precedes the exemption date');
+  g = D.guardFills(trades('2026-11-06'), linked(fixtureR2('2026-11-06'), '2026-11-06'), isFillRow);
+  assert.deepEqual(g.failures, []);
+  assert.ok(g.notes.some(m => /R2 since 2026-11-06 \(PREREG v2\): 0 buy fills, 0 overrides \(0%.*1 exempt sells logged/.test(m)));
+  const fx = linked(fixtureR2('2026-11-06'), '2026-11-06');
+  fx.rows[2].outcome = 'override'; fx.rows[2].override_reason = 'owner: x';
+  g = D.guardFills(trades('2026-11-06'), fx, isFillRow);
+  assert.ok(g.failures.some(m => /exempt sell .* recorded as an override/.test(m)), 'an exempt sell recorded as an override fails');
+});
+
+test('exemption date boundaries: month end and year end', () => {
+  const m = { sells_exempt_from: '2026-12-01' }, y = { sells_exempt_from: '2027-01-01' };
+  assert.equal(D.isExemptSell('S', '2026-11-30', m), false);   // month boundary: the day before
+  assert.equal(D.isExemptSell('S', '2026-12-01', m), true);
+  assert.equal(D.isExemptSell('S', '2026-12-31', y), false);   // year boundary: the day before
+  assert.equal(D.isExemptSell('S', '2027-01-01', y), true);
+  assert.equal(D.isExemptSell('B', '2027-01-01', y), false);   // buys are never exempt
+  assert.equal(D.isExemptSell('S', '2027-01-01', { sells_exempt_from: null }), false);
+});
+
+test('guard: the R2 gate counts buy overrides only, from the exemption date', () => {
+  const fx = fixture('2026-11-01');
+  fx.sells_exempt_from = '2026-11-03';
+  fx.rows.push({ id: 'H', d: '2026-11-03', t: 'MU.US', a: 'B', state: 'fired', outcome: 'override', override_reason: 'owner: x', fill: { d: '2026-11-03', p: 1 } });
+  const trades = [T('2026-11-02', 'XLE.US', 'B', { dec: 'A' }), T('2026-11-06', 'SLV.US', 'S', { dec: 'G' }), T('2026-11-03', 'MU.US', 'B', { dec: 'H' })];
+  const g = D.guardFills(trades, fx, isFillRow);
+  assert.deepEqual(g.failures, []);
+  assert.ok(g.notes.some(m => /1 buy fills, 1 overrides \(100%/.test(m)), 'the pre-date buy (A) is outside the R2 gate');
+  assert.ok(g.notes.some(m => /R2 buy override share 100% exceeds/.test(m)));
+});
+
+test('R2 buys: a clear read holds for its own session only', () => {
+  const fx = fixture('2026-11-01'); fx.sells_exempt_from = '2026-11-01';
+  fx.rows[0].outcome = null; fx.rows[0].fill = null;                    // A: XLE.US B, clear on 2026-11-02
+  assert.equal(D.assessLink(fx, 'A', { d: '2026-11-05', t: 'XLE.US', a: 'B' }).ok, false, 'fails first: placed three sessions after a clear read');
+  assert.equal(D.assessLink(fx, 'A', { d: '2026-11-02', t: 'XLE.US', a: 'B' }).ok, true);
+  const v = D.assessLink(fx, 'A', { d: '2026-11-05', t: 'XLE.US', a: 'B' }, 'owner: placed late');
+  assert.equal(v.ok, true); assert.equal(v.outcome, 'override');
+  fx.rows[0].outcome = 'filled'; fx.rows[0].fill = { d: '2026-11-05', p: 60 };
+  const g = D.guardFills([T('2026-11-05', 'XLE.US', 'B', { dec: 'A' })], fx, isFillRow);
+  assert.ok(g.failures.some(m => /holds for that session only/.test(m)), 'the guard mirrors the link');
+});
+
+test('R2 buys: a fired read may be placed only on the session its re-read cleared, or after expiry', () => {
+  const fx = fixture('2026-11-01'); fx.sells_exempt_from = '2026-11-01';   // F: MU.US B, fired on 2026-11-03
+  fx.rows[1].cleared_on = '2026-11-05';
+  assert.equal(D.assessLink(fx, 'F', { d: '2026-11-09', t: 'MU.US', a: 'B' }).ok, false, 'fails first: cleared on 11-05, placed on 11-09 with no fresh re-read');
+  assert.equal(D.assessLink(fx, 'F', { d: '2026-11-05', t: 'MU.US', a: 'B' }).ok, true);
+  fx.rows[1].expired_on = '2026-11-10';
+  assert.equal(D.assessLink(fx, 'F', { d: '2026-11-11', t: 'MU.US', a: 'B' }).ok, true, 'after expiry the order may go');
+  assert.equal(D.r2BuyTiming(fx.rows[1], '2026-11-05', { sells_exempt_from: null }), null, 'R1 behaviour is untouched without the R2 date');
+});
+
+test('R2 leaves R1 untouched before the exemption date, and refuses an override on a complying buy', () => {
+  const fx = fixture('2026-11-01'); fx.sells_exempt_from = '2026-11-10';
+  fx.rows[0].outcome = null; fx.rows[0].fill = null;                    // A: clear buy decided 2026-11-02
+  assert.equal(D.assessLink(fx, 'A', { d: '2026-11-05', t: 'XLE.US', a: 'B' }).ok, true, 'R1: a clear read placed later, before the R2 date, links');
+  fx.rows[0].outcome = 'filled'; fx.rows[0].fill = { d: '2026-11-05', p: 60 };
+  assert.deepEqual(D.guardFills([T('2026-11-05', 'XLE.US', 'B', { dec: 'A' }), T('2026-11-06', 'SLV.US', 'S', { dec: 'G' })], fx, isFillRow).failures, []);
+  const fx2 = fixture('2026-11-01'); fx2.sells_exempt_from = '2026-11-01';
+  fx2.rows[0].outcome = null; fx2.rows[0].fill = null;
+  assert.equal(D.assessLink(fx2, 'A', { d: '2026-11-02', t: 'XLE.US', a: 'B' }, 'owner: x').ok, false, 'an override on a complying R2 buy is refused');
+});
+
 test('serialise then parse round-trips the log', () => {
   const fx = fixture('2026-11-01');
+  assert.equal(JSON.parse(D.serialiseDecisions(fx)).sells_exempt_from, null);
+  fx.sells_exempt_from = '2026-11-06';
   const back = JSON.parse(D.serialiseDecisions(fx));
+  assert.equal(back.sells_exempt_from, '2026-11-06');
   assert.equal(back.adopted, '2026-11-01'); assert.equal(back.rows.length, 3); assert.equal(back.rows[2].cleared_on, '2026-11-06');
 });
