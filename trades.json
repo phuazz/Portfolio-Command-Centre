@@ -160,5 +160,6 @@
   {"d": "2026-10-02", "t": "981.HK", "a": "S", "q": 1000, "p": 60.05, "ccy": "HKD", "yf": "0981.HK", "th": "China Semis", "ref": "owner 2026-10-02: exit SMIC"},
   {"d": "2026-10-12", "t": "IGV.US", "a": "B", "q": 75, "p": 112.2, "ccy": "USD", "yf": "IGV", "th": "US Tech", "ref": "decisions/2026-10-12_rotate-remx-into-igv.md 2026-10-12", "dec": "2026-10-12-IGV.US-B"},
   {"d": "2026-10-12", "t": "REMX.US", "a": "S", "q": 150, "p": 58.46, "ccy": "USD", "yf": "REMX", "th": "Rare Earth Minerals", "ref": "decisions/2026-10-12_rotate-remx-into-igv.md 2026-10-12", "dec": "2026-10-12-REMX.US-S"},
-  {"d": "2026-10-14", "t": "T6I", "a": "S", "q": 7400, "p": 0.885, "ccy": "SGD", "yf": "T6I.SI", "th": "SG Consumer Finance", "ref": "owner 2026-10-14: exit ValueMax", "dec": "2026-10-14-T6I-S"}
+  {"d": "2026-10-14", "t": "T6I", "a": "S", "q": 7400, "p": 0.885, "ccy": "SGD", "yf": "T6I.SI", "th": "SG Consumer Finance", "ref": "owner 2026-10-14: exit ValueMax", "dec": "2026-10-14-T6I-S"},
+  {"d": "2026-10-16", "t": "G3B", "a": "B", "q": 1200, "p": 5.6, "ccy": "SGD", "yf": "G3B.SI", "th": "SG Broad Market", "ref": "owner 2026-10-16: add STI ETF in SRS", "dec": "2026-10-16-G3B-B"}
 ]
