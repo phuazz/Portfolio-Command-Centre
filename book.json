@@ -632,6 +632,30 @@
       "account": "CDP",
       "mktPriceSnap": 11.93
     },
+    "S63": {
+      "yf": "S63.SI",
+      "name": "ST Engineering",
+      "exchange": "SGX",
+      "ccy": "SGD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "SG Industrials",
+      "type": "Stock",
+      "account": "CDP",
+      "mktPriceSnap": 10.2
+    },
+    "OV8": {
+      "yf": "OV8.SI",
+      "name": "Sheng Siong",
+      "exchange": "SGX",
+      "ccy": "SGD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "SG Consumer Staples",
+      "type": "Stock",
+      "account": "CDP",
+      "mktPriceSnap": 2.84
+    },
     "AJBU": {
       "yf": "AJBU.SI",
       "name": "Keppel DC REIT",
