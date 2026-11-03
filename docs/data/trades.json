@@ -169,5 +169,7 @@
   {"d": "2026-10-23", "t": "OV8", "a": "B", "q": 3000, "p": 2.84, "ccy": "SGD", "yf": "OV8.SI", "th": "SG Consumer Staples", "ref": "owner 2026-10-23: initiate Sheng Siong", "dec": "2026-10-23-OV8-B"},
   {"d": "2026-11-03", "t": "ES3", "a": "B", "q": 2000, "p": 5.342, "ccy": "SGD", "yf": "ES3.SI", "th": "SG Broad Market", "ref": "owner 2026-11-03: add STI ETF", "dec": "2026-11-03-ES3-B"},
   {"d": "2026-11-03", "t": "ES3", "a": "B", "q": 2000, "p": 5.349, "ccy": "SGD", "yf": "ES3.SI", "th": "SG Broad Market", "ref": "owner 2026-11-03: add STI ETF", "dec": "2026-11-03-ES3-B-2"},
-  {"d": "2026-11-03", "t": "S58", "a": "S", "q": 2700, "p": 3.56, "ccy": "SGD", "yf": "S58.SI", "th": "SG Aviation", "ref": "owner 2026-11-03: trim SATS", "dec": "2026-11-03-S58-S"}
+  {"d": "2026-11-03", "t": "S58", "a": "S", "q": 2700, "p": 3.56, "ccy": "SGD", "yf": "S58.SI", "th": "SG Aviation", "ref": "owner 2026-11-03: trim SATS", "dec": "2026-11-03-S58-S"},
+  {"d": "2026-11-03", "t": "OXY.US", "a": "S", "q": 140, "p": 60.62, "ccy": "USD", "yf": "OXY", "th": "US Energy", "ref": "owner 2026-11-03: exit Occidental", "dec": "2026-11-03-OXY.US-S"},
+  {"d": "2026-11-03", "t": "MU.US", "a": "B", "q": 10, "p": 868, "ccy": "USD", "yf": "MU", "th": "US Semis", "ref": "owner 2026-11-03: re-open Micron", "dec": "2026-11-03-MU.US-B"}
 ]
