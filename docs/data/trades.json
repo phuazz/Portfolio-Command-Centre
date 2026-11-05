@@ -171,5 +171,8 @@
   {"d": "2026-11-03", "t": "ES3", "a": "B", "q": 2000, "p": 5.349, "ccy": "SGD", "yf": "ES3.SI", "th": "SG Broad Market", "ref": "owner 2026-11-03: add STI ETF", "dec": "2026-11-03-ES3-B-2"},
   {"d": "2026-11-03", "t": "S58", "a": "S", "q": 2700, "p": 3.56, "ccy": "SGD", "yf": "S58.SI", "th": "SG Aviation", "ref": "owner 2026-11-03: trim SATS", "dec": "2026-11-03-S58-S"},
   {"d": "2026-11-03", "t": "OXY.US", "a": "S", "q": 140, "p": 60.62, "ccy": "USD", "yf": "OXY", "th": "US Energy", "ref": "owner 2026-11-03: exit Occidental", "dec": "2026-11-03-OXY.US-S"},
-  {"d": "2026-11-03", "t": "MU.US", "a": "B", "q": 10, "p": 868, "ccy": "USD", "yf": "MU", "th": "US Semis", "ref": "owner 2026-11-03: re-open Micron", "dec": "2026-11-03-MU.US-B"}
+  {"d": "2026-11-03", "t": "MU.US", "a": "B", "q": 10, "p": 868, "ccy": "USD", "yf": "MU", "th": "US Semis", "ref": "owner 2026-11-03: re-open Micron", "dec": "2026-11-03-MU.US-B"},
+  {"d": "2026-11-05", "t": "SOI.FR", "a": "S", "q": 75, "p": 90.8272, "ccy": "EUR", "yf": "SOI.PA", "th": "Europe Semis", "ref": "owner 2026-11-05: risk manage", "dec": "2026-11-05-SOI.FR-S"},
+  {"d": "2026-11-05", "t": "MU.US", "a": "S", "q": 10, "p": 670, "ccy": "USD", "yf": "MU", "th": "US Semis", "ref": "owner 2026-11-05: risk manage", "dec": "2026-11-05-MU.US-S"},
+  {"d": "2026-11-05", "t": "NET.US", "a": "S", "q": 27, "p": 235, "ccy": "USD", "yf": "NET", "th": "Cybersecurity", "ref": "owner 2026-11-05: risk manage", "dec": "2026-11-05-NET.US-S"}
 ]
