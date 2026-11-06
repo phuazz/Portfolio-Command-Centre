@@ -178,5 +178,7 @@
   {"d": "2026-11-05", "t": "COPX.US", "a": "S", "q": 110, "p": 71.1, "ccy": "USD", "yf": "COPX", "th": "Copper/Commodities", "ref": "owner 2026-11-05: risk manage", "dec": "2026-11-05-COPX.US-S"},
   {"d": "2026-11-05", "t": "ARGT.US", "a": "S", "q": 110, "p": 74, "ccy": "USD", "yf": "ARGT", "th": "Argentina Equity", "ref": "owner 2026-11-05: risk manage", "dec": "2026-11-05-ARGT.US-S"},
   {"d": "2026-11-05", "t": "HOOD.US", "a": "S", "q": 70, "p": 78.2, "ccy": "USD", "yf": "HOOD", "th": "US Financials", "ref": "owner 2026-11-05: risk manage", "dec": "2026-11-05-HOOD.US-S"},
-  {"d": "2026-11-06", "t": "4004.JP", "a": "S", "q": 100, "p": 9803, "ccy": "JPY", "yf": "4004.T", "th": "Japan Chemicals", "ref": "owner 2026-11-06: risk manage", "dec": "2026-11-06-4004.JP-S"}
+  {"d": "2026-11-06", "t": "4004.JP", "a": "S", "q": 100, "p": 9803, "ccy": "JPY", "yf": "4004.T", "th": "Japan Chemicals", "ref": "owner 2026-11-06: risk manage", "dec": "2026-11-06-4004.JP-S"},
+  {"d": "2026-11-06", "t": "P52", "a": "S", "q": 8000, "p": 1.44, "ccy": "SGD", "yf": "P52.SI", "th": "SG Industrials", "ref": "owner 2026-11-06: risk manage", "dec": "2026-11-06-P52-S"},
+  {"d": "2026-11-06", "t": "992.HK", "a": "S", "q": 2000, "p": 18, "ccy": "HKD", "yf": "0992.HK", "th": "China Tech", "ref": "owner 2026-11-06: risk manage", "dec": "2026-11-06-992.HK-S"}
 ]
