@@ -196,7 +196,15 @@ failure than an inflated move. The intraday (ID) path is unchanged.
   allocation ratio (about 0.085, an estimate until the final figure in early
   November). Owner decision 2026-10-02: a separate session. Until then NAV
   omits the Crasus value and the 4004.JP mark carries any ex-spin-off fall as
-  a loss.
+  a loss. Update 2026-11-06: both legs are now closed. 4004.JP was sold
+  (S 100 @ 9,803, in the ledger, decision 2026-11-06-4004.JP-S), and the
+  100 Crasus shares were sold the same day in the SCB sleeve, market order,
+  S 100 @ 188.80 JPY, fee JPY 41.16 (brokerage 37.76 + GST 3.40), owner ref
+  "risk manage". That sale is NOT in the ledger, because a sell with no booked
+  spin-off would be an oversell; the JPY bucket is short by the JPY 18,880
+  gross proceeds until the spin-off session books the distribution on
+  2026-09-29 and this sale together, with the basis split at the final
+  allocation ratio.
 - Engine architecture: the NAV-series engines (equity curve, TWRR, the
   allocation YTD return) run as projections of the memoised `buildDailyBook()`
   core since v2 Phase B; the per-ticker engines (period P&L, attribution,
