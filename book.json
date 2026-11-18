@@ -1066,6 +1066,16 @@
       "availLTV": 0,
       "theme": "China Equity",
       "type": "ETF"
+    },
+    "XCHA.GB": {
+      "yf": "XCHA.L",
+      "name": "Xtrackers CSI300 Swap UCITS ETF",
+      "exchange": "LSE",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 0,
+      "theme": "China Equity",
+      "type": "ETF"
     }
   },
   "positions": [
