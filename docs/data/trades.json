@@ -184,5 +184,7 @@
   {"d": "2026-11-06", "t": "S63", "a": "S", "q": 900, "p": 9.11, "ccy": "SGD", "yf": "S63.SI", "th": "SG Industrials", "ref": "owner 2026-11-06: risk manage", "dec": "2026-11-06-S63-S"},
   {"d": "2026-11-09", "t": "EXV3.DE", "a": "S", "q": 61, "p": 94.05, "ccy": "EUR", "yf": "EXV3.DE", "th": "Europe Tech", "ref": "owner 2026-11-09: sell as trend deteriorated", "dec": "2026-11-09-EXV3.DE-S"},
   {"d": "2026-11-11", "t": "NVDA.US", "a": "S", "q": 40, "p": 172.66, "ccy": "USD", "yf": "NVDA", "th": "US Semis", "ref": "owner 2026-11-11: sell given concerns of probe to Nvidia CEO", "dec": "2026-11-11-NVDA.US-S"},
-  {"d": "2026-11-18", "t": "D05", "a": "B", "q": 150, "p": 66.58, "ccy": "SGD", "yf": "D05.SI", "th": "SG Banks", "ref": "owner 2026-11-18: buy as DBS near 50w mav", "dec": "2026-11-18-D05-B"}
+  {"d": "2026-11-18", "t": "D05", "a": "B", "q": 150, "p": 66.58, "ccy": "SGD", "yf": "D05.SI", "th": "SG Banks", "ref": "owner 2026-11-18: buy as DBS near 50w mav", "dec": "2026-11-18-D05-B"},
+  {"d": "2026-11-18", "t": "XCHA.GB", "a": "B", "q": 500, "p": 18.73, "ccy": "USD", "yf": "XCHA.L", "th": "China Equity", "ref": "owner 2026-11-18: add CSI 300 ETF as DeMark buy 13 countdown complete, potential bullish divergence", "dec": "2026-11-18-XCHA.GB-B"},
+  {"d": "2026-11-18", "t": "GDX.GB", "a": "B", "q": 100, "p": 87, "ccy": "USD", "yf": "GDX.L", "th": "Precious Metals", "ref": "owner 2026-11-18: gold selloff provides good entry point as Fed hawkishness largely priced in", "dec": "2026-11-18-GDX.GB-B"}
 ]
