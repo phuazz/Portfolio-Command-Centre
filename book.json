@@ -1076,6 +1076,16 @@
       "availLTV": 0,
       "theme": "China Equity",
       "type": "ETF"
+    },
+    "ENR.DE": {
+      "yf": "ENR.DE",
+      "name": "Siemens Energy",
+      "exchange": "XETR",
+      "ccy": "EUR",
+      "fee": 0,
+      "availLTV": 60,
+      "theme": "Europe Energy",
+      "type": "Stock"
     }
   },
   "positions": [
