@@ -1086,6 +1086,16 @@
       "availLTV": 60,
       "theme": "Europe Energy",
       "type": "Stock"
+    },
+    "GOOG.US": {
+      "yf": "GOOG",
+      "name": "Alphabet (Class C)",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 70,
+      "theme": "US Tech",
+      "type": "Stock"
     }
   },
   "positions": [
