@@ -1096,6 +1096,16 @@
       "availLTV": 70,
       "theme": "US Tech",
       "type": "Stock"
+    },
+    "AAPL.US": {
+      "yf": "AAPL",
+      "name": "Apple",
+      "exchange": "NMS",
+      "ccy": "USD",
+      "fee": 0,
+      "availLTV": 70,
+      "theme": "US Tech",
+      "type": "Stock"
     }
   },
   "positions": [
